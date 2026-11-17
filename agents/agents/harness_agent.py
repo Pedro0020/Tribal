@@ -15,6 +15,7 @@ forma de saltársela pidiéndoselo amablemente al modelo.
 from __future__ import annotations
 
 import json
+import os
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,30 @@ from agents.tools.process_tool import run_command
 VALID_STATUS = ("pending", "in_progress", "done", "blocked")
 REQUIRED_FIELDS = ("id", "title", "description", "acceptance_criteria", "status")
 
+
+def _bash() -> str:
+    """Localiza un bash utilizable, prefiriendo Git Bash en Windows.
+
+    En Windows, `bash` suele resolverse al de WSL, que sin distro instalada
+    falla con `execvpe(/bin/bash) failed`. Si Git Bash existe, se usa ese.
+    """
+    if os.name == "nt":
+        bases = (
+            os.environ.get("PROGRAMFILES", r"C:\Program Files"),
+            os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
+            os.environ.get("LOCALAPPDATA", ""),
+        )
+        relatives = ("Git/bin/bash.exe", "Git/usr/bin/bash.exe", "Programs/Git/bin/bash.exe")
+        for base in bases:
+            if not base:
+                continue
+            for rel in relatives:
+                candidate = Path(base) / rel
+                if candidate.exists():
+                    return str(candidate)
+    return "bash"
+
+
 #: Rechazos seguidos del reviewer antes de bloquear la feature y escalar.
 #: Tres es suficiente para corregir un despiste; a partir de ahí el problema
 #: casi nunca es el código, sino el criterio o cómo está planteada la feature.
@@ -36,6 +61,7 @@ _RECHAZOS = ("rechazado", "rechaza", "rejected", "fail", "ko")
 
 def _es_rechazo(verdict: str) -> bool:
     return verdict.strip().lower() in _RECHAZOS
+
 
 CURRENT_TEMPLATE = """# Tarea actual
 
@@ -100,9 +126,18 @@ class HarnessAgent(BaseAgent):
     # Ojo: "feature"/"features" NO van aquí — son del agente `data`
     # (feature engineering). Un keyword, un dueño.
     capabilities = [
-        "arnes", "arnés", "harness", "backlog",
-        "tarea pendiente", "siguiente tarea", "progreso", "progress",
-        "criterios de aceptacion", "criterios de aceptación", "puerta", "gate",
+        "arnes",
+        "arnés",
+        "harness",
+        "backlog",
+        "tarea pendiente",
+        "siguiente tarea",
+        "progreso",
+        "progress",
+        "criterios de aceptacion",
+        "criterios de aceptación",
+        "puerta",
+        "gate",
     ]
 
     def actions(self) -> dict:
@@ -155,7 +190,10 @@ class HarnessAgent(BaseAgent):
         except json.JSONDecodeError as exc:
             return None, f"harness/featureslist.json no es JSON válido: {exc}"
         if not isinstance(doc, dict) or not isinstance(doc.get("features"), list):
-            return None, "harness/featureslist.json debe ser un objeto con la clave 'features' (lista)."
+            return (
+                None,
+                "harness/featureslist.json debe ser un objeto con la clave 'features' (lista).",
+            )
         return doc, ""
 
     def _save(self, doc: dict) -> None:
@@ -177,8 +215,7 @@ class HarnessAgent(BaseAgent):
         return [
             f
             for f in doc["features"]
-            if f.get("status") == "pending"
-            and all(dep in done for dep in f.get("depends_on", []))
+            if f.get("status") == "pending" and all(dep in done for dep in f.get("depends_on", []))
         ]
 
     def _fail(self, action: str, message: str, **kw: Any) -> AgentResult:
@@ -236,7 +273,9 @@ class HarnessAgent(BaseAgent):
         if running:
             feat = running[0]
             return AgentResult(
-                success=True, agent=self.name, action="next",
+                success=True,
+                agent=self.name,
+                action="next",
                 message=f"Retoma {feat['id']} — {feat['title']} (ya estaba in_progress).",
                 data=feat,
             )
@@ -253,14 +292,18 @@ class HarnessAgent(BaseAgent):
                     data={"pending": pending, "blocked": blocked},
                 )
             return AgentResult(
-                success=True, agent=self.name, action="next",
+                success=True,
+                agent=self.name,
+                action="next",
                 message="Sin trabajo pendiente: el backlog está cerrado.",
                 data={"blocked": blocked},
             )
 
         feat = eligible[0]
         return AgentResult(
-            success=True, agent=self.name, action="next",
+            success=True,
+            agent=self.name,
+            action="next",
             message=f"Siguiente: {feat['id']} — {feat['title']}",
             data={**feat, "antecedentes": self._antecedentes(feat)},
         )
@@ -300,8 +343,11 @@ class HarnessAgent(BaseAgent):
     def start(self, *, id: str = "", owner: str = "implementer") -> AgentResult:
         """Abre una feature: status in_progress y harness/progress/current.md rellenado."""
         if not id:
-            return self._fail("start", "Falta el id de la feature.",
-                              needs=["¿Qué feature abro? Usa el id de featureslist.json (ej. DATA-001)."])
+            return self._fail(
+                "start",
+                "Falta el id de la feature.",
+                needs=["¿Qué feature abro? Usa el id de featureslist.json (ej. DATA-001)."],
+            )
 
         doc, error = self._load()
         if doc is None:
@@ -354,7 +400,9 @@ class HarnessAgent(BaseAgent):
         )
 
         return AgentResult(
-            success=True, agent=self.name, action="start",
+            success=True,
+            agent=self.name,
+            action="start",
             message=f"{id} abierta (in_progress) y volcada en harness/progress/current.md.",
             data={"id": id, "criteria": feat.get("acceptance_criteria", [])},
         )
@@ -365,7 +413,7 @@ class HarnessAgent(BaseAgent):
         if not script.exists():
             return self._fail("gate", "No existe init.sh: el arnés no tiene puerta.")
 
-        args = ["bash", str(script), "--json"]
+        args = [_bash(), str(script), "--json"]
         if quick:
             args.append("--quick")
         proc = run_command(args, cwd=self.ctx.root, timeout=900)
@@ -393,15 +441,25 @@ class HarnessAgent(BaseAgent):
             warnings=[f"{c['check']}: {c['detail']}" for c in failed],
         )
 
-    def finish(self, *, id: str = "", evidence: str = "", changes: str = "",
-               decisions: str = "", pending: str = "") -> AgentResult:
+    def finish(
+        self,
+        *,
+        id: str = "",
+        evidence: str = "",
+        changes: str = "",
+        decisions: str = "",
+        pending: str = "",
+    ) -> AgentResult:
         """
         Cierra una feature. REHÚSA si ./init.sh no pasa en verde: es la regla
         del arnés, y aquí es código, no una instrucción que se pueda ignorar.
         """
         if not id:
-            return self._fail("finish", "Falta el id de la feature.",
-                              needs=["¿Qué feature cierro? Usa su id de featureslist.json."])
+            return self._fail(
+                "finish",
+                "Falta el id de la feature.",
+                needs=["¿Qué feature cierro? Usa su id de featureslist.json."],
+            )
 
         doc, error = self._load()
         if doc is None:
@@ -457,7 +515,9 @@ class HarnessAgent(BaseAgent):
         self._current_file.write_text(IDLE_CURRENT, encoding="utf-8")
 
         return AgentResult(
-            success=True, agent=self.name, action="finish",
+            success=True,
+            agent=self.name,
+            action="finish",
             message=f"{id} cerrada. Histórico actualizado y current.md en idle.",
             data={"id": id, "closed": feat["closed"]},
         )
@@ -484,13 +544,16 @@ class HarnessAgent(BaseAgent):
         feat["blocked_reason"] = reason
         self._save(doc)
         return AgentResult(
-            success=True, agent=self.name, action="block",
+            success=True,
+            agent=self.name,
+            action="block",
             message=f"{id} bloqueada: {reason}",
             data={"id": id, "reason": reason},
         )
 
-    def record(self, *, agent: str = "", id: str = "", content: str = "",
-               verdict: str = "ok") -> AgentResult:
+    def record(
+        self, *, agent: str = "", id: str = "", content: str = "", verdict: str = "ok"
+    ) -> AgentResult:
         """Guarda el informe de un subagente en harness/progress/<agente>-<ID>.md."""
         if not agent or not id or not content:
             missing = []
@@ -537,8 +600,11 @@ class HarnessAgent(BaseAgent):
                     return self._fail(
                         "record",
                         f"Informe guardado, pero '{id}' se bloquea: {rounds} rechazos seguidos.",
-                        data={"path": str(path.relative_to(self.ctx.root)),
-                              "verdict": verdict, "review_rounds": rounds},
+                        data={
+                            "path": str(path.relative_to(self.ctx.root)),
+                            "verdict": verdict,
+                            "review_rounds": rounds,
+                        },
                         needs=[
                             f"El reviewer ha rechazado '{id}' {rounds} veces. Repetir la misma "
                             f"iteración no lo va a arreglar: lee harness/progress/reviewer-{id}.md y "
@@ -548,21 +614,34 @@ class HarnessAgent(BaseAgent):
                     )
 
         return AgentResult(
-            success=True, agent=self.name, action="record",
+            success=True,
+            agent=self.name,
+            action="record",
             message=(
                 f"Informe guardado en harness/progress/{path.name}"
                 + (f" · ronda de revisión {rounds}/{MAX_REVIEW_ROUNDS}" if rounds else "")
             ),
             warnings=(
                 [f"Van {rounds} rechazos de {MAX_REVIEW_ROUNDS}: a la siguiente se bloquea."]
-                if rounds and rounds == MAX_REVIEW_ROUNDS - 1 else []
+                if rounds and rounds == MAX_REVIEW_ROUNDS - 1
+                else []
             ),
-            data={"path": str(path.relative_to(self.ctx.root)), "verdict": verdict,
-                  "review_rounds": rounds},
+            data={
+                "path": str(path.relative_to(self.ctx.root)),
+                "verdict": verdict,
+                "review_rounds": rounds,
+            },
         )
 
-    def add(self, *, id: str = "", title: str = "", description: str = "",
-            criteria: str = "", depends_on: str = "") -> AgentResult:
+    def add(
+        self,
+        *,
+        id: str = "",
+        title: str = "",
+        description: str = "",
+        criteria: str = "",
+        depends_on: str = "",
+    ) -> AgentResult:
         """Añade una feature al backlog. `criteria` y `depends_on` van separados por `;`."""
         missing = []
         if not id:
@@ -590,12 +669,16 @@ class HarnessAgent(BaseAgent):
         }
         unknown = [d for d in feature["depends_on"] if self._find(doc, d) is None]
         if unknown:
-            return self._fail("add", f"depends_on apunta a features que no existen: {', '.join(unknown)}.")
+            return self._fail(
+                "add", f"depends_on apunta a features que no existen: {', '.join(unknown)}."
+            )
 
         doc["features"].append(feature)
         self._save(doc)
         return AgentResult(
-            success=True, agent=self.name, action="add",
+            success=True,
+            agent=self.name,
+            action="add",
             message=f"{id} añadida al backlog ({len(feature['acceptance_criteria'])} criterios).",
             data=feature,
         )

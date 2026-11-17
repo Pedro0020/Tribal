@@ -17,6 +17,11 @@
 #
 set -uo pipefail
 
+# Windows: la consola usa cp1252 y el JSON de la puerta lleva tildes y guiones
+# largos; sin esto, el bloque Python revienta con UnicodeEncodeError.
+export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
+export PYTHONUTF8="${PYTHONUTF8:-1}"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT" || exit 1
 
@@ -61,7 +66,7 @@ section "Entorno"
 DECLARED_PY="$(sed -n 's/^python_version:[[:space:]]*//p' project.yml 2>/dev/null | head -1 | cut -d'#' -f1 | tr -d '"'"'"' \r' | tr -d ' ')"
 
 PY=""
-for candidate in "./.venv/bin/python" "python${DECLARED_PY}" python3 python; do
+for candidate in "./.venv/bin/python" "./.venv/Scripts/python.exe" "python${DECLARED_PY}" python3 python; do
   if [ -x "$candidate" ] || command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
 done
 
