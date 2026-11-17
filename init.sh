@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# init.sh — Puerta de entrada del arnés de MeshHarmes
+# init.sh — Puerta de entrada del arnés de Tribal
 #
 # Decide si el proyecto está en un estado suficientemente bueno para que un
 # agente de IA empiece a trabajar. Si algo falla, el agente PARA — no intenta
@@ -48,7 +48,7 @@ fail() { record "fail" "$1" "$2"; ERRORS=$((ERRORS + 1));   [ "$JSON" -eq 1 ] ||
 
 section() { [ "$JSON" -eq 1 ] || printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-[ "$JSON" -eq 1 ] || printf '\n\033[1m━━ init.sh · arnés de MeshHarmes ━━\033[0m\n'
+[ "$JSON" -eq 1 ] || printf '\n\033[1m━━ init.sh · arnés de Tribal ━━\033[0m\n'
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  1. Entorno de ejecución

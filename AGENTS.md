@@ -1,4 +1,4 @@
-# Sistema de Agentes — MeshHarmes
+# Sistema de Agentes — Tribal
 
 Este proyecto incluye un sistema de agentes autónomos que automatizan el ciclo
 de desarrollo: planificación, revisión de código, tests, documentación,
