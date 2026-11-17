@@ -89,9 +89,14 @@ graphify-out/
 # --- RAG index (base de datos vectorial ChromaDB) ---
 .rag-index/
 
+# --- Modelos LLM (pesan GB; nunca al repositorio) ---
+models/
+*.gguf
+
 # --- Misc ---
 *.manifest
 *.spec
 pip-log.txt
 pip-delete-this-directory.txt
-.python-version
+# .python-version SÍ se commitea: fija el 3.12 del proyecto (pygame y llama.cpp
+# no van todavía con 3.14).

@@ -12,7 +12,7 @@
 | Lenguaje | **Python** |
 | Visualización 2D | **Pygame**, mapa top-down, **pixel art** |
 | Datos | **SQLite** (con columnas JSON) + grafo en dos tablas + export a Markdown |
-| LLM local (Fase 2) | **llama.cpp + gramáticas (GBNF)** · modelo pequeño (Qwen 1.5B–3B) |
+| LLM local (Fase 2) | **llama.cpp (`llama-server`, binarios precompilados) + JSON schema/GBNF** · Qwen 2.5 3B Q8_0 |
 | Embeddings (Fase 2–3) | **Qwen3-Embedding-0.6B** (o embeddinggemma-2) |
 | Grafo de cultura en vivo (Fase 3) | Pantalla web con **D3.js** (opcional) |
 | Desarrollo | **MeshHarmes** como esqueleto (AGENTS.md, backlog por fases) |
@@ -53,6 +53,33 @@ El diseño asume tener **LLM + modelo de embeddings a la vez**. Con 6 GB no cabe
 
 ### Verificación pendiente
 Confirmar la **disponibilidad real** de los modelos nombrados (p. ej. "Qwen3.5-2B") antes de Fase 2; los nombres de la tabla son orientativos.
+
+### Instalación de llama.cpp en Windows (Fase 2)
+
+Dos rutas. La A es la de por defecto: **no compila nada**.
+
+**A. Binarios precompilados `llama-server` (recomendada).**
+1. Descargar de https://github.com/ggml-org/llama.cpp/releases los binarios del tag diario `b####` (el release `latest` solo trae un fichero de texto: los binarios van en el tag `b####`).
+   - `llama-b####-bin-win-cuda-12.4-x64.zip` (RTX 2060 = CUDA 12.x)
+   - `cudart-llama-bin-win-cuda-12.4-x64.zip` (runtime CUDA, solo si no tienes el CUDA Toolkit)
+2. Extraer a una carpeta propia, p. ej. `C:\Users\pedro\llama.cpp\`. Los `.exe` quedan dentro de `bin/`.
+3. El modelo va a `models/` del proyecto (ignorado por git, ver §.gitignore):
+   `models/Qwen2.5-3B-Instruct-Q8_0.gguf` (~3.4 GB).
+4. Arrancar:
+   ```powershell
+   llama-server.exe -m models\Qwen2.5-3B-Instruct-Q8_0.gguf -ngl 99 -c 8192 --port 8080
+   ```
+   `-ngl 99` descarga todas las capas a la GPU; `-c 8192` es el contexto.
+5. Python no carga el modelo: habla HTTP con `127.0.0.1:8080` (`httpx`/`requests`). La salida estructurada se pide con `response_format: {"type":"json_schema", ...}` en `/v1/chat/completions`.
+
+**B. `llama-cpp-python` en proceso (alternativa).**
+```powershell
+uv add llama-cpp-python --index https://abetlen.github.io/llama-cpp-python/whl/cu124
+# CPU: .../whl/cpu
+```
+Usa las wheels precompiladas de ese índice; si no hay para tu versión, intentará compilar (requiere CMake + Visual Studio Build Tools) — es justo lo que la ruta A evita.
+
+> **Decisión:** ruta **A** por defecto (menos frágil en Windows y permite reiniciar el modelo sin reiniciar la simulación). Ollama queda como alternativa manual de pruebas: mismo GGUF, mismo HTTP, pero no es el camino oficial para no duplicar mantenimiento.
 
 ---
 
@@ -185,13 +212,13 @@ Todo con los modelos de embedding ya disponibles (Qwen3-Embedding-0.6B, embeddin
 
 ### Concurrencia del LLM (60 fps sin bloqueo)
 
-`llama-cpp-python` **no es thread-safe** para un mismo objeto `Llama`: dos consultas concurrentes corrompen el estado. Para la carga real (~3–6 decisiones de 0.3–1.5 s), la solución proporcionada es:
+Con la ruta A (§2), el LLM vive en **`llama-server`**, un proceso aparte: la simulación nunca lo bloquea y, si el modelo se cae, el mundo sigue. El patrón es siempre el mismo:
 
-1. **Un hilo de inferencia dedicado** que consume una cola (`queue.Queue`). El bucle de Pygame **encola** la petición y, en frames posteriores, **pregunta** por el resultado sin esperar. El mundo nunca se detiene.
+1. **Un hilo de cliente dedicado** que consume una cola (`queue.Queue`) y habla HTTP con `llama-server` (`127.0.0.1:8080`). El bucle de Pygame **encola** la petición y, en frames posteriores, **pregunta** por el resultado sin esperar. Timeout corto: si no llega, el agente sigue por instinto y la decisión se descarta.
 2. **Un hilo aparte para embeddings en CPU** (§2), independiente del hilo del LLM en GPU.
-3. Escalar a **llama-server** (proceso HTTP separado) solo si hace falta *batching* o robustez; no antes (principio §11.1).
+3. Si algún día se usa `llama-cpp-python` en proceso (ruta B), ese objeto **no es thread-safe**: solo un hilo de inferencia, jamás dos a la vez.
 
-> Regla: **el LLM nunca se llama desde el hilo de render.** Se encola, y el resultado se aplica cuando llega.
+> Regla: **el LLM nunca se llama desde el hilo de render.** Se encola, y el resultado se aplica cuando llega — o no se aplica.
 
 ### Observación
 | Herramienta | Veredicto |
@@ -232,7 +259,7 @@ Todo con los modelos de embedding ya disponibles (Qwen3-Embedding-0.6B, embeddin
 |---|---|
 | **Fase 0** | Python + Pygame + Pydantic + config/semilla (reproducibilidad) + scaffold MeshHarmes + (opcional) SQLite |
 | **Fase 1** | Genoma + árbol de conocimiento + clustering |
-| **Fase 2** | llama.cpp + gramáticas + embeddings + grafo en memoria |
+| **Fase 2** | `llama-server` + JSON schema + embeddings en CPU + grafo en memoria |
 | **Fase 3** | Memoria colectiva + export a Obsidian + grafo vivo (D3) + telemetría |
 
 > **Reproducibilidad:** una semilla (`seed`) + un archivo de configuración (parámetros de la simulación) permiten re-ver una run interesante y comparar variantes. Barato y esencial para "observar" en serio.
