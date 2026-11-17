@@ -1,0 +1,68 @@
+{
+  "$comment": "Backlog del arnés. Fuente de verdad de QUÉ hay que hacer. El orden no es decorativo: las dos primeras features fijan el rumbo (qué se quiere resolver → cómo se va a resolver) antes de que nadie escriba código. Los agentes leen la primera feature pendiente, la marcan in_progress y no la marcan done hasta que ./init.sh pasa en verde. Tras cerrar (harness finish), el líder propone el commit del cierre con git commit_feature --dry-run y espera confirmación del usuario. Estados válidos: pending | in_progress | done | blocked.",
+  "version": 1,
+  "project": "Tribal",
+  "features": [
+    {
+      "id": "SCOPE-001",
+      "title": "Definir qué se quiere resolver",
+      "description": "Antes de escribir código: qué es Tribal, para quién, cuándo se considera hecho y qué queda explícitamente fuera. Es la feature que da rumbo a todas las demás. La materia prima ya existe en vault/01_PROYECTO/concepto.md y stack-tecnologico.md: aquí se destila, no se inventa.",
+      "acceptance_criteria": [
+        "Existe vault/01_PROYECTO/objetivo.md con cuatro apartados: problema, usuario/consumidor, criterio de hecho y fuera de alcance",
+        "El criterio de hecho es verificable: la tribu llega a fuego + herramienta compuesta + proto-lenguaje + mito, con al menos la mitad de los nodos de cultura fuera del árbol inicial (concepto §8b)",
+        "El apartado de fuera de alcance nombra al menos dos cosas que Tribal NO va a hacer (p. ej. intervención del usuario, multijugador)",
+        "El README describe el objetivo en una frase propia, no con el texto de la plantilla",
+        "./init.sh termina con ENTORNO LISTO"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "DESIGN-001",
+      "title": "Decidir cómo se va a resolver",
+      "description": "Escribir la arquitectura antes de implementarla: piezas del motor de reglas, agentes, memoria y capa LLM, cómo se hablan (bucle continuo + cola asíncrona), alternativas consideradas y riesgos. La base está en stack-tecnologico.md.",
+      "acceptance_criteria": [
+        "vault/01_PROYECTO/arquitectura.md describe las piezas del sistema y el flujo entre ellas (bucle 60 fps, instinto, cola LLM, memoria)",
+        "Hay al menos una alternativa considerada y descartada, con el motivo escrito",
+        "Están nombrados los riesgos conocidos y qué decisiones se dejan para más adelante",
+        "El paquete app/ está renombrado al nombre real del proyecto (project.yml, pyproject.toml, Makefile y coverage coherentes)",
+        "./init.sh termina con ENTORNO LISTO"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "SCOPE-001"
+      ]
+    },
+    {
+      "id": "CORE-001",
+      "title": "Primera pieza funcional de punta a punta (Fase 0)",
+      "description": "Implementar el vertical slice más fino de Fase 0: mapa top-down en Pygame a 60 fps con 8–15 individuos que tienen necesidades, se mueven, comen, descansan y sobreviven por reglas simples. Sin LLM todavía.",
+      "acceptance_criteria": [
+        "El juego arranca con un mapa pixel-art top-down y 8–15 individuos visibles moviéndose en tiempo real",
+        "Las necesidades (energía, sed, salud) evolucionan y los individuos mueren si no las cubren",
+        "El bucle mantiene 60 fps sin bloqueos",
+        "Existen tests del motor de reglas (sin Pygame) para el camino feliz y al menos un caso de muerte/extinción",
+        "make check pasa (lint + typecheck + test + arnés)",
+        "El README documenta cómo ejecutarlo, con la salida esperada"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "DESIGN-001"
+      ]
+    },
+    {
+      "id": "QA-001",
+      "title": "Batería de calidad en verde",
+      "description": "Dejar make check (lint + typecheck + test + arnés) pasando de punta a punta, y el CI ejecutando lo mismo que se ejecuta en local.",
+      "acceptance_criteria": [
+        "make lint pasa sin errores",
+        "make typecheck pasa sin errores",
+        "make test pasa y la salida real queda como evidencia",
+        "El workflow de CI ejecuta los mismos comandos que make check",
+        "./init.sh termina con ENTORNO LISTO"
+      ],
+      "status": "pending",
+      "depends_on": []
+    }
+  ]
+}
