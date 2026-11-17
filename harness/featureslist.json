@@ -14,8 +14,11 @@
         "El README describe el objetivo en una frase propia, no con el texto de la plantilla",
         "./init.sh termina con ENTORNO LISTO"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-18",
+      "review_rounds": 1,
+      "closed": "2026-11-18"
     },
     {
       "id": "DESIGN-001",

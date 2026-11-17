@@ -8,6 +8,12 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ---
 
+## [Unreleased] — 2026-11-18
+
+### Añadido
+
+- docs: define objetivo y criterio de hecho medible (SCOPE-001)
+
 ## [Unreleased]
 
 ### Añadido

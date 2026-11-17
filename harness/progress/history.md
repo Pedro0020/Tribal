@@ -201,3 +201,36 @@ $ ./init.sh                                            ->  ENTORNO LISTO  0 avis
 ```
 
 </details>
+
+## SCOPE-001 — Definir qué se quiere resolver
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 7 passed in 0.33s
+- **Cambios:** vault/01_PROYECTO/objetivo.md (nuevo); README.md (frase de objetivo, tabla de documentacion y enlace al KPI); harness/progress/implementer-SCOPE-001.md; harness/progress/reviewer-SCOPE-001.md
+- **Decisiones:** objetivo.md destila concepto.md y stack-tecnologico.md, no anade decisiones. El KPI de emergencia usa como denominador TODOS los nodos activos (no solo los de nivel 1-2), porque excluirlos daria 100 por construccion; umbral >= 50 por ciento. El criterio de hecho se comprueba con una consulta SQL concreta sobre la BD de la partida y un test del repo, no con una impresion. Rechazo de la ronda 1: se revirtieron pygame-ce de pyproject/uv.lock (su dueno es CORE-001) y se re-grabo el informe del implementer en ASCII; causa raiz del truncado de harness record anotada para QA-001.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+{
+  "success": true,
+  "agent": "harness",
+  "action": "gate",
+  "message": "ENTORNO LISTO - se puede trabajar.",
+  "data": {
+    "ready": true,
+    "errors": 0,
+    "warnings": 0,
+    "checks": [ ... 14/14 ok ..., { "check": "featureslist", "detail": "4 features - 3 pending - 1 in_progress - 0 done - 0 blocked" }, { "check": "pytest", "detail": "7 passed in 3.24s" } ]
+  }
+}
+$ Select-String -Pattern '^## ' vault/01_PROYECTO/objetivo.md
+## 1. Problema
+## 2. Usuario / consumidor
+## 3. Criterio de hecho
+## 4. Fuera de alcance
+```
+
+</details>
