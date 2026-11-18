@@ -39,6 +39,18 @@ _TUNICA = {"m": (146, 88, 46), "f": (170, 66, 60)}
 _PELAJE = (66, 58, 52)
 _PELAJE_CLARO = (92, 80, 70)
 _OJO = (214, 54, 42)
+#: Tinte de estación sobre el mapa: (color, alfa). Primavera y verano no llevan.
+_TINTE_ESTACION = {
+    "otono": ((204, 132, 44), 30),
+    "invierno": ((150, 190, 226), 38),
+}
+#: Marcador del centro de cada parche; gris si está agotado (no da de comer).
+_PARCHE = {
+    TipoRecurso.AGUA: (86, 152, 208),
+    TipoRecurso.BAYAS: (208, 72, 64),
+    TipoRecurso.CAZA: (168, 124, 70),
+}
+_PARCHE_AGOTADO = (96, 96, 96)
 
 
 def tamano_ventana(mundo: Mundo) -> tuple[int, int]:
@@ -54,6 +66,8 @@ def dibujar_frame(mundo: Mundo) -> pygame.Surface:
         for x, tipo in enumerate(fila):
             variante = (x * 13 + y * 7 + (x * y) % 5) % 3
             lienzo.blit(_tile(tipo, variante), (x * TILE_PX, ALTO_HUD + y * TILE_PX))
+
+    _tinte_estacion(lienzo, mundo)
 
     for recurso in mundo.recursos:
         if recurso.tipo == TipoRecurso.BAYAS and recurso.cantidad > 0:
@@ -78,8 +92,32 @@ def dibujar_frame(mundo: Mundo) -> pygame.Surface:
             (int(depredador.x * TILE_PX), ALTO_HUD + int(depredador.y * TILE_PX)),
         )
 
+    _dibujar_parches(lienzo, mundo)
     _dibujar_hud(lienzo, mundo)
     return lienzo
+
+
+def _tinte_estacion(lienzo: pygame.Surface, mundo: Mundo) -> None:
+    """Velo de color sobre el mapa en otoño e invierno: la estación se ve."""
+    tinte = _TINTE_ESTACION.get(mundo.estacion or "")
+    if tinte is None:
+        return
+    color, alfa = tinte
+    velo = pygame.Surface((mundo.ancho * TILE_PX, mundo.alto * TILE_PX), pygame.SRCALPHA)
+    velo.fill((*color, alfa))
+    lienzo.blit(velo, (0, ALTO_HUD))
+
+
+def _dibujar_parches(lienzo: pygame.Surface, mundo: Mundo) -> None:
+    """Un punto de 2×2 en el centro de cada parche; gris si está agotado."""
+    for parche in mundo.parches:
+        fuentes = set(parche.fuentes)
+        lleno = any(recurso.cantidad > 0 for recurso in mundo.recursos if recurso.id in fuentes)
+        color = _PARCHE[parche.tipo] if lleno else _PARCHE_AGOTADO
+        lienzo.fill(
+            color,
+            pygame.Rect(int(parche.x * TILE_PX), ALTO_HUD + int(parche.y * TILE_PX), 2, 2),
+        )
 
 
 def _dibujar_hud(lienzo: pygame.Surface, mundo: Mundo) -> None:
@@ -91,6 +129,8 @@ def _dibujar_hud(lienzo: pygame.Surface, mundo: Mundo) -> None:
         energia = 0.0
         sed = 0.0
     texto = f"tick {mundo.tick}  pob {len(vivos)}  energia {energia:.0f}  sed {sed:.0f}"
+    if mundo.estacion:
+        texto += f"  est {mundo.estacion}"
     lienzo.blit(_fuente().render(texto, False, COLOR_TEXTO), (3, 2))
 
 

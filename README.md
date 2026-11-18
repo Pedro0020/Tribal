@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.16-green)
+![Version](https://img.shields.io/badge/Version-0.1.17-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -73,12 +73,15 @@ En la ventana se ve el mapa (hierba, lagos azules, bosques con bayas rojas y
 caza marrón), los individuos como sprites de 6×8 px (túnica ocre o roja según
 sexo, más pequeños mientras son crías), el depredador como un cuadrúpedo oscuro
 con ojo rojo y una franja de HUD con tick, población y media de energía y sed.
+El centro de cada **parche** de recurso lleva un punto de 2×2 (gris si está
+agotado) y, con estaciones, otoño e invierno tiñen el mapa y el HUD dice cuál
+toca.
 **ESC** o cerrar la ventana termina la partida.
 
 Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 
 ```json
-{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 13, "nacimientos": 1, "coste_reproduccion": 50.0, "muertes": 0, "media_energia": 66.58, "media_sed": 37.26, "media_genes": {"velocidad": 0.975, "metabolismo": 1.02, "longevidad": 1.074, "fuerza": 1.049, "resistencia": 1.007, "inteligencia": 1.021, "salud": 1.03, "divergencia": 0.497}, "habilidades_distintas": 1, "habilidades": {"1": ["recolectar"], "2": ["recolectar"], "3": ["recolectar"], "4": ["recolectar"], "5": ["recolectar"], "6": ["recolectar"], "7": ["recolectar"], "8": ["recolectar"], "9": ["recolectar"], "10": ["recolectar"], "11": ["recolectar"], "12": ["recolectar"], "13": ["recolectar"]}, "individuos_movidos": 12, "depredador": {"activos": 1, "ataques": 0, "muertes": 0}, "agrupamiento_max": 4, "huidas": 307, "n_divergentes": 4, "n_conformistas": 4, "n_neutros": 5, "intentos_divergentes": 0, "combinaciones_logradas": 0, "descubridores": [], "supervivencia_descubridores": 0.0, "supervivencia_no_descubridores": 1.0, "diferencial_seleccion": 0.0, "tradiciones": 4, "imitaciones": 522, "beneficios": {"bayas": 1.0, "caza": 1.0, "dano_depredador": 1.0, "tasa_sed": 1.0}, "utilidad_media": {}, "escasez": {"agua": 0.0, "bayas": 0.179, "caza": 0.312}, "estacion": null, "nodos": [{"id": "guijarro", "rama": "litica", "nivel": 0, "titulo": "Guijarro", "origen": "arbol", "autor": 6, "tick": 1}, {"id": "lasca", "rama": "litica", "nivel": 1, "titulo": "Lasca", "origen": "arbol", "autor": 6, "tick": 4}, {"id": "bifaz", "rama": "litica", "nivel": 2, "titulo": "Bifaz", "origen": "arbol", "autor": 6, "tick": 7}, {"id": "punta_de_lanza", "rama": "litica", "nivel": 3, "titulo": "Punta de lanza", "origen": "arbol", "autor": 6, "tick": 10}, {"id": "caza_cooperativa", "rama": "litica", "nivel": 4, "titulo": "Caza cooperativa", "origen": "arbol", "autor": 6, "tick": 13}, {"id": "observar_rayo", "rama": "fuego", "nivel": 0, "titulo": "Observar el rayo", "origen": "arbol", "autor": 6, "tick": 2}, {"id": "conservar_brasas", "rama": "fuego", "nivel": 1, "titulo": "Conservar brasas", "origen": "arbol", "autor": 6, "tick": 5}, {"id": "friccion", "rama": "fuego", "nivel": 2, "titulo": "Fricci\u00f3n", "origen": "arbol", "autor": 6, "tick": 8}, {"id": "cocinar", "rama": "fuego", "nivel": 3, "titulo": "Cocinar", "origen": "arbol", "autor": 6, "tick": 11}, {"id": "ahuyentar_depredadores", "rama": "fuego", "nivel": 4, "titulo": "Ahuyentar depredadores", "origen": "arbol", "autor": 6, "tick": 14}, {"id": "gestos", "rama": "lenguaje", "nivel": 0, "titulo": "Gestos y gru\u00f1idos", "origen": "arbol", "autor": 9, "tick": 9}, {"id": "proto_palabras", "rama": "lenguaje", "nivel": 1, "titulo": "Proto-palabras", "origen": "arbol", "autor": 9, "tick": 12}, {"id": "vocabulario", "rama": "lenguaje", "nivel": 2, "titulo": "Vocabulario", "origen": "arbol", "autor": 9, "tick": 16}, {"id": "transmision_eficaz", "rama": "lenguaje", "nivel": 3, "titulo": "Transmisi\u00f3n eficaz", "origen": "arbol", "autor": 9, "tick": 17}, {"id": "tradicion_ahuyentar_depredadores", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de ahuyentar depredadores", "origen": "interaccion", "autor": 5, "tick": 342}, {"id": "tradicion_caza_cooperativa", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de caza cooperativa", "origen": "interaccion", "autor": 5, "tick": 335}, {"id": "arte_rupestre", "rama": "simbolico", "nivel": 0, "titulo": "Arte rupestre", "origen": "arbol", "autor": 6, "tick": 3}, {"id": "ritual", "rama": "simbolico", "nivel": 1, "titulo": "Ritual", "origen": "arbol", "autor": 6, "tick": 6}, {"id": "mito", "rama": "simbolico", "nivel": 2, "titulo": "Mito", "origen": "arbol", "autor": 6, "tick": 15}, {"id": "identidad_grupo", "rama": "simbolico", "nivel": 3, "titulo": "Identidad del grupo", "origen": "arbol", "autor": 6, "tick": 18}, {"id": "tradicion_identidad_grupo", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de identidad del grupo", "origen": "interaccion", "autor": 5, "tick": 343}, {"id": "tradicion_transmision_eficaz", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de transmisi\u00f3n eficaz", "origen": "interaccion", "autor": 4, "tick": 228}], "aristas": [{"origen": "guijarro", "destino": "lasca"}, {"origen": "observar_rayo", "destino": "conservar_brasas"}, {"origen": "arte_rupestre", "destino": "ritual"}, {"origen": "lasca", "destino": "bifaz"}, {"origen": "conservar_brasas", "destino": "friccion"}, {"origen": "bifaz", "destino": "punta_de_lanza"}, {"origen": "friccion", "destino": "cocinar"}, {"origen": "gestos", "destino": "proto_palabras"}, {"origen": "punta_de_lanza", "destino": "caza_cooperativa"}, {"origen": "cocinar", "destino": "ahuyentar_depredadores"}, {"origen": "proto_palabras", "destino": "mito"}, {"origen": "ritual", "destino": "mito"}, {"origen": "proto_palabras", "destino": "vocabulario"}, {"origen": "vocabulario", "destino": "transmision_eficaz"}, {"origen": "mito", "destino": "identidad_grupo"}, {"origen": "transmision_eficaz", "destino": "tradicion_transmision_eficaz"}, {"origen": "caza_cooperativa", "destino": "tradicion_caza_cooperativa"}, {"origen": "ahuyentar_depredadores", "destino": "tradicion_ahuyentar_depredadores"}, {"origen": "identidad_grupo", "destino": "tradicion_identidad_grupo"}], "pct_fuera_arbol": 18.2, "nodos_por_origen": {"arbol": 18, "combinacion": 0, "interaccion": 4, "llm": 0}, "nivel_max": 2, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true, "crisis": false, "sequia_ticks": 0}}
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 13, "nacimientos": 1, "coste_reproduccion": 50.0, "muertes": 0, "media_energia": 64.71, "media_sed": 38.72, "media_genes": {"velocidad": 0.974, "metabolismo": 1.029, "longevidad": 1.077, "fuerza": 1.049, "resistencia": 1.0, "inteligencia": 1.022, "salud": 1.021, "divergencia": 0.491}, "habilidades_distintas": 1, "habilidades": {"1": ["recolectar"], "2": ["recolectar"], "3": ["recolectar"], "4": ["recolectar"], "5": ["recolectar"], "6": ["recolectar"], "7": ["recolectar"], "8": ["recolectar"], "9": ["recolectar"], "10": ["recolectar"], "11": ["recolectar"], "12": ["recolectar"], "13": ["recolectar"]}, "individuos_movidos": 13, "depredador": {"activos": 1, "ataques": 0, "muertes": 0}, "agrupamiento_max": 3, "huidas": 267, "n_divergentes": 4, "n_conformistas": 5, "n_neutros": 4, "intentos_divergentes": 0, "combinaciones_logradas": 0, "descubridores": [], "supervivencia_descubridores": 0.0, "supervivencia_no_descubridores": 1.0, "diferencial_seleccion": 0.0, "tradiciones": 4, "imitaciones": 514, "beneficios": {"bayas": 1.0, "caza": 1.0, "dano_depredador": 1.0, "tasa_sed": 1.0}, "utilidad_media": {}, "escasez": {"agua": 0.0, "bayas": 0.128, "caza": 0.062}, "estacion": null, "parches": [{"id": 1, "tipo": "agua", "activo": true, "abundancia": 1.0, "x": 44.0, "y": 7.0}, {"id": 2, "tipo": "agua", "activo": true, "abundancia": 1.0, "x": 21.0, "y": 11.0}, {"id": 3, "tipo": "agua", "activo": true, "abundancia": 1.0, "x": 5.0, "y": 27.0}, {"id": 4, "tipo": "bayas", "activo": true, "abundancia": 1.0, "x": 6.0, "y": 3.9}, {"id": 5, "tipo": "bayas", "activo": true, "abundancia": 0.9, "x": 38.0, "y": 6.2}, {"id": 6, "tipo": "bayas", "activo": true, "abundancia": 0.812, "x": 51.0, "y": 7.0}, {"id": 7, "tipo": "bayas", "activo": true, "abundancia": 0.667, "x": 18.0, "y": 7.7}, {"id": 8, "tipo": "bayas", "activo": true, "abundancia": 0.929, "x": 41.0, "y": 17.0}, {"id": 9, "tipo": "bayas", "activo": true, "abundancia": 0.917, "x": 47.0, "y": 27.0}, {"id": 10, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 15.0, "y": 3.0}, {"id": 11, "tipo": "caza", "activo": true, "abundancia": 0.5, "x": 14.0, "y": 8.0}, {"id": 12, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 55.0, "y": 8.0}, {"id": 13, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 14.0, "y": 31.0}, {"id": 14, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 42.0, "y": 19.0}, {"id": 15, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 54.0, "y": 0.0}, {"id": 16, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 40.0, "y": 20.0}, {"id": 17, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 5.0, "y": 0.0}], "migraciones": 4, "nodos": [{"id": "guijarro", "rama": "litica", "nivel": 0, "titulo": "Guijarro", "origen": "arbol", "autor": 6, "tick": 1}, {"id": "lasca", "rama": "litica", "nivel": 1, "titulo": "Lasca", "origen": "arbol", "autor": 6, "tick": 4}, {"id": "bifaz", "rama": "litica", "nivel": 2, "titulo": "Bifaz", "origen": "arbol", "autor": 6, "tick": 7}, {"id": "punta_de_lanza", "rama": "litica", "nivel": 3, "titulo": "Punta de lanza", "origen": "arbol", "autor": 6, "tick": 10}, {"id": "caza_cooperativa", "rama": "litica", "nivel": 4, "titulo": "Caza cooperativa", "origen": "arbol", "autor": 6, "tick": 13}, {"id": "observar_rayo", "rama": "fuego", "nivel": 0, "titulo": "Observar el rayo", "origen": "arbol", "autor": 6, "tick": 2}, {"id": "conservar_brasas", "rama": "fuego", "nivel": 1, "titulo": "Conservar brasas", "origen": "arbol", "autor": 6, "tick": 5}, {"id": "friccion", "rama": "fuego", "nivel": 2, "titulo": "Fricci\u00f3n", "origen": "arbol", "autor": 6, "tick": 8}, {"id": "cocinar", "rama": "fuego", "nivel": 3, "titulo": "Cocinar", "origen": "arbol", "autor": 6, "tick": 11}, {"id": "ahuyentar_depredadores", "rama": "fuego", "nivel": 4, "titulo": "Ahuyentar depredadores", "origen": "arbol", "autor": 6, "tick": 14}, {"id": "gestos", "rama": "lenguaje", "nivel": 0, "titulo": "Gestos y gru\u00f1idos", "origen": "arbol", "autor": 9, "tick": 9}, {"id": "proto_palabras", "rama": "lenguaje", "nivel": 1, "titulo": "Proto-palabras", "origen": "arbol", "autor": 9, "tick": 12}, {"id": "vocabulario", "rama": "lenguaje", "nivel": 2, "titulo": "Vocabulario", "origen": "arbol", "autor": 9, "tick": 16}, {"id": "transmision_eficaz", "rama": "lenguaje", "nivel": 3, "titulo": "Transmisi\u00f3n eficaz", "origen": "arbol", "autor": 9, "tick": 17}, {"id": "tradicion_ahuyentar_depredadores", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de ahuyentar depredadores", "origen": "interaccion", "autor": 5, "tick": 342}, {"id": "tradicion_caza_cooperativa", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de caza cooperativa", "origen": "interaccion", "autor": 5, "tick": 335}, {"id": "arte_rupestre", "rama": "simbolico", "nivel": 0, "titulo": "Arte rupestre", "origen": "arbol", "autor": 6, "tick": 3}, {"id": "ritual", "rama": "simbolico", "nivel": 1, "titulo": "Ritual", "origen": "arbol", "autor": 6, "tick": 6}, {"id": "mito", "rama": "simbolico", "nivel": 2, "titulo": "Mito", "origen": "arbol", "autor": 6, "tick": 15}, {"id": "identidad_grupo", "rama": "simbolico", "nivel": 3, "titulo": "Identidad del grupo", "origen": "arbol", "autor": 6, "tick": 18}, {"id": "tradicion_identidad_grupo", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de identidad del grupo", "origen": "interaccion", "autor": 5, "tick": 343}, {"id": "tradicion_transmision_eficaz", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de transmisi\u00f3n eficaz", "origen": "interaccion", "autor": 4, "tick": 228}], "aristas": [{"origen": "guijarro", "destino": "lasca"}, {"origen": "observar_rayo", "destino": "conservar_brasas"}, {"origen": "arte_rupestre", "destino": "ritual"}, {"origen": "lasca", "destino": "bifaz"}, {"origen": "conservar_brasas", "destino": "friccion"}, {"origen": "bifaz", "destino": "punta_de_lanza"}, {"origen": "friccion", "destino": "cocinar"}, {"origen": "gestos", "destino": "proto_palabras"}, {"origen": "punta_de_lanza", "destino": "caza_cooperativa"}, {"origen": "cocinar", "destino": "ahuyentar_depredadores"}, {"origen": "proto_palabras", "destino": "mito"}, {"origen": "ritual", "destino": "mito"}, {"origen": "proto_palabras", "destino": "vocabulario"}, {"origen": "vocabulario", "destino": "transmision_eficaz"}, {"origen": "mito", "destino": "identidad_grupo"}, {"origen": "transmision_eficaz", "destino": "tradicion_transmision_eficaz"}, {"origen": "caza_cooperativa", "destino": "tradicion_caza_cooperativa"}, {"origen": "ahuyentar_depredadores", "destino": "tradicion_ahuyentar_depredadores"}, {"origen": "identidad_grupo", "destino": "tradicion_identidad_grupo"}], "pct_fuera_arbol": 18.2, "nodos_por_origen": {"arbol": 18, "combinacion": 0, "interaccion": 4, "llm": 0}, "nivel_max": 2, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true, "crisis": false, "sequia_ticks": 0, "migracion": true, "ticks_por_estacion": 0, "umbral_agotamiento": 0.25}}
 ```
 
 `--seed 7 --benchmark --headless --ticks 600` (comprueba el presupuesto de
@@ -88,14 +91,15 @@ Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 seed 7  ticks 600  poblacion 12 -> 13
 muertes 0  nacimientos 1  individuos movidos 13
 depredadores 1  ataques 2  agrupamiento max 9  huidas 160
-media energia 44.62  media sed 43.56
+media energia 45.37  media sed 43.55
+estacion sin estacion  parches 16  migraciones 5
 ```
 
 y en **stderr** (el `ms/tick` no entra en el resumen, que es determinista; su
 valor varía unas centésimas entre ejecuciones):
 
 ```
-benchmark: 0.52 ms/tick, cabe en 16.67 ms
+benchmark: 0.53 ms/tick, cabe en 16.67 ms
 ```
 
 Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
@@ -209,7 +213,10 @@ es exactamente una partida por defecto:
   "depredadores": 1,
   "depredador_activo": true,
   "crisis": false,
-  "sequia_ticks": 0
+  "sequia_ticks": 0,
+  "migracion": true,
+  "ticks_por_estacion": 0,
+  "umbral_agotamiento": 0.25
 }
 ```
 
@@ -220,8 +227,9 @@ uv run python -m tribal run --headless --config docs/config-ejemplo.json --json 
 Las claves que falten toman su default. Es **error** —código 2, mensaje con la
 clave y el valor, sin traza— una clave desconocida, `individuos` fuera de
 8–15, un mapa menor que 9×9 tiles, una tasa o un `cooldown_reproduccion` ≤ 0,
-un `depredadores` negativo, un `depredador_activo` o `crisis` que no sean
-booleanos, un `sequia_ticks` negativo o un valor de tipo equivocado
+un `depredadores` negativo, un `depredador_activo`, `crisis` o `migracion` que
+no sean booleanos, un `sequia_ticks` o un `ticks_por_estacion` negativos, un
+`umbral_agotamiento` fuera de (0, 1] o un valor de tipo equivocado
 (`"ancho": 60.7`, `"seed": "hola"`, `"individuos": true`).
 
 Precedencia: **CLI > fichero > defaults**. `--seed` y `--individuos` pasados a
@@ -234,11 +242,70 @@ uv run python -m tribal run --headless --config docs/config-ejemplo.json --seed 
 
 Una partida más larga enseña la puerta F0→F1 completa:
 `uv run python -m tribal run --seed 2 --headless --json --ticks 3000` acaba
-con `poblacion_final: 8`, `nacimientos: 8`, `muertes: 12` (1 de ellas por
-mordiscos del depredador), 4 ataques, `huidas: 927` y un `agrupamiento_max: 8`:
-ocho individuos a ≤2 tiles de un lago en el mismo tick (no necesariamente
-bebiendo a la vez). Sin ningún recurso la tribu se extingue; ese caso lo
-cubren los tests del motor.
+con `poblacion_final: 13`, `nacimientos: 14`, `muertes: 13` (1 de ellas por
+mordiscos del depredador), 6 ataques, `huidas: 526`, `migraciones: 13` y un
+`agrupamiento_max: 17`: diecisiete individuos a ≤2 tiles de un lago en el mismo
+tick (no necesariamente bebiendo a la vez). Sin ningún recurso la tribu se
+extingue; ese caso lo cubren los tests del motor.
+
+## Gradiente ambiental: parches, migración y estaciones (AMB-001)
+
+El mundo plano de la Fase 0 no hacía de «dónde y cuándo estás» una decisión.
+Desde AMB-001 (eje 3 de la hoja de ruta) los recursos viven en **parches** y el
+mundo tiene **estaciones**:
+
+- **Parches.** Al sembrar el mapa, las fuentes se agrupan por tipo y cercanía
+  (`RADIO_PARCHE = 4` tiles) en parches con centro, radio y sus fuentes. El
+  agua es un parche por lago y **no migra**: es terreno.
+- **Agotamiento local y migración.** Un parche de comida (bayas o caza) está
+  agotado cuando su abundancia —`cantidad / capacidad`— cae por debajo de
+  `umbral_agotamiento`. Tras un cooldown (240 ticks) la comida **se muda** a
+  otra zona: se sortea con `Mundo.azar` el orden de las casillas del terreno
+  que le toca (bosque para las bayas, hierba para la caza) y se toma la primera
+  que queda a ≥6 tiles del centro viejo, con todas sus fuentes en casilla
+  pisable (nunca agua ni fuera del mapa) y sin apilar una fuente sobre otra del
+  mismo tipo. La cercanía se mide **fuente a fuente con 1 tile**, no con
+  holgura: las bayas viven repartidas por los pocos tiles de bosque del mapa y
+  pedir dos tiles libres alrededor de cada mata dejaba su migración en cero. El
+  parche conserva tipo, forma y capacidad, y vuelve a estar lleno. Por qué migra
+  —la estación cambia la vegetación, la manada se desplaza— es la excusa
+  narrativa: el mecanismo es un **andamiaje** para que seguir la presa pague y
+  quedarse en la zona agotada mate, no una ley del mundo.
+- **Estaciones.** Con `ticks_por_estacion > 0` el mundo cicla
+  `primavera → verano → otoño → invierno` cada esos ticks. En invierno la
+  regeneración cae a la mitad (el intervalo se dobla) y las técnicas que
+  explotan un recurso estacional valen un 25 % más, porque la escasez muerde
+  más. Con `0` (default) no hay estaciones y el clima no cambia nada.
+
+```jsonc
+// estaciones de 150 ticks y migración: cuatro estaciones por cada 600 ticks
+{"seed": 42, "individuos": 12, "ticks_por_estacion": 150}
+```
+
+```bash
+uv run python -m tribal run --headless --ticks 600 --config mi-config.json
+# seed 42  ticks 600  poblacion 12 -> 13
+# ...
+# estacion primavera  parches 17  migraciones 4
+```
+
+El resumen publica el estado del gradiente: `estacion` (`null` sin
+estaciones), `parches` —`id`, `tipo`, `activo` (si su abundancia llega al
+umbral), `abundancia`, `x`, `y`— y `migraciones` (cuántas reubicaciones ha
+hecho el mundo). En el JSON, un parche de caza ya migrado y relleno se ve así:
+
+```json
+{"id": 10, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 15.0, "y": 3.0}
+```
+
+La verificación no premia rasgos: `tests/test_ambiente.py` monta **un solo
+mundo**, dos individuos que arrancan en la misma casilla, con el **mismo
+genoma y el mismo sexo**, y dos políticas de acción manuales; el que camina al
+parche activo sigue vivo a los 1200 ticks y el que patrulla la zona agotada
+muere en el 834. Dos procesos con la misma semilla dan el mismo resumen y otra
+semilla reubica los parches en otro sitio. Además, el barrido de 6 semillas ×
+2 mapas (60×34 y 80×50) deja **todos** los parches de bayas y de caza migrando
+al menos una vez, el agua intacta y ninguna fuente en agua o fuera del mapa.
 
 ## Genoma y habilidades (Fase 1)
 
@@ -333,11 +400,11 @@ lo que no se mide):
 
 ```bash
 uv run python -m tribal run --headless --json --ticks 2000 --crisis
-# ... "combinaciones_logradas": 5, "descubridores": [1, 2, 7, 9],
+# ... "combinaciones_logradas": 5, "descubridores": [1, 2, 9],
 #     "supervivencia_descubridores": 1.0,
-#     "supervivencia_no_descubridores": 0.895, "diferencial_seleccion": 0.105,
-#     ... se lee como: los cuatro que descubrieron siguen vivos y los demás
-#     han perdido un 10 % de efectivos
+#     "supervivencia_no_descubridores": 0.938, "diferencial_seleccion": 0.062,
+#     ... se lee como: los tres que descubrieron siguen vivos y los demás
+#     han perdido un 6 % de efectivos
 ```
 
 La ventaja no se codifica: viene de la habilidad que el autor aprende al
@@ -390,8 +457,9 @@ la ventaja de tenerla es de oportunidad, no de rasgo. El temperamento no entra
 en la cuenta: dos individuos con la misma habilidad rinden igual.
 
 El resumen publica la media aplicada en la corrida (`utilidad_media` por nodo),
-la escasez de cada recurso y `estacion` — hoy `null`, el gancho que conectará
-el clima en AMB-001.
+la escasez de cada recurso y `estacion` —`null` mientras no haya estaciones
+(`ticks_por_estacion = 0`); con estaciones, el invierno sube la utilidad de las
+técnicas que explotan bayas o caza—.
 
 Además, cuando una práctica se imita lo suficiente —tres imitadores distintos o
 cinco imitaciones en 600 ticks— nace una **tradición** de nivel 2
@@ -403,15 +471,16 @@ la emergencia (`arbol` = 0, `combinacion` = 1, `interaccion` = 2).
 ```bash
 uv run python -m tribal run --headless --json --ticks 5000 --crisis
 # ... "intentos_divergentes": 8, "combinaciones_logradas": 5, "tradiciones": 5,
-#     "beneficios": {"bayas": 1.0833, "caza": 1.2729, "dano_depredador": 0.809, ...},
-#     "utilidad_media": {"raedera": 1.0868, "caceria_dirigida": 1.19, ...},
-#     "escasez": {"agua": 0.5, "bayas": 0.833, "caza": 0.688}, "estacion": null,
+#     "beneficios": {"bayas": 1.0469, "caza": 1.0337, "dano_depredador": 0.9777, ...},
+#     "utilidad_media": {"raedera": 1.0686, "caceria_dirigida": 1.014, ...},
+#     "escasez": {"agua": 0.5, "bayas": 0.526, "caza": 0.125}, "estacion": null,
+#     "migraciones": 45,
 #     "nodos_por_origen": {"arbol": 23, "combinacion": 5, "interaccion": 5, "llm": 0}
 #     ... los cinco cruces, incluido "canto_ritual" (proto_palabras + ritual)
 uv run python -m tribal run --headless --json --ticks 5000
 # ... "intentos_divergentes": 0, "combinaciones_logradas": 0,
-#     "utilidad_media": {},
-#     "nodos_por_origen": {"arbol": 23, "combinacion": 0, "interaccion": 5, ...}
+#     "utilidad_media": {}, "migraciones": 18,
+#     "nodos_por_origen": {"arbol": 23, "combinacion": 0, "interaccion": 4, ...}
 ```
 
 ### Resultado medido del barrido (EMER-001)

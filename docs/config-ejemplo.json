@@ -10,5 +10,8 @@
   "depredadores": 1,
   "depredador_activo": true,
   "crisis": false,
-  "sequia_ticks": 0
+  "sequia_ticks": 0,
+  "migracion": true,
+  "ticks_por_estacion": 0,
+  "umbral_agotamiento": 0.25
 }

@@ -227,6 +227,9 @@ def _texto_resumen(resumen: dict[str, Any]) -> str:
             f"ataques {resumen['depredador']['ataques']}  "
             f"agrupamiento max {resumen['agrupamiento_max']}  huidas {resumen['huidas']}",
             f"media energia {resumen['media_energia']}  media sed {resumen['media_sed']}",
+            f"estacion {resumen['estacion'] or 'sin estacion'}  "
+            f"parches {len(resumen['parches'])}  "
+            f"migraciones {resumen['migraciones']}",
         ]
     )
 

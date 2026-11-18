@@ -816,3 +816,47 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 44 so
 ```
 
 </details>
+
+## AMB-001 — Gradiente ambiental: parches que se agotan y migran
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 206 passed in 58.14s
+- **Cambios:** tribal/core/modelos.py (Parche y Mundo.parches/estacion); tribal/core/recursos.py (agrupacion en parches, agotamiento local, migracion con umbral y cooldown, reubicacion con distancia minima fuente-a-fuente y validacion de terreno); tribal/core/mundo.py (siembra de parches y estacion); tribal/config.py (migracion, ticks_por_estacion, umbral_agotamiento); tribal/sim.py (estacion, parches y migraciones en el resumen; invierno en la utilidad); tribal/ui/render.py (tinte de estacion y marcador de parche agotado); tests/test_ambiente.py (nuevo, 15 casos); tests/{test_config,test_cli_run}.py; docs/config-ejemplo.json; README
+- **Decisiones:** El filtro de destino exigia 2 tiles entre TODAS las fuentes del mismo tipo; con 30-40 fuentes de bayas sobre el bosque daba 0/2000 centros validos y las bayas no migraban nunca. Ahora el filtro es fuente-a-fuente con 1 tile (prohibe apilar, deja pasar vecinas) y se toma la primera casilla valida de un orden barajado con Mundo.azar: 7 candidatos validos para bayas y 100 por ciento de migraciones en 10 combinaciones semilla-mapa. El agua no migra porque es terreno, no fauna. Las estaciones son opt-in (ticks_por_estacion=0) para no romper Fase 0: con migracion=false y sin estaciones, 37 claves del resumen son identicas a HEAD. El test de mecanismo usa el mismo mundo, casilla, genoma y sexo: la unica diferencia es la politica, y las cuatro mutaciones lo tumban.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 206 passed
+
+$ migracion de parches (barrido 2 mapas x seeds 1,2,3,5,42)
+11-14 de 11-14 parches de comida migran, bayas y caza; 0 de agua
+0 fuentes en agua, 0 fuera del mapa, 0 casillas apiladas, >=6 tiles del centro viejo
+bayas en crear(42): migra a 12.14 tiles, relleno 4/4, todo pisable, centro en BOSQUE
+misma semilla -> mismas posiciones; 7 semillas -> 7 destinos distintos por tipo
+mutaciones: saltar BAYAS -> caen 2 tests; quitar guard de agua -> cae su test;
+quitar pisable -> cae su test
+
+$ estacion (ticks_por_estacion=10): regeneracion 159 vs 99 en 400 ticks (0.62x en invierno)
+sin estaciones (0): null y factor 1.0 ; migracion=false + estaciones 0: 37 claves
+comunes identicas a HEAD (solo difiere config)
+
+$ mecanismo (mismo mundo, misma casilla 4.5/4.0, mismo Genoma(), mismo sexo)
+politica que sigue el parche: viva a 1200 ticks, salud 100.0
+politica que patrulla la zona agotada: salud 0.0 en el tick 834
+mutaciones: quedarse=sigue -> CAE ; sin migracion -> CAE ; migra sin comida -> CAE
+
+$ resumen real: "estacion primavera parches 17 migraciones 4"
+  parches[{id,tipo,activo,abundancia,x,y}] y migraciones, en JSON y en texto
+$ dos subprocesos con la misma semilla: JSON identico (7154 bytes a 1200 ticks)
+
+$ uv run pytest -q
+735 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 45 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 45 source files
+```
+
+</details>

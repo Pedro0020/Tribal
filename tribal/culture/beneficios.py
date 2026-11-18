@@ -13,9 +13,10 @@ nodo se compone de tres cosas, y ninguna es el temperamento:
   tenerla se diluye: `1 / (1 + 0.1 · portadores)`. No es una propiedad del
   rasgo ni de la técnica, es utilidad de oportunidad: lo que distingue a un
   portador es lo que los demás todavía no pueden hacer.
-- **Estación/clima.** `Situacion.estacion` es el gancho, hoy siempre `None`:
-  el mundo aún no tiene estaciones, así que no modula nada. Se conectará en
-  AMB-001 sin cambiar esta interfaz.
+- **Estación/clima.** `Situacion.estacion` modula el efecto de las técnicas que
+  explotan un recurso estacional: en invierno la vegetación y la presa escasean
+  más, así que la misma técnica vale un 25 % más. El agua no se toca: un lago
+  no se vuelve invierno. Con `estacion=None` (sin estaciones) nada cambia.
 
 El temperamento no entra en ninguna de las tres: dos individuos con la misma
 habilidad reciben exactamente la misma utilidad, sea cual sea su divergencia.
@@ -35,6 +36,10 @@ from tribal.culture.grafo import Grafo
 
 #: Cuánto diluye la ventaja cada portador extra de la técnica.
 ESCALA_DENSIDAD = 0.1
+#: En invierno el recurso estacional escasea más: la técnica que lo exprime vale
+#: esta fracción extra. El agua no entra: un lago no cambia de estación.
+BONUS_INVIERNO = 0.25
+RECURSOS_ESTACIONALES = (TipoRecurso.BAYAS, TipoRecurso.CAZA)
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +143,7 @@ def escasez_de(mundo: Mundo, tipo: TipoRecurso) -> float:
 
 
 def situacion(mundo: Mundo, *, estacion: str | None = None) -> Situacion:
-    """Foto del estado del mundo en este tick. `estacion` queda para AMB-001."""
+    """Foto del estado del mundo en este tick, con la estación en curso."""
     return Situacion(
         escasez={tipo: escasez_de(mundo, tipo) for tipo in TipoRecurso},
         estacion=estacion,
@@ -157,8 +162,15 @@ def utilidad(nodo_id: str, situacion: Situacion, portadores: int) -> float:
     Con la escasez a 1 y un solo portador vale el efecto nominal de `EFECTOS`
     (por ejemplo 1.25 para la raedera); con el recurso lleno vale 1.0. La
     densidad de portadores solo diluye la ventaja, nunca la vuelve negativa.
+    En invierno el efecto de las técnicas estacionales sube un 25 %: cuando la
+    comida escasea de verdad, lo que la exprime vale más.
     """
     efecto = _ventaja(EFECTOS[nodo_id])
+    if (
+        situacion.estacion == "invierno"
+        and RECURSO_POR_COMBINACION[nodo_id] in RECURSOS_ESTACIONALES
+    ):
+        efecto *= 1.0 + BONUS_INVIERNO
     escasez = situacion.escasez.get(RECURSO_POR_COMBINACION[nodo_id], 0.0)
     densidad = 1.0 / (1.0 + ESCALA_DENSIDAD * max(0, portadores))
     return 1.0 + efecto * escasez * densidad

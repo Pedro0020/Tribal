@@ -79,6 +79,11 @@ PRACTICAS: dict[str, Practica] = {
 #: calma el factor es 1.0 y nada cambia respecto a Fase 0.
 PENALIZACION_SEQUIA = 2.0
 FACTOR_SED_SEQUIA = 1.25
+#: Gradiente ambiental (eje 3): ciclo de estaciones y su efecto. En invierno la
+#: regeneración baja a la mitad; con `ticks_por_estacion=0` no hay estaciones y
+#: el mundo es el de la Fase 0.
+ESTACIONES = ("primavera", "verano", "otono", "invierno")
+REGENERACION_INVIERNO = 0.5
 #: Un divergente experimenta con probabilidad proporcional a lo que se desvía
 #: (máximo 15 % por tick) y completa el cruce la mitad de las veces.
 PROB_INTENTO_DIVERGENTE = 0.15
@@ -106,6 +111,8 @@ class Simulacion:
         self.combinaciones_logradas = 0
         #: Tradiciones nacidas de la imitación (nivel 2 de §8b).
         self.tradiciones = 0
+        #: Parches de comida que se han reubicado por agotamiento local (eje 3).
+        self.migraciones = 0
         self._movidos = 0
         self._ms_acumulados = 0.0
         #: Lo que la tribu ha descubierto. Vive aquí y no en el mundo.
@@ -139,13 +146,24 @@ class Simulacion:
         inicio = time.perf_counter()
 
         self.mundo.tick += 1
+        self.mundo.estacion = self._estacion()
         en_crisis = self._en_crisis()
-        recursos.regenerar(self.mundo, PENALIZACION_SEQUIA if en_crisis else 1.0)
+        recursos.regenerar(
+            self.mundo,
+            PENALIZACION_SEQUIA if en_crisis else 1.0,
+            self._factor_regeneracion(),
+        )
+        #: El gradiente ambiental va antes de decidir: quien mire el mundo este
+        #: tick ya ve la comida donde está, no donde estaba.
+        if self.config.migracion:
+            self.migraciones += len(
+                recursos.migrar(self.mundo, umbral=self.config.umbral_agotamiento)
+            )
 
         #: La utilidad de cada técnica depende del mundo de este tick (escasez
-        #: del recurso que explota y cuántos saben usarla), no de un +X % fijo,
-        #: y no del temperamento: solo mira habilidades y estado (eje 1).
-        estado = modulo_beneficios.situacion(self.mundo)
+        #: del recurso que explota, cuántos saben usarla y la estación), no de
+        #: un +X % fijo, y no del temperamento (eje 1).
+        estado = modulo_beneficios.situacion(self.mundo, estacion=self.mundo.estacion)
         utilidades = modulo_beneficios.utilidades(self.grafo, self.mundo, estado)
         for nodo_id, valor in utilidades.items():
             self._utilidad_suma[nodo_id] = self._utilidad_suma.get(nodo_id, 0.0) + valor
@@ -310,6 +328,21 @@ class Simulacion:
             return False
         return self.config.sequia_ticks <= 0 or self.mundo.tick <= self.config.sequia_ticks
 
+    def _estacion(self) -> str | None:
+        """Estación del tick, o `None` si la partida no tiene estaciones.
+
+        Cicla en el orden de `ESTACIONES` cada `ticks_por_estacion` ticks. El
+        reloj es el del mundo, así que dos partidas con la misma semilla y la
+        misma config pasan por las mismas estaciones en los mismos ticks.
+        """
+        if self.config.ticks_por_estacion <= 0:
+            return None
+        return ESTACIONES[(self.mundo.tick // self.config.ticks_por_estacion) % len(ESTACIONES)]
+
+    def _factor_regeneracion(self) -> float:
+        """Ritmo de regeneración del tick: la mitad en invierno, normal el resto."""
+        return REGENERACION_INVIERNO if self.mundo.estacion == "invierno" else 1.0
+
     def _supervivencia(self, ids: set[int]) -> float:
         """Fracción de esos ids —que alguna vez vivieron— que sigue viva."""
         if not ids:
@@ -435,6 +468,7 @@ class Simulacion:
         }
         habilidades = {individuo.id: sorted(individuo.habilidades.conocidas) for individuo in vivos}
         temperamentos = [modulo_genoma.temperamento(individuo.genoma) for individuo in vivos]
+        estado = modulo_beneficios.situacion(self.mundo, estacion=self.mundo.estacion)
         return {
             "seed": self.mundo.seed,
             "ticks": self.mundo.tick,
@@ -469,12 +503,33 @@ class Simulacion:
             "diferencial_seleccion": round(self._diferencial_seleccion(), 3),
             "tradiciones": self.tradiciones,
             "imitaciones": sum(self.grafo.imitado.values()),
-            "beneficios": modulo_beneficios.activos(self.grafo, self.mundo).a_json(),
+            "beneficios": modulo_beneficios.activos(self.grafo, self.mundo, estado).a_json(),
             "utilidad_media": self._utilidad_media(),
-            **modulo_beneficios.situacion(self.mundo).a_json(),
+            **estado.a_json(),
+            #: Gradiente ambiental (eje 3): estación, parches con su abundancia y
+            #: migraciones. Sin `estacion` no hay ciclo; los parches están siempre.
+            "parches": self._parches(),
+            "migraciones": self.migraciones,
             **self.grafo.a_json(),
             "config": self.config.a_json(),
         }
+
+    def _parches(self) -> list[dict[str, Any]]:
+        """Cada parche con su tipo, su abundancia y si está activo (da de comer)."""
+        resumen = []
+        for parche in self.mundo.parches:
+            abundancia = recursos.abundancia(self.mundo, parche)
+            resumen.append(
+                {
+                    "id": parche.id,
+                    "tipo": parche.tipo.name.lower(),
+                    "activo": abundancia >= self.config.umbral_agotamiento,
+                    "abundancia": round(abundancia, 3),
+                    "x": round(parche.x, 1),
+                    "y": round(parche.y, 1),
+                }
+            )
+        return resumen
 
 
 def crear(seed: int, individuos: int = 12, config: SimConfig | None = None) -> Simulacion:

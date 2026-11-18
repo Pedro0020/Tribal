@@ -89,6 +89,28 @@ class Individuo:
 
 
 @dataclass(slots=True)
+class Parche:
+    """Zona donde vive un tipo de recurso: centro, radio y las fuentes que lo forman.
+
+    Un parche de comida se agota **localmente** (sus fuentes se vacían) y, tras
+    un cooldown, migra a otra zona conservando tipo y capacidad. Es el gradiente
+    ambiental de la hoja de ruta (eje 3): convierte «dónde estás» en una
+    decisión. El agua no migra porque es terreno.
+    """
+
+    id: int
+    tipo: TipoRecurso
+    x: float
+    y: float
+    radio: float
+    #: Ids de las fuentes de `Mundo.recursos` que pertenecen al parche.
+    fuentes: list[int]
+    #: Cuántas veces se ha reubicado y en qué tick lo hizo por última vez.
+    migraciones: int = 0
+    tick_migracion: int = 0
+
+
+@dataclass(slots=True)
 class Depredador:
     """Acechador: persigue a la presa viva más cercana y la muerde al alcanzarla."""
 
@@ -111,6 +133,10 @@ class Mundo:
     seed: int = 0
     tick: int = 0
     depredadores: list[Depredador] = field(default_factory=list)
+    #: Parches que agrupan las fuentes de recurso (los rellena `recursos.sembrar`).
+    parches: list[Parche] = field(default_factory=list)
+    #: Estación en curso; `None` mientras no haya estaciones (`ticks_por_estacion=0`).
+    estacion: str | None = None
 
     def pisable(self, x: float, y: float) -> bool:
         """Un tile es pisable si está dentro del mapa y no es agua."""

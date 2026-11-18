@@ -41,6 +41,8 @@ CLAVES = {
     "utilidad_media",
     "escasez",
     "estacion",
+    "parches",
+    "migraciones",
     "nodos",
     "aristas",
     "pct_fuera_arbol",

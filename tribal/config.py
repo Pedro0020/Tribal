@@ -36,6 +36,7 @@ CAMPOS_ENTEROS = (
     "depredadores",
     "cooldown_reproduccion",
     "sequia_ticks",
+    "ticks_por_estacion",
 )
 #: Campos que el motor multiplica: número real, nunca una cadena.
 CAMPOS_TASA = ("tasa_sed", "tasa_energia", "tasa_salud")
@@ -68,6 +69,13 @@ class SimConfig:
     #: su duración; 0 significa que dura toda la partida.
     crisis: bool = False
     sequia_ticks: int = 0
+    #: Gradiente ambiental (eje 3): los parches de comida agotados se reubican
+    #: (`migracion`) y la estación cicla cada `ticks_por_estacion` ticks
+    #: (0 = sin estaciones, el mundo de la Fase 0). `umbral_agotamiento` es la
+    #: abundancia por debajo de la cual un parche cuenta como agotado.
+    migracion: bool = True
+    ticks_por_estacion: int = 0
+    umbral_agotamiento: float = 0.25
 
     @classmethod
     def desde_json(cls, path: str | Path) -> SimConfig:
@@ -124,6 +132,27 @@ def validar(config: SimConfig, origen: str = "config") -> None:
     if config.sequia_ticks < 0:
         raise ValueError(
             f"{origen}: sequia_ticks no puede ser negativo (recibido {config.sequia_ticks})"
+        )
+    if config.ticks_por_estacion < 0:
+        raise ValueError(
+            f"{origen}: ticks_por_estacion no puede ser negativo "
+            f"(recibido {config.ticks_por_estacion})"
+        )
+    if not isinstance(config.umbral_agotamiento, (int, float)) or isinstance(
+        config.umbral_agotamiento, bool
+    ):
+        raise ValueError(
+            f"{origen}: umbral_agotamiento debe ser un número "
+            f"(recibido {config.umbral_agotamiento!r})"
+        )
+    if not 0.0 < config.umbral_agotamiento <= 1.0:
+        raise ValueError(
+            f"{origen}: umbral_agotamiento debe estar en (0, 1] "
+            f"(recibido {config.umbral_agotamiento})"
+        )
+    if not isinstance(config.migracion, bool):
+        raise ValueError(
+            f"{origen}: migracion debe ser true o false (recibido {config.migracion!r})"
         )
     if not isinstance(config.depredador_activo, bool):
         raise ValueError(

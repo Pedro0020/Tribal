@@ -641,11 +641,14 @@
         "cambiar la semilla cambia la migracion",
         "uv run pytest -q en verde y harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "CONNECT-001",
         "FIX-ENERGIA"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 1,
+      "closed": "2026-11-18"
     },
     {
       "id": "F1-005",

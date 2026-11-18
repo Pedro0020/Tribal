@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: parches que se agotan y migran, y estaciones (AMB-001)
 - feat: utilidad situacional de las combinaciones (UTIL-001)
 - fix: la reproduccion conserva la energia (FIX-ENERGIA)
 - feat: divergencia como conducta en calma y seleccion medible (DIVERGENCIA-002)

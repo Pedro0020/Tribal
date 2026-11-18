@@ -28,6 +28,9 @@ CLAVES = {
     "depredador_activo",
     "crisis",
     "sequia_ticks",
+    "migracion",
+    "ticks_por_estacion",
+    "umbral_agotamiento",
 }
 
 
@@ -37,7 +40,14 @@ def _escribir(tmp_path: Path, contenido: dict[str, object]) -> Path:
     return destino
 
 
-def test_los_defaults_son_los_de_fase_0() -> None:
+def test_los_defaults_son_los_documentados() -> None:
+    """Los defaults de Fase 0 más el gradiente ambiental (eje 3).
+
+    El mapa, las tasas y la reproducción son los de siempre. De AMB-001 llegan
+    `migracion` (encendida: los parches agotados migran), `ticks_por_estacion`
+    (0 = sin estaciones, así que el clima no cambia nada por defecto) y el
+    umbral de agotamiento de un parche.
+    """
     config = SimConfig()
 
     assert config.a_json() == {
@@ -53,6 +63,9 @@ def test_los_defaults_son_los_de_fase_0() -> None:
         "depredador_activo": True,
         "crisis": False,
         "sequia_ticks": 0,
+        "migracion": True,
+        "ticks_por_estacion": 0,
+        "umbral_agotamiento": 0.25,
     }
     assert set(config.a_json()) == CLAVES
 
@@ -92,6 +105,11 @@ def test_config_sin_claves_toma_los_defaults(tmp_path: Path) -> None:
         ({"depredadores": -1}, "depredadores"),
         ({"cooldown_reproduccion": 0}, "cooldown_reproduccion"),
         ({"depredador_activo": 1}, "depredador_activo"),
+        ({"ticks_por_estacion": -5}, "ticks_por_estacion"),
+        ({"umbral_agotamiento": 0.0}, "umbral_agotamiento"),
+        ({"umbral_agotamiento": 1.5}, "umbral_agotamiento"),
+        ({"umbral_agotamiento": "0.2"}, "umbral_agotamiento"),
+        ({"migracion": 1}, "migracion"),
         ({"gravedad": 9.8}, "gravedad"),
     ],
 )

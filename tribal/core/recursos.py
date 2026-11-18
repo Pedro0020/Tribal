@@ -4,6 +4,11 @@ Recursos del mundo: fuentes de agua, bayas y caza.
 Cada recurso es finito (`cantidad`) y se regenera una unidad cada
 `regeneracion` ticks hasta `capacidad`. Beber y comer los agotan, así que un
 recurso muy visitado deja de servir y el individuo tiene que buscar otro.
+
+Las fuentes se agrupan en **parches** (eje 3 de la hoja de ruta). Un parche de
+comida agotado —su abundancia cae por debajo de un umbral— se reubica tras un
+cooldown: la comida «migra» a otra zona y el parche vuelve a estar lleno. Eso
+es lo que hace que seguir la presa pague y quedarse en la zona agotada mate.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ import math
 from tribal.core.modelos import (
     Individuo,
     Mundo,
+    Parche,
     Recurso,
     TipoRecurso,
     TipoTile,
@@ -24,11 +30,22 @@ REGENERACION = {TipoRecurso.AGUA: 10, TipoRecurso.BAYAS: 420, TipoRecurso.CAZA: 
 ALCANCE = {TipoRecurso.AGUA: 1.5, TipoRecurso.BAYAS: 1.5, TipoRecurso.CAZA: 1.5}
 #: Cuántas piezas de caza se reparten por el mapa.
 N_CAZA = 8
+#: Radio (en tiles) dentro del que dos fuentes del mismo tipo son el mismo parche.
+RADIO_PARCHE = 4.0
+#: Ticks mínimos entre dos migraciones del mismo parche: el mundo no es un carrusel.
+TICKS_ENTRE_MIGRACIONES = 240
+#: Una migración no es un paso al lado: la zona vieja se queda vacía.
+DISTANCIA_MINIMA_MIGRACION = 6.0
+#: Dos fuentes del mismo tipo no pueden acabar en la misma casilla. A 1.0 el
+#: filtro deja pasar las vecinas y prohíbe el apilamiento: es lo que hacía
+#: viable la migración de las bayas en el bosque.
+DISTANCIA_ENTRE_FUENTES = 1.0
 
 
 def sembrar(mundo: Mundo) -> None:
     """Reparte los recursos a partir del terreno ya generado. Idempotente."""
     mundo.recursos.clear()
+    mundo.parches.clear()
     siguiente_id = 1
 
     for x, y, radio in _anclas_de_agua(mundo):
@@ -58,8 +75,10 @@ def sembrar(mundo: Mundo) -> None:
         mundo.recursos.append(_nuevo(siguiente_id, TipoRecurso.CAZA, x, y))
         siguiente_id += 1
 
+    _agrupar(mundo)
 
-def regenerar(mundo: Mundo, penalizacion: float = 1.0) -> None:
+
+def regenerar(mundo: Mundo, penalizacion: float = 1.0, factor: float = 1.0) -> None:
     """Un punto de recurso por intervalo; nunca por encima de la capacidad.
 
     `penalizacion` (sequía, concepto §13) baja la **capacidad de carga** del
@@ -68,14 +87,64 @@ def regenerar(mundo: Mundo, penalizacion: float = 1.0) -> None:
     convertir el mapa en un desierto. La caza no se toca. Al reducir la
     capacidad también se recorta lo que hubiera de más, para que la sequía se
     note desde el primer tick y no solo cuando se agote la reserva.
+
+    `factor` escala el ritmo de regeneración sin tocar la capacidad: en
+    invierno vale 0.5 y el intervalo se dobla, así que la reserva se rellena a
+    la mitad de velocidad. Con 1.0 el camino es exactamente el de Fase 0.
     """
     for recurso in mundo.recursos:
         capacidad = recurso.capacidad
         if penalizacion > 1.0 and recurso.tipo in (TipoRecurso.AGUA, TipoRecurso.BAYAS):
             capacidad = max(1, int(recurso.capacidad / penalizacion))
         recurso.cantidad = min(recurso.cantidad, capacidad)
-        if recurso.cantidad < capacidad and mundo.tick % recurso.regeneracion == 0:
+        intervalo = (
+            recurso.regeneracion
+            if factor >= 1.0
+            else max(1, math.ceil(recurso.regeneracion / factor))
+        )
+        if recurso.cantidad < capacidad and mundo.tick % intervalo == 0:
             recurso.cantidad += 1
+
+
+def abundancia(mundo: Mundo, parche: Parche) -> float:
+    """`cantidad / capacidad` del parche, en [0, 1]; 1 = lleno, 0 = agotado."""
+    miembros = _miembros(mundo, parche)
+    capacidad = sum(recurso.capacidad for recurso in miembros)
+    if capacidad <= 0:
+        return 0.0
+    cantidad = sum(recurso.cantidad for recurso in miembros)
+    return min(1.0, max(0.0, cantidad / capacidad))
+
+
+def migrar(mundo: Mundo, *, umbral: float, cooldown: int = TICKS_ENTRE_MIGRACIONES) -> list[Parche]:
+    """Reubica los parches de comida agotados; devuelve los que migraron este tick.
+
+    Un parche está agotado cuando su abundancia cae por debajo de `umbral`: la
+    zona ya no da para mantener a nadie. Tras `cooldown` ticks desde la última
+    migración, la comida se muda a una zona nueva elegida con `Mundo.azar`
+    —determinista por semilla— y el parche vuelve a estar lleno, conservando
+    tipo y capacidad de cada fuente.
+
+    Por qué migra (la estación cambia la vegetación, la manada se desplaza) es
+    la excusa narrativa. El mecanismo es un **andamiaje**: existe para que
+    «dónde estás» sea una decisión con consecuencias, no una ley del mundo.
+    El agua no migra: es terreno.
+    """
+    migrados: list[Parche] = []
+    for parche in mundo.parches:
+        if parche.tipo == TipoRecurso.AGUA:
+            continue
+        if mundo.tick - parche.tick_migracion < cooldown:
+            continue
+        if abundancia(mundo, parche) >= umbral:
+            continue
+        miembros = _miembros(mundo, parche)
+        if not miembros or not _reubicar(mundo, parche, miembros):
+            continue
+        parche.tick_migracion = mundo.tick
+        parche.migraciones += 1
+        migrados.append(parche)
+    return migrados
 
 
 def consumir(recurso: Recurso, cantidad: int = 1) -> bool:
@@ -122,6 +191,113 @@ def _nuevo(id_: int, tipo: TipoRecurso, x: int, y: int, alcance: float | None = 
         regeneracion=REGENERACION[tipo],
         alcance=ALCANCE[tipo] if alcance is None else alcance,
     )
+
+
+def _agrupar(mundo: Mundo) -> None:
+    """Agrupa las fuentes ya sembradas en parches por tipo y cercanía.
+
+    Enlace simple: dos fuentes del mismo tipo a `RADIO_PARCHE` tiles o menos
+    pertenecen al mismo parche, y la pertenencia se propaga. Se recorren por
+    `id`, así que el reparto es determinista con la misma semilla.
+    """
+    siguiente_id = 1
+    for tipo in (TipoRecurso.AGUA, TipoRecurso.BAYAS, TipoRecurso.CAZA):
+        pendientes = sorted(
+            (recurso for recurso in mundo.recursos if recurso.tipo == tipo),
+            key=lambda recurso: recurso.id,
+        )
+        while pendientes:
+            miembros = [pendientes.pop(0)]
+            crecio = True
+            while crecio:
+                crecio = False
+                for candidato in list(pendientes):
+                    if any(
+                        distancia(candidato.x, candidato.y, miembro.x, miembro.y) <= RADIO_PARCHE
+                        for miembro in miembros
+                    ):
+                        miembros.append(candidato)
+                        pendientes.remove(candidato)
+                        crecio = True
+            mundo.parches.append(_parche(siguiente_id, miembros))
+            siguiente_id += 1
+
+
+def _parche(id_: int, miembros: list[Recurso]) -> Parche:
+    x = sum(recurso.x for recurso in miembros) / len(miembros)
+    y = sum(recurso.y for recurso in miembros) / len(miembros)
+    radio = max(distancia(x, y, recurso.x, recurso.y) for recurso in miembros)
+    return Parche(
+        id=id_,
+        tipo=miembros[0].tipo,
+        x=x,
+        y=y,
+        radio=radio,
+        fuentes=[recurso.id for recurso in miembros],
+    )
+
+
+def _miembros(mundo: Mundo, parche: Parche) -> list[Recurso]:
+    """Las fuentes del parche que siguen existiendo, en orden de `id`."""
+    ids = set(parche.fuentes)
+    return [recurso for recurso in mundo.recursos if recurso.id in ids]
+
+
+def _reubicar(mundo: Mundo, parche: Parche, miembros: list[Recurso]) -> bool:
+    """Traslada el parche a una zona nueva y lo rellena. False si no la encuentra.
+
+    La zona nueva es del tipo de terreno que le toca a la comida —bosque para
+    las bayas, hierba para la caza—, está a `DISTANCIA_MINIMA_MIGRACION` o más
+    del centro viejo, tiene que caer en casillas pisables (nunca agua ni fuera
+    del mapa) y no puede apilar una fuente sobre otra del mismo tipo
+    (`DISTANCIA_ENTRE_FUENTES`).
+
+    El orden de las casillas se sortea con `Mundo.azar` y se toma la primera
+    que cumple: determinista por semilla y sin el fallo probabilístico de
+    probar cuarenta al azar. El filtro se mide fuente a fuente —no parche a
+    parche— a propósito: las bayas viven repartidas por los pocos tiles de
+    bosque del mapa, y exigir holgura alrededor de cada mata dejaba la
+    migración de bayas en cero. Apilar dos matas en una casilla es el único
+    solape que importa. Cada fuente conserva su desplazamiento respecto al
+    centro: el parche mantiene forma y radio.
+    """
+    terreno = TipoTile.BOSQUE if parche.tipo == TipoRecurso.BAYAS else TipoTile.HIERBA
+    candidatas = [
+        (x, y)
+        for y, fila in enumerate(mundo.tiles)
+        for x, tipo in enumerate(fila)
+        if tipo == terreno
+    ]
+    if not candidatas:
+        return False
+    mundo.azar.shuffle(candidatas)
+    desplazamientos = [
+        (recurso.x - int(round(parche.x)), recurso.y - int(round(parche.y))) for recurso in miembros
+    ]
+    ids = set(parche.fuentes)
+    otros = [
+        (recurso.x, recurso.y)
+        for recurso in mundo.recursos
+        if recurso.tipo == parche.tipo and recurso.id not in ids
+    ]
+    for centro_x, centro_y in candidatas:
+        if distancia(centro_x, centro_y, parche.x, parche.y) < DISTANCIA_MINIMA_MIGRACION:
+            continue
+        destino = [(centro_x + dx, centro_y + dy) for dx, dy in desplazamientos]
+        if not all(mundo.pisable(x, y) for x, y in destino):
+            continue
+        if any(
+            distancia(x, y, otro_x, otro_y) < DISTANCIA_ENTRE_FUENTES
+            for x, y in destino
+            for otro_x, otro_y in otros
+        ):
+            continue
+        for recurso, (x, y) in zip(miembros, destino, strict=True):
+            recurso.x, recurso.y = x, y
+            recurso.cantidad = recurso.capacidad
+        parche.x, parche.y = float(centro_x), float(centro_y)
+        return True
+    return False
 
 
 def _anclas_de_agua(mundo: Mundo) -> list[tuple[int, int, float]]:
