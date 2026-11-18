@@ -410,3 +410,40 @@ md5 de pyproject/README/CHANGELOG/uv.lock identicos antes y despues; git status 
 ```
 
 </details>
+
+## FIX-002 — El RAG indexa el paquete real, no un nombre hardcodeado
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 26 passed in 1.55s
+- **Cambios:** agents/tools/rag_tool.py (_FUENTES_FIJAS + _fuentes(root) que antepone project_slug; RagTool.fuentes(root) y FUENTES calculada al importar; _documentos usa el slug); agents/tests/test_rag_fuentes.py (nuevo, 4 tests)
+- **Decisiones:** La fila del paquete se deriva de project_slug y se deduplica con las fuentes fijas. RagTool.FUENTES se congela al importar por compatibilidad, pero el camino real de indexacion usa RagTool.fuentes(root), que si sigue al project.yml de cada raiz. Sin slug no se inventa un directorio: la fuente simplemente no se anade. FUERA DE ALCANCE, anotado: agent_installer_tool.py:36 sigue con el literal app (heuristica, no indexa nada) y EXCLUIDOS compara con '/tests/' mientras el origen usa os.sep, asi que en Windows se cuelan los tests de agents al indice (preexistente).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -c "from agents.tools.rag_tool import RagTool; print([f[0] for f in RagTool.FUENTES])"
+['tribal', 'api', 'chat', 'monitoring', 'tuning', 'agents', 'agents/prompts', 'docs', 'vault', 'harness/progress']
+
+$ git grep -n '"app"' -- agents/tools/rag_tool.py
+0 coincidencias
+
+$ uv run pytest agents/tests/test_rag_fuentes.py -q
+4 passed in 0.33s
+  tribal presente | project.yml en tmp_path con otro_paquete -> otra fuente |
+  sin slug no hay fila vacia | slug repetido deduplicado
+
+$ uv run python -c "... _documentos(cwd) ..."
+230 documentos | 16 de tribal/ | 0 de app/ | repo sin project.yml -> 9 filas fijas y ninguna excepcion
+
+$ uv run pytest -q
+555 passed, 15 skipped in 62.08s
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 23 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 23 source files
+
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 26 passed
+```
+
+</details>

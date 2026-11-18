@@ -108,10 +108,13 @@
         "print([f[0] for f in RagTool.FUENTES])\" lista tribal y no app",
         "uv run pytest -q en verde y harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "DESIGN-001"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 0,
+      "closed": "2026-11-18"
     },
     {
       "id": "HARD-000",

@@ -28,6 +28,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
+from agents.config import load_project_config
 from agents.tools.registry import register_tool
 
 try:
@@ -257,6 +258,49 @@ def _html_a_texto(contenido: str) -> str:
     except Exception:  # noqa: BLE001 — HTML roto no debe tumbar el indexado
         return contenido
     return parser.texto() or contenido
+
+
+#: Raíz del repo donde vive `agents/` (agents/tools/rag_tool.py -> parents[2]).
+_RAIZ = Path(__file__).resolve().parents[2]
+
+#: Fuentes del índice que no dependen del paquete del producto.
+#: (subdirectorio, patron, recursivo, sufijos admitidos o None, troceador)
+_FUENTES_FIJAS = (
+    # El codigo que se despliega tambien es documentacion: sin estas cuatro
+    # filas, preguntar por la API o por el drift solo devolvia los prompts
+    # que los describen, nunca la implementacion que los hace. Los
+    # subdirectorios que no existan (extras desactivados) se saltan solos.
+    ("api", "*.py", True, None, "py"),
+    ("chat", "*.py", True, None, "py"),
+    ("monitoring", "*.py", True, None, "py"),
+    ("tuning", "*.py", True, None, "py"),
+    ("agents", "*.py", True, None, "py"),
+    ("agents/prompts", "*.md", False, None, "md"),
+    ("docs", "*.*", True, (".md", ".rst"), "md"),
+    ("vault", "*.md", True, None, "md"),
+    # Memoria del arnes: el historico de features cerradas y sus decisiones
+    # es lo que un agente nuevo necesita buscar en lenguaje natural sin
+    # releer todo harness/progress/.
+    ("harness/progress", "*.md", False, None, "md"),
+)
+
+
+def _fuentes(root: Path) -> tuple[tuple[str, str, bool, tuple[str, ...] | None, str], ...]:
+    """
+    Tabla de fuentes del índice para el `project.yml` de `root`.
+
+    El paquete del producto no se escribe a mano: sale del `project_slug`. Si
+    ese fichero no lo declara (checkout parcial), la fila del paquete no existe
+    — inventar un nombre haría que el índice saltara en silencio el directorio
+    real del código, que es justo el fallo que esta función evita.
+    """
+    slug = load_project_config(root).project_slug
+
+    filas: list[tuple[str, str, bool, tuple[str, ...] | None, str]] = []
+    if slug:
+        filas.append((slug, "*.py", True, None, "py"))
+    filas.extend(fila for fila in _FUENTES_FIJAS if fila[0] != slug)
+    return tuple(filas)
 
 
 @register_tool("rag")
@@ -597,25 +641,15 @@ class RagTool:
     #: esqueleto (existe? -> glob -> leer -> trocear): anadir una fuente
     #: significaba copiar el sexto. Ahora es una fila mas en la tabla.
     #: (subdirectorio, patron, recursivo, sufijos admitidos o None, troceador)
-    FUENTES = (
-        ("app", "*.py", True, None, "py"),
-        # El codigo que se despliega tambien es documentacion: sin estas cuatro
-        # filas, preguntar por la API o por el drift solo devolvia los prompts
-        # que los describen, nunca la implementacion que los hace. Los
-        # subdirectorios que no existan (extras desactivados) se saltan solos.
-        ("api", "*.py", True, None, "py"),
-        ("chat", "*.py", True, None, "py"),
-        ("monitoring", "*.py", True, None, "py"),
-        ("tuning", "*.py", True, None, "py"),
-        ("agents", "*.py", True, None, "py"),
-        ("agents/prompts", "*.md", False, None, "md"),
-        ("docs", "*.*", True, (".md", ".rst"), "md"),
-        ("vault", "*.md", True, None, "md"),
-        # Memoria del arnes: el historico de features cerradas y sus decisiones
-        # es lo que un agente nuevo necesita buscar en lenguaje natural sin
-        # releer todo harness/progress/.
-        ("harness/progress", "*.md", False, None, "md"),
-    )
+    #:
+    #: La primera fila la pone `_fuentes` a partir de `project_slug`, para el
+    #: repo donde vive este fichero. Quien indexe otra raiz usa `fuentes(root)`.
+    FUENTES = _fuentes(_RAIZ)
+
+    @staticmethod
+    def fuentes(root: Path) -> tuple[tuple[str, str, bool, tuple[str, ...] | None, str], ...]:
+        """Fuentes del índice para el `project.yml` de `root` (ver `_fuentes`)."""
+        return _fuentes(root)
 
     #: Ruido que nunca aporta a una busqueda semantica.
     EXCLUIDOS = ("__pycache__", "/tests/", "/.venv/", "/node_modules/", "/build/")
@@ -635,7 +669,7 @@ class RagTool:
             except Exception:  # noqa: BLE001
                 return None  # un fichero ilegible no tumba el indexado entero
 
-        for sub, patron, recursivo, sufijos, tipo in RagTool.FUENTES:
+        for sub, patron, recursivo, sufijos, tipo in RagTool.fuentes(root):
             base = root / sub
             if not base.exists():
                 continue
