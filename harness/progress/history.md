@@ -738,3 +738,39 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 41 so
 ```
 
 </details>
+
+## FIX-ENERGIA — La reproduccion conserva la energia, sin inyeccion neta
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 181 passed in 48.09s
+- **Cambios:** tribal/sim.py (_nacer conserva la energia: aportado = min(ENERGIA_CRIA, energia de la madre); resumen con coste_reproduccion; docstring de la constante); tests/test_reproduccion.py (nuevo, 5 casos: conservacion, madre sin energia, pareja bajo umbral en calma y crisis, guard de umbral por regimen, auditoria de 8000 ticks); tests/test_cli_run.py (CLAVES); README
+- **Decisiones:** La conservacion se garantiza por construccion, no por confiar en el umbral: el camino normal (umbral 65 > coste 50) ya era neutro, pero una madre con menos de 50 creaba energia (30 -> 0 y cria 50). Ahora la cria recibe min(50, energia de la madre) y no hay inyeccion posible; el padre no paga y no hay segunda cria. Se midio que la crisis no subsidia: 0.2762 nacimientos por 1000 persona-ticks en calma frente a 0.2788 en crisis (10 semillas), con dE = 0 auditado en cada nacimiento; la diferencia de poblacion final es ruido caotico, no natalidad. La cria nace a sed 0 y salud 100, pero en 211 nacimientos la madre estaba igual (inyeccion neta 0).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 181 passed
+
+$ conservacion de energia en el parto (_nacer)
+aportado = min(ENERGIA_CRIA=50, energia_madre) ; madre -= aportado ; cria = aportado
+barrido 30/49/50/51/64.9/65/65.1/70/100 -> delta_total = +0.000000 en todos
+cria == min(50, madre) ; solo hay dos Individuo() en el repo (fundo y _nacer) ; el padre no paga
+
+Codigo viejo (max(0.0, ...) + cria fija 50) reproducido: madre 30 -> cria 50, test FALLA (50.0 == 30.0)
+
+$ pareja con energia baja: 64 (= umbral 65 - 1) -> 0 nacimientos en calma y en crisis
+$ energia auditada por nacimiento en 8000 ticks: dE = 0 en todos
+$ 10 semillas x 8000 ticks: calma 227 nacimientos / 0.2762 por 1000 persona-ticks;
+  crisis 238 / 0.2788 (+0.94 %); umbral identico en ambos regimenes (guard AST que falla si
+  aparece UMBRAL_REPRODUCCION_CRISIS=30)
+
+$ uv run pytest -q
+710 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 43 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 43 source files
+```
+
+</details>

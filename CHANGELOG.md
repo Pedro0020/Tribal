@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- fix: la reproduccion conserva la energia (FIX-ENERGIA)
 - feat: divergencia como conducta en calma y seleccion medible (DIVERGENCIA-002)
 - feat: practicas por rama y combinaciones alcanzables (CONNECT-001)
 - feat: divergentes y conformistas con crisis (F1-003)

@@ -15,6 +15,7 @@ CLAVES = {
     "poblacion_inicial",
     "poblacion_final",
     "nacimientos",
+    "coste_reproduccion",
     "muertes",
     "media_energia",
     "media_sed",

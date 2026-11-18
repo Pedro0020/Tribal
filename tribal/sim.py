@@ -37,9 +37,9 @@ MS_FRAME = 16.67
 #: Energía mínima de los dos progenitores para tener cría, y distancia máxima entre ellos.
 UMBRAL_REPRODUCCION = 65.0
 DISTANCIA_PAREJA = 2.0
-#: Energía con la que nace una cría. La paga la madre: el nacimiento no inyecta
-#: energía neta en la población (concepto §13: una sequía no puede ser el
-#: régimen favorable por subsidio reproductivo).
+#: Energía con la que nace una cría. La paga la madre **entera**, y nunca más de
+#: lo que tiene: el nacimiento no inyecta energía neta en la población (concepto
+#: §13: una sequía no puede ser el régimen favorable por subsidio reproductivo).
 ENERGIA_CRIA = 50.0
 #: Se reexporta desde `tribal.core.genoma`; los tests de F0 fijan aquí el límite.
 MUTACION = modulo_genoma.MUTACION
@@ -247,14 +247,17 @@ class Simulacion:
 
     def _nacer(self, madre: Individuo, padre: Individuo) -> None:
         x, y = _posicion_cria(self.mundo, madre)
-        # La cría nace con energía que sale de la madre: el balance es cero.
-        # Así una cría no es comida gratis y la crisis no dispara un baby-boom.
-        madre.necesidades.energia = max(0.0, madre.necesidades.energia - ENERGIA_CRIA)
+        # La cría nace con energía que sale de la madre, y con exactamente lo que
+        # la madre puede pagar: el balance es cero aunque se llegue aquí sin pasar
+        # por el umbral. Así una cría no es comida gratis y la crisis no dispara
+        # un baby-boom.
+        aportado = min(ENERGIA_CRIA, madre.necesidades.energia)
+        madre.necesidades.energia -= aportado
         hijo = Individuo(
             id=max(individuo.id for individuo in self.mundo.individuos) + 1,
             sexo="f" if self.nacimientos % 2 == 0 else "m",
             genoma=modulo_genoma.heredar(madre.genoma, padre.genoma, self.mundo.azar),
-            necesidades=Necesidades(energia=ENERGIA_CRIA),
+            necesidades=Necesidades(energia=aportado),
             x=x,
             y=y,
             # Las habilidades no se heredan: la cría solo trae lo de la tribu.
@@ -411,6 +414,7 @@ class Simulacion:
             "poblacion_inicial": self.poblacion_inicial,
             "poblacion_final": len(vivos),
             "nacimientos": self.nacimientos,
+            "coste_reproduccion": ENERGIA_CRIA,
             "muertes": self.muertes,
             "media_energia": round(media_energia, 2),
             "media_sed": round(media_sed, 2),

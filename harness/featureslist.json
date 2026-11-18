@@ -575,8 +575,11 @@
         "La poblacion no crece en crisis por subsidio reproductivo",
         "uv run pytest -q pasa"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-18",
+      "review_rounds": 0,
+      "closed": "2026-11-18"
     },
     {
       "id": "HARNESS-EDIT",

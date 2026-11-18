@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.14-green)
+![Version](https://img.shields.io/badge/Version-0.1.15-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -297,8 +297,10 @@ crisis no hay intentos ni nodos `combinacion`**: en calma prospera la tradición
 y el motor no gasta ticks en experimentar.
 
 La **reproducción** no subvenciona la crisis: el umbral es el mismo en calma y
-en sequía (65 de energía) y la cría nace con 50 que paga la madre, así que un
-nacimiento no inyecta energía neta en la población.
+en sequía (65 de energía) y la cría nace con 50 que paga la madre —y nunca más
+de lo que tiene—, así que un nacimiento no inyecta energía neta en la población.
+El resumen lo publica como `coste_reproduccion` y el test de población comprueba
+que en crisis no nacen más crías por persona-tick que en calma.
 
 ### Conducta en calma
 
