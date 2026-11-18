@@ -203,17 +203,22 @@ def test_como_mucho_un_nodo_nuevo_por_tick() -> None:
     assert list(simulacion.grafo.nodos) == ["guijarro"]
 
 
-def test_la_simulacion_descubre_nodos_del_arbol_con_origen_arbol() -> None:
+def test_la_simulacion_descubre_el_arbol_y_alguna_tradicion() -> None:
     simulacion = crear(seed=42)
     for _ in range(600):
         simulacion.step()
 
     resumen = simulacion.resumen()
     assert resumen["nodos"], "la corrida no descubrió ningún nodo"
-    assert all(nodo["origen"] == "arbol" for nodo in resumen["nodos"])
-    assert resumen["nodos"][0]["id"] == "guijarro"
-    assert resumen["pct_fuera_arbol"] == 0.0
-    assert len(resumen["aristas"]) == len(resumen["nodos"]) - 1
+    del_arbol = [nodo for nodo in resumen["nodos"] if nodo["origen"] == "arbol"]
+    assert del_arbol[0]["id"] == "guijarro"
+    assert resumen["nodos_por_origen"]["arbol"] >= 5
+    assert resumen["nodos_por_origen"]["interaccion"] >= 1
+    assert resumen["pct_fuera_arbol"] > 0.0
+    ids = {nodo["id"] for nodo in resumen["nodos"]}
+    assert all(
+        arista["origen"] in ids and arista["destino"] in ids for arista in resumen["aristas"]
+    )
 
 
 def test_report_culture_json_imprime_nodos_aristas_y_pct(
@@ -225,8 +230,11 @@ def test_report_culture_json_imprime_nodos_aristas_y_pct(
     assert datos["seed"] == 42
     assert datos["nodos"]
     assert datos["aristas"]
-    assert datos["pct_fuera_arbol"] == 0.0
-    assert datos["nodos_por_origen"]["arbol"] == len(datos["nodos"])
+    assert datos["crisis"] is False
+    assert datos["nivel_max"] == 2
+    assert datos["pct_fuera_arbol"] > 0.0
+    assert datos["nodos_por_origen"]["arbol"] >= 5
+    assert datos["nodos_por_origen"]["interaccion"] >= 1
 
 
 def test_report_culture_sin_json_es_legible(capsys: pytest.CaptureFixture[str]) -> None:

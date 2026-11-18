@@ -30,11 +30,14 @@ CLAVES = {
     "n_neutros",
     "intentos_divergentes",
     "combinaciones_logradas",
+    "tradiciones",
     "imitaciones",
+    "beneficios",
     "nodos",
     "aristas",
     "pct_fuera_arbol",
     "nodos_por_origen",
+    "nivel_max",
     "config",
 }
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from tribal.agents import instinto, necesidades
@@ -27,6 +27,8 @@ from tribal.core.modelos import (
     Necesidades,
     TipoTile,
 )
+from tribal.culture import beneficios as modulo_beneficios
+from tribal.culture import tradiciones
 from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.grafo import Grafo
 
@@ -35,22 +37,46 @@ MS_FRAME = 16.67
 #: Energía mínima de los dos progenitores para tener cría, y distancia máxima entre ellos.
 UMBRAL_REPRODUCCION = 65.0
 DISTANCIA_PAREJA = 2.0
-#: Energía con la que nace una cría y desviación máxima del genoma heredado.
-ENERGIA_CRIA = 80.0
+#: Energía con la que nace una cría. La paga la madre: el nacimiento no inyecta
+#: energía neta en la población (concepto §13: una sequía no puede ser el
+#: régimen favorable por subsidio reproductivo).
+ENERGIA_CRIA = 50.0
 #: Se reexporta desde `tribal.core.genoma`; los tests de F0 fijan aquí el límite.
 MUTACION = modulo_genoma.MUTACION
 #: Radio (en tiles) dentro del cual se considera que alguien está junto al agua.
 RADIO_AGUA = 2.0
-#: Qué práctica, con qué habilidad, hace avanzar qué rama del árbol (F1-002).
-#: `recolectar` es la habilidad con la que arranca la tribu, así que la lítica
-#: progresa en cuanto alguien come; beber, descansar y huir no dejan cultura.
-#: Fuego, lenguaje y roles esperan su práctica: en F1 el árbol es andamiaje y
-#: solo lo recorre lo que la tribu ya sabía hacer antes de tenerlo.
-PRACTICAS: dict[str, tuple[str, Rama]] = {
-    "comer": ("recolectar", "litica"),
+
+
+@dataclass(frozen=True, slots=True)
+class Practica:
+    """Qué rama hace avanzar una conducta y qué habilidad exige, si alguna.
+
+    `habilidad` vacía significa que la condición de la práctica es la situación
+    (un vecino, un bosque, un aprendiz) y la valida el propio verbo. El árbol
+    sigue decidiendo el nivel: una práctica solo descubre el siguiente escalón
+    si sus prerrequisitos ya están activos.
+    """
+
+    rama: Rama
+    habilidad: str | None = None
+
+
+#: Qué práctica hace avanzar qué rama del árbol (F1-002 y CONNECT-001).
+#: Comer y tallar alimentan la lítica; frotar madera, el fuego; hablar, el
+#: lenguaje; enseñar y cuidar, los roles; pintar, lo simbólico. Beber,
+#: descansar, huir y moverse no dejan cultura.
+PRACTICAS: dict[str, Practica] = {
+    "comer": Practica("litica", "recolectar"),
+    "tallar": Practica("litica"),
+    "frotar_madera": Practica("fuego"),
+    "hablar": Practica("lenguaje"),
+    "ensenar": Practica("roles"),
+    "cuidar": Practica("roles"),
+    "pintar": Practica("simbolico"),
 }
-#: Sequía de concepto §13: la regeneración de agua y bayas se espacia y la sed
-#: sube. En calma el factor es 1.0 y nada cambia respecto a Fase 0.
+#: Sequía de concepto §13: el agua y las bayas reducen su capacidad de carga a
+#: la mitad y regeneran al mismo ritmo relativo; la sed sube para todos. En
+#: calma el factor es 1.0 y nada cambia respecto a Fase 0.
 PENALIZACION_SEQUIA = 2.0
 FACTOR_SED_SEQUIA = 1.25
 #: Un divergente experimenta con probabilidad proporcional a lo que se desvía
@@ -78,6 +104,8 @@ class Simulacion:
         #: Experimentos de los divergentes y cruces que llegaron a nodo (§9b).
         self.intentos_divergentes = 0
         self.combinaciones_logradas = 0
+        #: Tradiciones nacidas de la imitación (nivel 2 de §8b).
+        self.tradiciones = 0
         self._movidos = 0
         self._ms_acumulados = 0.0
         #: Lo que la tribu ha descubierto. Vive aquí y no en el mundo.
@@ -103,11 +131,17 @@ class Simulacion:
         en_crisis = self._en_crisis()
         recursos.regenerar(self.mundo, PENALIZACION_SEQUIA if en_crisis else 1.0)
 
+        #: Beneficios que disfruta cada vivo este tick, según lo que sabe. La
+        #: crisis no cambia el temperamento de nadie: cambia la capacidad de
+        #: carga del mundo y, con ella, cuánto importa saber una técnica.
+        beneficios: dict[int, modulo_beneficios.Beneficios] = {}
         for individuo in self.mundo.individuos:
+            efecto = modulo_beneficios.conocidos(self.grafo, individuo.habilidades.conocidas)
+            beneficios[individuo.id] = efecto
             necesidades.evolucionar(
                 individuo.necesidades,
                 individuo.genoma,
-                self.config.tasa_sed * (FACTOR_SED_SEQUIA if en_crisis else 1.0),
+                self.config.tasa_sed * (FACTOR_SED_SEQUIA if en_crisis else 1.0) * efecto.tasa_sed,
                 self.config.tasa_energia,
                 self.config.tasa_salud,
             )
@@ -115,7 +149,7 @@ class Simulacion:
             if individuo.cooldown_reproduccion > 0:
                 individuo.cooldown_reproduccion -= 1
 
-        modulo_depredador.mover(self.mundo)
+        modulo_depredador.mover(self.mundo, self._factor_dano)
         self._enterrar()
 
         descubierto = False
@@ -124,16 +158,29 @@ class Simulacion:
             # no come ni bebe en ese tick (concepto §9b).
             if self._intentar_combinacion(individuo):
                 continue
+            efecto = beneficios[individuo.id]
             ya_se_movio = individuo.movido
             accion = instinto.elegir(individuo, self.mundo)
             huyendo_antes = individuo.huyendo
             individuo.huyendo = accion.nombre == "huir"
             if individuo.huyendo and not huyendo_antes:
                 self.huidas += 1
-            aplicada = acciones.aplicar(individuo, self.mundo, accion)
+            aplicada = acciones.aplicar(
+                individuo,
+                self.mundo,
+                accion,
+                bonus_bayas=efecto.bayas,
+                bonus_caza=efecto.caza,
+            )
             # Una enseñanza que no prende no debe clavar al individuo: deambula.
             if not aplicada and accion.nombre == "ensenar":
-                acciones.aplicar(individuo, self.mundo, instinto.deambular(individuo, self.mundo))
+                acciones.aplicar(
+                    individuo,
+                    self.mundo,
+                    instinto.deambular(individuo, self.mundo),
+                    bonus_bayas=efecto.bayas,
+                    bonus_caza=efecto.caza,
+                )
             if individuo.movido and not ya_se_movio:
                 self._movidos += 1
             # Un nodo nuevo como mucho por tick: el árbol avanza al ritmo de la
@@ -142,10 +189,16 @@ class Simulacion:
             if aplicada and self._practicar(individuo, accion.nombre, descubrir=not descubierto):
                 descubierto = True
 
+        if tradiciones.evaluar(self.grafo, self.mundo.tick) is not None:
+            self.tradiciones += 1
         self._reproducir()
         self.agrupamiento_max = max(self.agrupamiento_max, self._junto_al_agua())
 
         self._ms_acumulados += (time.perf_counter() - inicio) * 1000.0
+
+    def _factor_dano(self, presa: Individuo) -> float:
+        """Cuánto le muerde el depredador: quien sabe la técnica de vigilia, menos."""
+        return modulo_beneficios.conocidos(self.grafo, presa.habilidades.conocidas).dano_depredador
 
     def _enterrar(self) -> None:
         """Retira a quien se quedó sin salud o sin edad. Un contador por individuo."""
@@ -161,7 +214,7 @@ class Simulacion:
     def _reproducir(self) -> None:
         """Una cría por pareja disponible y tick; el cooldown evita la explosión."""
         candidatos = [
-            individuo for individuo in self.mundo.individuos if _puede_reproducir(individuo)
+            individuo for individuo in self.mundo.individuos if self._puede_reproducir(individuo)
         ]
         madres = [individuo for individuo in candidatos if individuo.sexo == "f"]
         padres = [individuo for individuo in candidatos if individuo.sexo == "m"]
@@ -176,8 +229,22 @@ class Simulacion:
                 self._nacer(madre, padre)
                 break
 
+    def _umbral_reproduccion(self) -> float:
+        """El mismo umbral en calma y en crisis: la sequía no subvenciona la cría."""
+        return UMBRAL_REPRODUCCION
+
+    def _puede_reproducir(self, individuo: Individuo) -> bool:
+        return (
+            individuo.edad >= individuo.madurez
+            and individuo.cooldown_reproduccion == 0
+            and individuo.necesidades.energia > self._umbral_reproduccion()
+        )
+
     def _nacer(self, madre: Individuo, padre: Individuo) -> None:
         x, y = _posicion_cria(self.mundo, madre)
+        # La cría nace con energía que sale de la madre: el balance es cero.
+        # Así una cría no es comida gratis y la crisis no dispara un baby-boom.
+        madre.necesidades.energia = max(0.0, madre.necesidades.energia - ENERGIA_CRIA)
         hijo = Individuo(
             id=max(individuo.id for individuo in self.mundo.individuos) + 1,
             sexo="f" if self.nacimientos % 2 == 0 else "m",
@@ -214,7 +281,9 @@ class Simulacion:
         el motor no gasta ticks en experimentar, así que sin crisis no aparece
         ningún nodo `combinacion`. El candidato tiene que tener sus dos nodos
         activos y no existir aún; si el cruce no cuaja, el intento se cuenta
-        igual, porque el experimento ocurrió.
+        igual, porque el experimento ocurrió. Descubrirlo enseña al autor la
+        habilidad de la técnica: el nodo es de la tribu, pero la ventaja es de
+        quien la sabe usar (concepto §9b).
         """
         if not self._en_crisis():
             return False
@@ -246,29 +315,38 @@ class Simulacion:
                 tick=self.mundo.tick,
                 origen="combinacion",
             )
+            individuo.habilidades.aprender(
+                modulo_beneficios.HABILIDAD_POR_COMBINACION[candidata.id]
+            )
             self.combinaciones_logradas += 1
         return True
 
     def _practicar(self, individuo: Individuo, accion: str, *, descubrir: bool) -> bool:
         """Registra la práctica de `accion` y, si toca, avanza su rama del árbol.
 
-        Solo cuenta quien **sabe** la habilidad de la práctica (concepto §5: la
-        cultura sale de lo que ya se sabe hacer). El uso se anota en el nodo más
-        avanzado de la rama —la técnica que está funcionando— y un conformista
-        que la usa sin haberla descubierto suma una imitación (§9b). El nodo
-        nuevo nace con su origen escrito por `Grafo.descubrir`, que valida los
-        prerrequisitos.
+        Solo cuenta quien **sabe** la habilidad de la práctica, si la práctica
+        exige una (concepto §5: la cultura sale de lo que ya se sabe hacer); en
+        las que se definen por situación, el verbo ya comprobó la condición.
+        El uso se anota en el nodo más avanzado de la rama —la técnica que está
+        funcionando— y un conformista que la usa sin haberla descubierto suma
+        una imitación (§9b). El nodo nuevo nace con su origen escrito por
+        `Grafo.descubrir`, que valida los prerrequisitos.
         """
         practica = PRACTICAS.get(accion)
         if practica is None:
             return False
-        habilidad, rama = practica
-        if not individuo.habilidades.sabe(habilidad):
+        if practica.habilidad is not None and not individuo.habilidades.sabe(practica.habilidad):
             return False
+        rama = practica.rama
         en_uso = self.grafo.ultimo_activo(rama)
         if en_uso is not None:
             conformista = modulo_genoma.temperamento(individuo.genoma) == "conformista"
-            self.grafo.registrar_uso(en_uso.id, usuario=individuo.id, es_conformista=conformista)
+            self.grafo.registrar_uso(
+                en_uso.id,
+                usuario=individuo.id,
+                es_conformista=conformista,
+                tick=self.mundo.tick,
+            )
         if not descubrir:
             return False
         return self.grafo.avanzar(rama, autor=individuo.id, tick=self.mundo.tick) is not None
@@ -325,7 +403,9 @@ class Simulacion:
             "n_neutros": temperamentos.count("neutro"),
             "intentos_divergentes": self.intentos_divergentes,
             "combinaciones_logradas": self.combinaciones_logradas,
+            "tradiciones": self.tradiciones,
             "imitaciones": sum(self.grafo.imitado.values()),
+            "beneficios": modulo_beneficios.activos(self.grafo).a_json(),
             **self.grafo.a_json(),
             "config": self.config.a_json(),
         }
@@ -367,14 +447,6 @@ def run(
 def _longevidad(individuo: Individuo) -> int:
     """Ticks que vive: la base por el multiplicador heredado."""
     return int(LONGEVIDAD_TICKS * individuo.genoma.longevidad)
-
-
-def _puede_reproducir(individuo: Individuo) -> bool:
-    return (
-        individuo.edad >= individuo.madurez
-        and individuo.cooldown_reproduccion == 0
-        and individuo.necesidades.energia > UMBRAL_REPRODUCCION
-    )
 
 
 def _posicion_cria(mundo: Mundo, madre: Individuo) -> tuple[float, float]:

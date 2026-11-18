@@ -10,9 +10,10 @@ existía, con su autor y su tick originales.
 `pct_fuera_arbol` es el KPI de `objetivo.md` §3.2: porcentaje de nodos activos
 de origen `combinacion` o `interaccion` — los niveles 1 y 2 de concepto §8b —
 sobre **todos** los activos. `arbol` no es emergencia y `llm` tampoco cuenta
-como fuera del árbol en esa métrica. En Fase 1 el motor solo descubre nodos del
-árbol, así que vale 0.0 — y ese cero es el que la Fase 3 tiene que mover por
-encima del 50 %.
+como fuera del árbol en esa métrica. En Fase 1 el motor recorre el árbol
+entero y, en crisis, descubre combinaciones; las tradiciones añaden nodos de
+interacción, así que el KPI ya no vale 0.0. Subirlo por encima del 50 % sigue
+siendo el trabajo de la Fase 3.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from tribal.core.habilidades import Rama
-from tribal.culture.arbol import ARBOL, ORIGENES, RAMAS, Nodo, Origen
+from tribal.culture.arbol import ARBOL, NIVEL_ORIGEN, ORIGENES, RAMAS, Nodo, Origen
 from tribal.culture.combinaciones import COMBINACIONES
 
 
@@ -52,6 +53,10 @@ class Grafo:
         self.veces_usado: dict[str, int] = {}
         #: Cuántas de esas veces las usó un conformista que no lo descubrió.
         self.imitado: dict[str, int] = {}
+        #: Quiénes imitaron cada nodo y cuándo; de aquí salen las tradiciones.
+        self.imitadores: dict[str, set[int]] = {}
+        self.ultimo_imitador: dict[str, int] = {}
+        self.imitaciones_tick: dict[str, list[int]] = {}
 
     def activo(self, nodo_id: str) -> bool:
         nodo = self.nodos.get(nodo_id)
@@ -70,21 +75,34 @@ class Grafo:
         ]
         return max(activos, key=lambda nodo: (nodo.nivel, nodo.id)) if activos else None
 
-    def registrar_uso(self, nodo_id: str, usuario: int, es_conformista: bool) -> bool:
+    def registrar_uso(
+        self, nodo_id: str, usuario: int, es_conformista: bool, tick: int = 0
+    ) -> bool:
         """Suma un uso del nodo. True si además cuenta como imitación.
 
         La cultura es colectiva y no se guarda por individuo: la transmisión se
         mide con el contador `imitado` del nodo. Un conformista que usa una
         técnica que no descubrió está copiando lo que vio funcionar (§9b).
+        `imitadores` y `imitaciones_tick` guardan quién y cuándo porque de ahí
+        nace una tradición (nivel 2 de §8b).
         """
         nodo = self.nodos.get(nodo_id)
         if nodo is None:
             return False
         self.veces_usado[nodo_id] = self.veces_usado.get(nodo_id, 0) + 1
-        if es_conformista and nodo.autor != usuario:
-            self.imitado[nodo_id] = self.imitado.get(nodo_id, 0) + 1
-            return True
-        return False
+        if not es_conformista or nodo.autor == usuario:
+            return False
+        self.imitado[nodo_id] = self.imitado.get(nodo_id, 0) + 1
+        self.imitadores.setdefault(nodo_id, set()).add(usuario)
+        self.ultimo_imitador[nodo_id] = usuario
+        self.imitaciones_tick.setdefault(nodo_id, []).append(tick)
+        return True
+
+    def imitaciones_en_ventana(self, nodo_id: str, tick: int, ventana: int) -> int:
+        """Imitaciones del nodo en los últimos `ventana` ticks (incluye el actual)."""
+        return sum(
+            1 for momento in self.imitaciones_tick.get(nodo_id, ()) if tick - momento <= ventana
+        )
 
     def descubrir(self, nodo_id: str, autor: int, tick: int, origen: Origen = "arbol") -> Nodo:
         """Crea el nodo si se puede; `PrerequisitoFaltante` si le falta alguno.
@@ -109,6 +127,23 @@ class Grafo:
         nodo = replace(plantilla, autor=autor, tick=tick, origen=origen)
         self.nodos[nodo_id] = nodo
         self.aristas.extend(Arista(requisito, nodo_id) for requisito in plantilla.requisitos)
+        return nodo
+
+    def agregar(self, nodo: Nodo) -> Nodo:
+        """Inserta un nodo ya construido (tradiciones) validando sus requisitos.
+
+        `descubrir` solo conoce el árbol y las combinaciones; una tradición no
+        está en ninguno de los dos catálogos porque su plantilla nace de la
+        dinámica social. Idempotente, como el resto de descubrimientos.
+        """
+        existente = self.nodos.get(nodo.id)
+        if existente is not None:
+            return existente
+        faltan = tuple(requisito for requisito in nodo.requisitos if not self.activo(requisito))
+        if faltan:
+            raise PrerequisitoFaltante(nodo.id, faltan)
+        self.nodos[nodo.id] = nodo
+        self.aristas.extend(Arista(requisito, nodo.id) for requisito in nodo.requisitos)
         return nodo
 
     def avanzar(self, rama: Rama, autor: int, tick: int) -> Nodo | None:
@@ -153,6 +188,7 @@ class Grafo:
             ],
             "pct_fuera_arbol": self.pct_fuera_arbol(),
             "nodos_por_origen": self.nodos_por_origen(),
+            "nivel_max": max((NIVEL_ORIGEN[nodo.origen] for nodo in nodos), default=0),
         }
 
 

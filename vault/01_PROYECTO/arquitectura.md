@@ -385,6 +385,38 @@ bueno. Eso son las puertas de concepto §15 y el líder de la fase.
   a `app`; hasta que se corrija (feature aparte), `make index-rag` no indexa
   `tribal/`.
 
+### 9.1 Qué ramas avanza F1 y con qué prácticas
+
+La puerta F1→F2 de `concepto.md` §15 pide descubrir sin LLM algo más allá del
+primer paso forzado y que la proporción divergente reaccione a la crisis. Esta
+fase cubre la primera mitad —el material—: cada rama avanza porque la tribu
+**hace** algo, no porque el motor premie un rasgo.
+
+| Rama | Práctica (verbo) | Condición | Efecto |
+|---|---|---|---|
+| `litica` | comer | bayas o caza al alcance | energía (exige `recolectar`) |
+| `litica` | tallar | junto a bosque | −0,5 de energía |
+| `fuego` | frotar_madera | junto a bosque | −1,0 de energía |
+| `lenguaje` | hablar | otro individuo a ≤2 tiles | puede transmitir una habilidad |
+| `roles` | enseñar | aprendiz a ≤2 tiles | transmite una habilidad |
+| `roles` | cuidar | herido a ≤2 tiles (salud < 100) | +0,5 de salud al atendido |
+| `simbolico` | pintar | junto a bosque o agua | consume el tick, −0,2 de energía |
+
+`PRACTICAS` (`tribal/sim.py`) mapea verbo → `(rama, habilidad opcional)`; las
+condiciones las valida el verbo en `tribal/core/acciones.py` y el instinto las
+elige solo en el tramo ocioso, con una rotación determinista por individuo y
+tick. El árbol sigue mandando en el nivel: una práctica solo descubre el
+siguiente escalón si sus prerrequisitos están activos, y como mucho nace un nodo
+por tick. En calma avanzan las cinco ramas: lítica, fuego, lenguaje y símbolo en
+los primeros ticks; roles cuando aparece una cría o un herido. Con eso,
+`canto_ritual` (lenguaje + símbolo) y los demás cruces de
+`tribal/culture/combinaciones.py` dejan de ser inalcanzables cuando un divergente
+experimenta en crisis.
+
+Lo que esta fase **no** hace es medir la puerta completa: la proporción de
+divergentes que reacciona a la crisis es de DIVERGENCIA-002/EMER-001, y el
+`pct_fuera_arbol` de `objetivo.md` §3.2 (por encima del 50 %) es de Fase 3.
+
 ---
 
 ## 10. Referencias

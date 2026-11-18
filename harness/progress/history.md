@@ -654,3 +654,46 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 33 so
 ```
 
 </details>
+
+## CONNECT-001 — Conectar las ramas del arbol a sus practicas
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 160 passed in 33.21s
+- **Cambios:** tribal/agents/instinto.py (practicas por rama en ocio, rotacion determinista, sesgo de cohesion); tribal/core/acciones.py (tallar, frotar_madera, hablar, cuidar, pintar con coste y efecto); tribal/core/recursos y mundo (apoyo); tribal/sim.py (PRACTICAS verbo->rama y descubrimiento por practica); tribal/culture/{beneficios,tradiciones,combinaciones}.py (base de EMER-001); tests/test_practicas.py (nuevo, 19 casos) y tests/test_tradiciones.py; tests/test_arbol.py; README; vault/01_PROYECTO/arquitectura.md (§9.1 ramas y verbos)
+- **Decisiones:** Cada rama tiene verbo con efecto real (energia, salud o transmision) y el instinto solo practica en ocio: con urgencia no hay tiempo para cultura. Eso hace alcanzables las cinco ramas y los cinco cruces, no solo litica, y el test e2e de canto_ritual sale de la dinamica (control: con una sola practica solo aparece raedera). El arbol de trabajo incluye el codigo de EMER-001, que esta BLOQUEADA por su criterio 5 (2/10 semillas): aqui se conserva porque es la base correcta (sin canales de fitness por decreto, beneficios y tradiciones) y lo que falta -utilidad situacional y gradiente ambiental- va en UTIL-001 y AMB-001, con la puerta retada en F1-005. El criterio 3 del backlog decia 'en F1 solo avanza la litica'; esa premisa ya es falsa y no se puede reescribir el criterio sin la accion harness edit (HARNESS-EDIT, pendiente): la documentacion dice lo que realmente avanza.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 160 passed
+
+$ run 600 ticks, seed 42 (calma)
+ramas descubiertas: litica 5, fuego 5, lenguaje 4, roles 7, simbolico 6
+cinco practicas: tallar -> litica | frotar_madera -> fuego | hablar -> lenguaje |
+                 ensenar/cuidar -> roles | pintar -> simbolico
+solo en ocio (con urgencia no practica) y rotacion determinista por (id + tick)
+
+$ e2e de combinacion distinta de raedera (seed 42, 600 ticks, --crisis)
+canto_ritual = proto_palabras + ritual, creado por _intentar_combinacion ->
+grafo.descubrir(origen=combinacion) en el tick 76; tambien con seeds 7, 123 y 2026
+control: con PRACTICAS reducido a comer->litica solo aparece raedera y proto_palabras/
+ritual quedan inactivos
+
+$ efectos reales (y tests de su coste)
+tallar -0.5 energia | frotar_madera -1.0 | pintar -0.2 | cuidar +0.5 salud (solo salud < 100) |
+hablar puede transmitir (probabilistico; la rama avanza igual)
+Mutaciones: costes a 0 y SALUD_PARA_CUIDAR=101 -> sus tests caen.
+
+$ pct_fuera_arbol: 14.8 en calma y 30.3 en crisis (seed 42, 600 ticks); hay semillas en
+calma con 0.0, y el README ahora lo dice.
+
+$ uv run pytest -q
+689 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 40 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 40 source files
+```
+
+</details>

@@ -152,7 +152,8 @@ def test_el_genoma_del_hijo_hereda_de_los_dos_progenitores() -> None:
     assert simulacion.nacimientos == 1
     hijo = mundo.individuos[-1]
     assert hijo.id == 3
-    assert hijo.necesidades.energia == 80.0
+    assert hijo.necesidades.energia == 50.0
+    assert madre.necesidades.energia < 100.0, "la cría la paga la madre"
     assert hijo.madurez > 0 and hijo.edad == 0
     for rasgo in ("velocidad", "metabolismo", "longevidad"):
         media = (getattr(madre.genoma, rasgo) + getattr(padre.genoma, rasgo)) / 2.0

@@ -1,9 +1,15 @@
 """
-Vocabulario de acciones de Fase 0.
+Vocabulario de acciones del motor.
 
-Cada acción **valida y aplica**: comprueba que hay un recurso al alcance o que
-el destino es pisable y, si no, devuelve False sin tocar el estado. Quién elige
+Cada acción **valida y aplica**: comprueba que hay un recurso al alcance, que
+la condición de la práctica se cumple (bosque, agua, un vecino) o que el
+destino es pisable y, si no, devuelve False sin tocar el estado. Quién elige
 la acción es `tribal.agents.instinto`; el motor no decide nada por su cuenta.
+
+Los verbos ociosos (`tallar`, `frotar_madera`, `hablar`, `cuidar`, `pintar`)
+son las prácticas que conectan las ramas del árbol de conocimiento con lo que
+la tribu hace: no dan puntos, cuestan energía o el tick, y son la condición
+que `tribal.sim` exige para que una rama avance.
 """
 
 from __future__ import annotations
@@ -13,9 +19,21 @@ from dataclasses import dataclass
 from typing import Literal
 
 from tribal.core import recursos
-from tribal.core.modelos import Individuo, Mundo, TipoRecurso
+from tribal.core.modelos import Individuo, Mundo, TipoRecurso, TipoTile
 
-NombreAccion = Literal["beber", "comer", "descansar", "moverse", "huir", "ensenar"]
+NombreAccion = Literal[
+    "beber",
+    "comer",
+    "descansar",
+    "moverse",
+    "huir",
+    "ensenar",
+    "cuidar",
+    "hablar",
+    "tallar",
+    "frotar_madera",
+    "pintar",
+]
 
 #: Agua que calma una sed entera, y energía que aporta cada tipo de comida.
 SED_SACIADA = 70.0
@@ -27,6 +45,18 @@ BONUS_HABILIDAD = 0.5
 #: Alcance de la enseñanza y de la imitación pasiva, en tiles.
 DISTANCIA_ENSENANZA = 2.0
 RADIO_IMITACION = 2.0
+#: Distancia de una conversación y de un cuidado, en tiles.
+DISTANCIA_SOCIAL = 2.0
+#: Coste de energía de las prácticas ociosas: la técnica gasta al que la hace.
+COSTE_TALLAR = 0.5
+COSTE_FROTAR_MADERA = 1.0
+COSTE_PINTAR = 0.2
+COSTE_CUIDAR = 0.2
+#: Salud que recupera quien recibe cuidados en un tick.
+CUIDADO_SALUD = 0.5
+#: Por debajo de esta salud el individuo cuenta como herido y admite cuidados.
+#: A 100 el cuidado no tendría ganancia: solo gastaría al cuidador.
+SALUD_PARA_CUIDAR = 100.0
 #: Probabilidad base; la inteligencia del aprendiz y la cercanía la modulan.
 PROB_ENSENANZA = 0.5
 PROB_IMITACION = 0.4
@@ -67,11 +97,19 @@ def beber(individuo: Individuo, mundo: Mundo) -> bool:
     return True
 
 
-def comer(individuo: Individuo, mundo: Mundo) -> bool:
+def comer(
+    individuo: Individuo,
+    mundo: Mundo,
+    *,
+    bonus_bayas: float = 1.0,
+    bonus_caza: float = 1.0,
+) -> bool:
     """Come bayas o caza al alcance; la caza aporta más energía.
 
     La habilidad de la fuente (recolectar para bayas, cazar para caza) suma un
-    50 % de energía y, de paso, quien lo ve comer puede imitarla.
+    50 % de energía y, de paso, quien lo ve comer puede imitarla. Los bonus de
+    las combinaciones activas llegan de `tribal.culture.beneficios`: quien
+    sabe la técnica cobra más de la misma fuente, sea divergente o no.
     """
     comida = recursos.mas_cercano(mundo, individuo, (TipoRecurso.BAYAS, TipoRecurso.CAZA))
     if comida is None or not recursos.en_alcance(individuo, comida):
@@ -79,6 +117,7 @@ def comer(individuo: Individuo, mundo: Mundo) -> bool:
     if not recursos.consumir(comida):
         return False
     aporte = ENERGIA_CAZA if comida.tipo == TipoRecurso.CAZA else ENERGIA_BAYAS
+    aporte *= bonus_caza if comida.tipo == TipoRecurso.CAZA else bonus_bayas
     habilidad = _habilidad_de(comida.tipo)
     if habilidad is not None and individuo.habilidades.sabe(habilidad):
         aporte *= 1.0 + BONUS_HABILIDAD
@@ -199,6 +238,102 @@ def ensenar(maestro: Individuo, mundo: Mundo, aprendiz: Individuo) -> bool:
     return aprendiz.habilidades.aprender(pendiente)
 
 
+def junto_a(mundo: Mundo, individuo: Individuo, *tipos: TipoTile) -> bool:
+    """True si la casilla del individuo o una de sus vecinas es de alguno de `tipos`.
+
+    Es la condición de las prácticas que necesitan materia prima: tallar y
+    frotar piden bosque, pintar admite bosque o agua. Se mira la rejilla, no
+    los recursos, para que la condición no dependa de que queden bayas.
+    """
+    tile_x = int(individuo.x)
+    tile_y = int(individuo.y)
+    for y in range(max(0, tile_y - 1), min(mundo.alto, tile_y + 2)):
+        for x in range(max(0, tile_x - 1), min(mundo.ancho, tile_x + 2)):
+            if mundo.tiles[y][x] in tipos:
+                return True
+    return False
+
+
+def vecino(individuo: Individuo, mundo: Mundo) -> Individuo | None:
+    """Otro individuo a distancia social, el más cercano (desempata por id)."""
+    mejor: Individuo | None = None
+    mejor_clave = (math.inf, 0)
+    for otro in mundo.individuos:
+        if otro.id == individuo.id:
+            continue
+        distancia = recursos.distancia(individuo.x, individuo.y, otro.x, otro.y)
+        if distancia > DISTANCIA_SOCIAL:
+            continue
+        clave = (distancia, otro.id)
+        if clave < mejor_clave:
+            mejor = otro
+            mejor_clave = clave
+    return mejor
+
+
+def tallar(individuo: Individuo, mundo: Mundo) -> bool:
+    """Talla madera o piedra junto al bosque: la técnica cuesta energía."""
+    if not junto_a(mundo, individuo, TipoTile.BOSQUE):
+        return False
+    individuo.necesidades.energia = max(0.0, individuo.necesidades.energia - COSTE_TALLAR)
+    return True
+
+
+def frotar_madera(individuo: Individuo, mundo: Mundo) -> bool:
+    """Frota un palo contra otro junto al bosque; el esfuerzo gasta energía."""
+    if not junto_a(mundo, individuo, TipoTile.BOSQUE):
+        return False
+    individuo.necesidades.energia = max(0.0, individuo.necesidades.energia - COSTE_FROTAR_MADERA)
+    return True
+
+
+def pintar(individuo: Individuo, mundo: Mundo) -> bool:
+    """Pinta en la pared o en la orilla: consume el tick y un poco de energía."""
+    if not junto_a(mundo, individuo, TipoTile.BOSQUE, TipoTile.AGUA):
+        return False
+    individuo.necesidades.energia = max(0.0, individuo.necesidades.energia - COSTE_PINTAR)
+    return True
+
+
+def hablar(individuo: Individuo, mundo: Mundo) -> bool:
+    """Charlar con el vecino: además de habilitar el nodo, puede transmitir."""
+    interlocutor = vecino(individuo, mundo)
+    if interlocutor is None:
+        return False
+    # La conversación es un canal de transmisión más lento que la enseñanza:
+    # usa la misma probabilidad y no falla la acción si no prende nada.
+    ensenar(individuo, mundo, interlocutor)
+    return True
+
+
+def candidato_a_cuidar(cuidador: Individuo, mundo: Mundo) -> Individuo | None:
+    """Herido más cercano (salud < `SALUD_PARA_CUIDAR`) al que cuidar."""
+    mejor: Individuo | None = None
+    mejor_clave = (math.inf, 0)
+    for otro in mundo.individuos:
+        if otro.id == cuidador.id:
+            continue
+        if otro.necesidades.salud >= SALUD_PARA_CUIDAR:
+            continue
+        distancia = recursos.distancia(cuidador.x, cuidador.y, otro.x, otro.y)
+        if distancia > DISTANCIA_SOCIAL:
+            continue
+        clave = (distancia, otro.id)
+        if clave < mejor_clave:
+            mejor = otro
+            mejor_clave = clave
+    return mejor
+
+
+def cuidar(cuidador: Individuo, mundo: Mundo, atendido: Individuo) -> bool:
+    """Acompaña a un herido: el otro recupera salud, el cuidador gasta."""
+    if recursos.distancia(cuidador.x, cuidador.y, atendido.x, atendido.y) > DISTANCIA_SOCIAL:
+        return False
+    cuidador.necesidades.energia = max(0.0, cuidador.necesidades.energia - COSTE_CUIDAR)
+    atendido.necesidades.salud = min(100.0, atendido.necesidades.salud + CUIDADO_SALUD)
+    return True
+
+
 def _imitar(modelo: Individuo, habilidad: str, mundo: Mundo) -> None:
     """Quien ve usar una habilidad puede copiarla (concepto §3)."""
     for observador in mundo.individuos:
@@ -229,12 +364,19 @@ def _habilidad_de(tipo: TipoRecurso) -> str | None:
     return None
 
 
-def aplicar(individuo: Individuo, mundo: Mundo, accion: Accion) -> bool:
+def aplicar(
+    individuo: Individuo,
+    mundo: Mundo,
+    accion: Accion,
+    *,
+    bonus_bayas: float = 1.0,
+    bonus_caza: float = 1.0,
+) -> bool:
     """Despacha la acción al verbo que toca. False si no se pudo aplicar."""
     if accion.nombre == "beber":
         return beber(individuo, mundo)
     if accion.nombre == "comer":
-        return comer(individuo, mundo)
+        return comer(individuo, mundo, bonus_bayas=bonus_bayas, bonus_caza=bonus_caza)
     if accion.nombre == "descansar":
         return descansar(individuo, mundo)
     if accion.nombre == "moverse":
@@ -244,10 +386,28 @@ def aplicar(individuo: Individuo, mundo: Mundo, accion: Accion) -> bool:
     if accion.nombre == "ensenar":
         if accion.objetivo is None:
             raise ValueError("la accion ensenar necesita objetivo")
-        aprendiz = next((otro for otro in mundo.individuos if otro.id == accion.objetivo), None)
-        if aprendiz is None:
-            raise ValueError(f"la accion ensenar apunta a un id inexistente: {accion.objetivo}")
+        aprendiz = _por_id(mundo, accion.objetivo)
         return ensenar(individuo, mundo, aprendiz)
+    if accion.nombre == "cuidar":
+        if accion.objetivo is None:
+            raise ValueError("la accion cuidar necesita objetivo")
+        return cuidar(individuo, mundo, _por_id(mundo, accion.objetivo))
+    if accion.nombre == "hablar":
+        return hablar(individuo, mundo)
+    if accion.nombre == "tallar":
+        return tallar(individuo, mundo)
+    if accion.nombre == "frotar_madera":
+        return frotar_madera(individuo, mundo)
+    if accion.nombre == "pintar":
+        return pintar(individuo, mundo)
     if accion.amenaza is None:
         raise ValueError("la accion huir necesita amenaza")
     return huir(individuo, mundo, accion.amenaza)
+
+
+def _por_id(mundo: Mundo, id_: int) -> Individuo:
+    """Individuo con ese id; error si la acción social apunta a un fantasma."""
+    for otro in mundo.individuos:
+        if otro.id == id_:
+            return otro
+    raise ValueError(f"la accion social apunta a un id inexistente: {id_}")

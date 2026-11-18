@@ -126,6 +126,12 @@ La coherencia y la evolución cultural dependen de esto. Tres niveles:
 
 > Cada acción se resuelve con **reglas simples + habilidades + azar + entorno**. El LLM *elige* la acción, no la *ejecuta*.
 
+> **Cómo elige (viabilidad, §viabilidad-modelo):** el LLM no elige entre las ~20
+> acciones del vocabulario —eso falla—; elige entre **2–4 candidatas que las
+> reglas ya filtraron como viables para ese estado**, con **few-shot** (1–2
+> ejemplos de estado→acción) y **temperatura baja (~0.3)**. El motor valida y
+> solo corrige si viola una restricción dura (depredador encima → huir).
+
 ---
 
 ## 8. Árbol de conocimiento / cultura (progresión)
@@ -215,7 +221,7 @@ Un conformista también puede ser saliente (p. ej. un anciano muy respetado que 
 
 ## 10. El papel exacto del LLM
 
-1. **Decidir la acción** de los individuos que "piensan" ese turno (ver §10b). Salida JSON corto.
+1. **Elegir la acción** de los individuos que "piensan" ese turno (ver §10b), **de entre las 2–4 candidatas que las reglas ya filtraron**. Salida JSON corto, con few-shot y temperatura baja (~0.3). El motor valida y solo veta restricciones duras.
 2. **Generar pensamiento/diálogo** para ver la "vida interior".
 3. **Proponer descubrimientos/inventos** dentro de las reglas de plausibilidad del árbol.
 4. **Narrar hitos** (primera chispa, primera caza en grupo, primera palabra, primera muerte de un anciano).
@@ -229,7 +235,7 @@ Un conformista también puede ser saliente (p. ej. un anciano muy respetado que 
   "dialogo": "Si afilo la piedra, no tendré que acercarme tanto."
 }
 ```
-> **Obligatorio**: JSON schema / gramáticas (*constrained decoding*) para que el modelo no divague.
+> **Obligatorio**: JSON schema / gramáticas (*constrained decoding*) para que el modelo no divague. Además, el motor **valida** la elección y la corrige solo si viola una restricción dura. Justificación empírica en `viabilidad-modelo.md` (a 3B: elegir entre candidatas acierta 6/8; generar desde cero, 1/6).
 
 ---
 
@@ -345,7 +351,44 @@ Cada fase termina en una **puerta go/no-go**: un criterio observable que decide 
 - Escala → Pequeña (8–15 individuos).
 - Estética → Pixel art.
 
+**Resueltas** (más):
+- Persistencia → Guardar y reanudar la tribu entre sesiones (§17).
+- Reinicio → Eliminar el mundo actual y empezar de cero (§17).
+- Nombre → **Tribal**.
+
 **Pendientes**:
-1. **Persistencia**: ¿guardar la tribu y su cultura entre sesiones?
-2. **Nombre**: ¿"La Tribu", "Tribu", o algo más evocador?
-3. **Escala de tiempo**: ¿cuánto tiempo real representa un día/estación (velocidad del reloj, acelerable)?
+1. **Escala de tiempo**: ¿cuánto tiempo real representa un día/estación (velocidad del reloj, acelerable)?
+
+---
+
+## 17. Guardar, cerrar y empezar de cero
+
+Dos acciones de runtime, ambas desde la ventana del simulador (menú o teclas):
+
+1. **Guardar y cerrar** — el estado se persiste y se puede reanudar luego.
+2. **Nuevo mundo** — borra el mundo actual y empieza de cero.
+
+### Qué se guarda
+
+Todo lo que ya vive en SQLite (§5 del stack): individuos, relaciones, recursos,
+mundo (`tick`/estación/clima), grafo de cultura (nodos/aristas), recuerdos,
+diario y telemetría. Además:
+
+- **Semilla y estado del RNG**: una partida retomada es exacta y reproducible.
+  Se guarda la semilla inicial y el estado del generador, no solo el contador.
+- **Metadatos del save**: nombre, fecha, seed, población y nº de nodos de cultura
+  (`save_meta.json`).
+
+### Semántica
+
+- **Guardar y cerrar** = `COMMIT` + snapshot consistente + salir limpio. Aunque se
+  cierre la ventana, SQLite ya es durable; "guardar" asegura un punto coherente.
+- **Reanudar** = abrir el `world.db` existente y seguir desde el `tick` guardado.
+- **Nuevo mundo** = archivar (opcional) o borrar el `world.db` actual, generar una
+  semilla nueva y empezar en tick 0 con una tribu nueva de 8–15 individuos.
+
+### UX mínima
+
+- Al arrancar con un mundo existente: **Continuar / Nuevo mundo**.
+- **Guardar y salir** con una tecla/menú, y **confirmación explícita** antes de
+  **Nuevo mundo** (es destructivo e irreversible).

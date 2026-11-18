@@ -231,10 +231,13 @@
         "uv run python -m tribal report culture --json muestra al menos un nodo de nivel 1 o 2",
         "uv run pytest -q en verde y harness gate success=true"
       ],
-      "status": "pending",
+      "status": "blocked",
       "depends_on": [
         "F1-003"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 2,
+      "blocked_reason": "Bloqueada por decision del lider a peticion del usuario. Los cuatro canales de ventaja (penalizacion al comer, sed extra, ventaja reproductiva, plasticidad numerica) son fitness por decreto: premian el rasgo, no la conducta. La sequia ademas salia favorable por UMBRAL_REPRODUCCION_CRISIS=30 y ENERGIA_CRIA=80. Diagnostico y arreglo: vault/01_PROYECTO/emergencia-seleccion.md. Se implementa como EMER-001 y no se afloja el criterio de la puerta."
     },
     {
       "id": "HARD-1",
@@ -480,6 +483,223 @@
       "depends_on": [
         "F3-006"
       ]
+    },
+    {
+      "id": "SAVE-001",
+      "title": "Guardar y cerrar: persistencia entre sesiones",
+      "description": "Guardar y cerrar: persistencia entre sesiones",
+      "acceptance_criteria": [
+        "data/world.db + save_meta.json se escriben al cerrar con COMMIT coherente",
+        "reanudar carga el estado y sigue desde el tick guardado (test)",
+        "la semilla y el estado del RNG se guardan y restauran (test de determinismo)",
+        "make check pasa"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "RESET-001",
+      "title": "Nuevo mundo: borrar y empezar de cero",
+      "description": "Nuevo mundo: borrar y empezar de cero",
+      "acceptance_criteria": [
+        "nuevo mundo borra o archiva world.db y genera semilla nueva",
+        "pedir confirmacion explicita antes de borrar (destructivo)",
+        "tras nuevo mundo tick=0 y 8-15 individuos iniciales (test)",
+        "make check pasa"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "EMER-001",
+      "title": "Seleccion real: la divergencia solo decide conducta",
+      "description": "Rehacer la puerta F1 sobre un mecanismo honesto: se borran los cuatro canales que premiaban el rasgo por decreto (penalizacion al comer, sed extra, ventaja reproductiva y plasticidad numerica). La divergencia solo elige conducta; la aptitud viene de lo que esa conducta produce en el mundo. Diagnostico y reglas en vault/01_PROYECTO/emergencia-seleccion.md.",
+      "acceptance_criteria": [
+        "no queda ningun canal que premie el rasgo: sin PENALIZACION_CONFORMISTA_CRISIS, sin factor de sed por crisis ligado al temperamento, sin VENTAJA_REPRODUCTIVA_DIVERGENTE y sin _plasmar_divergencia/_moldear_divergencia (el genoma no se edita en runtime)",
+        "la crisis baja la capacidad de carga (menos bayas y agua) y el bonus de una combinacion activa se aplica por igual a quien la conoce, sea divergente o no",
+        "reproduccion: umbral en crisis >= umbral en calma y la cria no inyecta energia neta",
+        "test que compara nacimientos por 1000 ticks en calma y en crisis y exige que la crisis no sea el regimen favorable",
+        "test de mecanismo: en crisis, quien descubrio una combinacion sobrevive/energeticamente mejor que quien no, con independencia de su divergencia",
+        "y un divergente que no descubre nada rinde igual que un conformista",
+        "barrido de 10 semillas x 8000 ticks publicado entero (sin seleccionar): proporcion de divergentes con crisis frente a calma, poblacion final, extinciones",
+        "sube en >=8/10, no baja en ninguna y la crisis no es mas poblada que la calma en >=6/10",
+        "uv run pytest -q en verde y harness gate success=true"
+      ],
+      "status": "blocked",
+      "depends_on": [
+        "F1-003"
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 0,
+      "blocked_reason": "Criterio 5 no alcanzado: con un solo cruce alcanzable (raedera) la ventaja del divergente es un evento unico y la proporcion no sube (2/10 semillas). El codigo correcto (canales borrados, beneficios y tradiciones) queda en el arbol como base de CONNECT-001, DIVERGENCIA-002 y FIX-ENERGIA, que atacan la causa: mas practicas y combinaciones alcanzables, conducta divergente tambien en calma y reproduccion sin inyeccion de energia."
+    },
+    {
+      "id": "CONNECT-001",
+      "title": "Conectar las ramas del arbol a sus practicas",
+      "description": "Conectar las ramas del arbol a sus practicas",
+      "acceptance_criteria": [
+        "Existe una practica del instinto por cada rama (fuego, lenguaje, roles, simbolico), no solo comer a litica",
+        "Un test demuestra que al menos una combinacion distinta de 'raedera' es alcanzable en partida",
+        "El criterio de la puerta F1 a F2 documenta que en F1 solo avanza la litica",
+        "uv run pytest -q pasa"
+      ],
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-18",
+      "review_rounds": 0,
+      "closed": "2026-11-18"
+    },
+    {
+      "id": "DIVERGENCIA-002",
+      "title": "La divergencia es conducta tambien en calma, no solo en crisis",
+      "description": "La divergencia es conducta tambien en calma, no solo en crisis",
+      "acceptance_criteria": [
+        "Un divergente se comporta distinto de un conformista tambien en calma (deambula o explora un radio mayor), no solo experimenta en crisis",
+        "El rasgo divergencia no recibe ventaja directa: sin penalizacion al comer, sed, reproduccion ni plasticidad numerica (ver emergencia-seleccion.md)",
+        "La proporcion de divergentes responde a seleccion por conducta, medible por mecanismo (descubridor vs no descubridor)",
+        "uv run pytest -q pasa"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "FIX-ENERGIA",
+      "title": "La reproduccion conserva la energia, sin inyeccion neta",
+      "description": "La reproduccion conserva la energia, sin inyeccion neta",
+      "acceptance_criteria": [
+        "La cria no nace con mas energia de la que su madre paga (la madre pierde energia al parir)",
+        "Un test demuestra que una pareja con energia baja no produce un hijo con energia alta",
+        "La poblacion no crece en crisis por subsidio reproductivo",
+        "uv run pytest -q pasa"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "HARNESS-EDIT",
+      "title": "Anadir accion edit al agente harness",
+      "description": "Anadir accion edit al agente harness",
+      "acceptance_criteria": [
+        "Existe 'harness edit --id' que modifica titulo, descripcion o criterios de una feature sin tocar el JSON a mano",
+        "El edit rechaza ids inexistentes y features que no estan pending",
+        "Hay tests del nuevo comando en agents/tests",
+        "init.sh termina en ENTORNO LISTO"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "REFINE-001",
+      "title": "Refinamiento del sistema segun la hoja de ruta",
+      "description": "Refinamiento del sistema segun la hoja de ruta",
+      "acceptance_criteria": [
+        "La hoja de ruta de refinamiento esta en vault/01_PROYECTO/refinamiento-hoja-de-ruta.md",
+        "Cada eje se implementa como feature propia con test de consecuencia observable, no de decorado",
+        "La utilidad situacional y el prestigio (ejes 1 y 2) van antes que el resto",
+        "No se empieza hasta cerrar EMER-001, F2 y F3"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "UTIL-001",
+      "title": "Utilidad situacional: el invento vale segun el estado",
+      "description": "Eje 1 de refinamiento-hoja-de-ruta.md. Hoy una combinacion da un multiplicador fijo (raedera +25 % bayas) siempre. La utilidad debe depender del contexto: escasez del recurso, estacion, noche, densidad. Asi el valor de un invento es condicional y la seleccion depende del estado, no del rasgo.",
+      "acceptance_criteria": [
+        "beneficios.py deja de ser un multiplicador fijo: la utilidad de cada combinacion es funcion del estado del mundo (escasez del recurso que explota, estacion/clima y densidad de portadores)",
+        "test con la MISMA semilla: en calma (recurso abundante) tener el invento no mueve la supervivencia mas alla de un umbral pequeño",
+        "en crisis (recurso escaso) la mueve de forma clara",
+        "el resumen expone utilidad_media por nodo y el estado que la modula (escasez/estacion), no solo el multiplicador",
+        "test de que la utilidad no depende del temperamento: dos individuos con la misma habilidad rinden igual, sea cual sea su divergencia",
+        "uv run pytest -q en verde y harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "CONNECT-001",
+        "FIX-ENERGIA"
+      ]
+    },
+    {
+      "id": "AMB-001",
+      "title": "Gradiente ambiental: parches que se agotan y migran",
+      "description": "Eje 3 de refinamiento-hoja-de-ruta.md. El mundo es casi uniforme: donde y cuando estas no es una decision. Parches de comida que se agotan localmente y reaparecen en otro sitio (migracion) convierten explorar/migrar en conducta que paga o mata.",
+      "acceptance_criteria": [
+        "los recursos viven en parches que se agotan localmente y reaparecen en otra zona (migracion) o cambian con una estacion",
+        "la config lo controla y es determinista por semilla",
+        "test de mecanismo: con el mismo mundo y semilla, una politica que sigue el parche sobrevive mas ticks que una que se queda en la zona agotada (sin premiar rasgos)",
+        "el resumen expone estacion/parche activo y su abundancia",
+        "dos subprocesos con la misma semilla dan el mismo resumen",
+        "cambiar la semilla cambia la migracion",
+        "uv run pytest -q en verde y harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "CONNECT-001",
+        "FIX-ENERGIA"
+      ]
+    },
+    {
+      "id": "F1-005",
+      "title": "Puerta F1 a F2 con seleccion por conducta",
+      "description": "Reintento de la puerta F1 sobre el mecanismo corregido: la crisis cambia QUE conducta paga (utilidad situacional + gradiente ambiental), la divergencia solo decide conducta y la aptitud viene de lo que esa conducta produce. Sustituye a F1-004 (bloqueada) y EMER-001 (bloqueada) como puerta real.",
+      "acceptance_criteria": [
+        "test de mecanismo: en crisis, quien descubrio una combinacion sobrevive/energeticamente mejor que quien no, con independencia de su divergencia",
+        "un divergente que no descubre nada rinde igual que un conformista",
+        "barrido 1..10 completo publicado (8000 ticks, con y sin crisis): div% final, media y sigma, nacidos, nodos nuevos, poblacion y extinciones",
+        "la proporcion sube en >=8/10 y no baja en ninguna",
+        "la crisis no es el regimen favorable: poblacion final en crisis <= calma en >=6/10 semillas y no hay mas extinciones en crisis que en calma",
+        "ningun canal premia el rasgo: sin penalizacion al comer por temperamento, sin sed por temperamento, sin ventaja reproductiva y sin edicion del genoma en runtime (test que lee las constantes y falla si reaparecen)",
+        "vault/01_PROYECTO/arquitectura.md y README documentan el mecanismo real de la puerta y el resultado del barrido",
+        "uv run pytest -q en verde y harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "UTIL-001",
+        "AMB-001",
+        "DIVERGENCIA-002",
+        "FIX-ENERGIA"
+      ]
+    },
+    {
+      "id": "EMER-002",
+      "title": "Utilidad situacional: el beneficio depende del contexto",
+      "description": "Utilidad situacional: el beneficio depende del contexto",
+      "acceptance_criteria": [
+        "El beneficio de una combinacion depende del estado del entorno (solo paga cuando su recurso escasea), no es un multiplicador global fijo",
+        "En calma el invento no mueve la supervivencia de forma medible",
+        "en crisis si (test con y sin crisis)",
+        "Un test demuestra que la ventaja del descubridor es condicional al contexto, no permanente",
+        "uv run pytest -q pasa"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "EMER-003",
+      "title": "Gradiente ambiental: la crisis cambia que conducta paga",
+      "description": "Gradiente ambiental: la crisis cambia que conducta paga",
+      "acceptance_criteria": [
+        "La crisis cambia que recurso esta disponible (las bayas se agotan y aparece un recurso alternativo), no solo baja la regeneracion uniformemente",
+        "La conducta antigua deja de rendir en crisis y una conducta distinta rinde (test)",
+        "Un divergente que prueba el recurso nuevo sobrevive mas que un conformista que insiste en el viejo (test)",
+        "uv run pytest -q pasa"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "F2-CONTRATO",
+      "title": "F2: contrato candidatas -> elige -> valida para la decision",
+      "description": "F2: contrato candidatas -> elige -> valida para la decision",
+      "acceptance_criteria": [
+        "El LLM elige la accion de entre 2-4 candidatas viables que las reglas filtraron para el estado, no de todo el vocabulario",
+        "Hay few-shot (1-2 ejemplos de estado->accion) y temperatura ~0.3 en las decisiones",
+        "El motor valida la eleccion y solo corrige si viola una restriccion dura",
+        "Un test demuestra que elegir entre candidatas supera el 70% de acierto en escenarios simples",
+        "uv run pytest -q pasa"
+      ],
+      "status": "pending",
+      "depends_on": []
     }
   ]
 }

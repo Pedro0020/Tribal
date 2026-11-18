@@ -62,14 +62,19 @@ def sembrar(mundo: Mundo) -> None:
 def regenerar(mundo: Mundo, penalizacion: float = 1.0) -> None:
     """Un punto de recurso por intervalo; nunca por encima de la capacidad.
 
-    `penalizacion` (sequía, concepto §13) espacia la regeneración del agua y
-    las bayas: 2.0 tarda el doble, 3.0 el triple. La caza no se toca.
+    `penalizacion` (sequía, concepto §13) baja la **capacidad de carga** del
+    agua y las bayas: con 2.0 el tope se queda en la mitad. La regeneración
+    conserva su ritmo, así que la sequía reduce la reserva disponible sin
+    convertir el mapa en un desierto. La caza no se toca. Al reducir la
+    capacidad también se recorta lo que hubiera de más, para que la sequía se
+    note desde el primer tick y no solo cuando se agote la reserva.
     """
     for recurso in mundo.recursos:
-        intervalo = recurso.regeneracion
+        capacidad = recurso.capacidad
         if penalizacion > 1.0 and recurso.tipo in (TipoRecurso.AGUA, TipoRecurso.BAYAS):
-            intervalo = int(recurso.regeneracion * penalizacion)
-        if recurso.cantidad < recurso.capacidad and mundo.tick % intervalo == 0:
+            capacidad = max(1, int(recurso.capacidad / penalizacion))
+        recurso.cantidad = min(recurso.cantidad, capacidad)
+        if recurso.cantidad < capacidad and mundo.tick % recurso.regeneracion == 0:
             recurso.cantidad += 1
 
 

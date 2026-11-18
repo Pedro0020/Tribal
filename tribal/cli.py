@@ -94,6 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Fichero JSON con los parámetros de la partida (ver docs/config-ejemplo.json).",
     )
+    culture.add_argument(
+        "--crisis",
+        action="store_true",
+        help="Simula la crisis (sequía) antes de resumir el grafo.",
+    )
     culture.add_argument("--json", action="store_true", help="Informe como un único objeto JSON.")
 
     return parser
@@ -169,11 +174,16 @@ def _report(args: argparse.Namespace) -> int:
         print("error: --ticks debe ser mayor que 0", file=sys.stderr)
         return 2
 
-    config = replace(base, seed=seed)
+    config = replace(base, seed=seed, crisis=base.crisis or args.crisis)
     simulacion = run_sim(
         args.ticks, seed, headless=True, individuos=config.individuos, config=config
     )
-    informe: dict[str, Any] = {"seed": seed, "ticks": args.ticks, **simulacion.grafo.a_json()}
+    informe: dict[str, Any] = {
+        "seed": seed,
+        "ticks": args.ticks,
+        "crisis": config.crisis,
+        **simulacion.grafo.a_json(),
+    }
     if args.json:
         print(json.dumps(informe, ensure_ascii=True))
     else:
@@ -185,7 +195,7 @@ def _texto_cultura(informe: dict[str, Any]) -> str:
     lineas = [
         f"seed {informe['seed']}  ticks {informe['ticks']}",
         f"nodos {len(informe['nodos'])}  aristas {len(informe['aristas'])}  "
-        f"pct_fuera_arbol {informe['pct_fuera_arbol']}",
+        f"pct_fuera_arbol {informe['pct_fuera_arbol']}  nivel_max {informe['nivel_max']}",
     ]
     lineas.extend(
         f"  {nodo['rama']:<9} {nodo['nivel']}  {nodo['titulo']:<20} "

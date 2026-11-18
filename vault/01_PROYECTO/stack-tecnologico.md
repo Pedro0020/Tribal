@@ -7,15 +7,15 @@
 
 ## 1. Resumen del stack
 
-| Área | Elección |
-|---|---|
-| Lenguaje | **Python** |
-| Visualización 2D | **Pygame**, mapa top-down, **pixel art** |
-| Datos | **SQLite** (con columnas JSON) + grafo en dos tablas + export a Markdown |
-| LLM local (Fase 2) | **Ollama** (`tribal-llm`, base qwen2.5-3B Q8_0, ctx 8192) + JSON schema · API local `127.0.0.1:11434` |
-| Embeddings (Fase 2–3) | **Qwen3-Embedding-0.6B** (o embeddinggemma-2) |
-| Grafo de cultura en vivo (Fase 3) | Pantalla web con **D3.js** (opcional) |
-| Desarrollo | **MeshHarmes** como esqueleto (AGENTS.md, backlog por fases) |
+| Área                              | Elección                                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Lenguaje                          | **Python**                                                                                            |
+| Visualización 2D                  | **Pygame**, mapa top-down, **pixel art**                                                              |
+| Datos                             | **SQLite** (con columnas JSON) + grafo en dos tablas + export a Markdown                              |
+| LLM local (Fase 2)                | **Ollama** (`tribal-llm`, base qwen2.5-3B Q8_0, ctx 8192) + JSON schema · API local `127.0.0.1:11434` |
+| Embeddings (Fase 2–3)             | **Qwen3-Embedding-0.6B** (o embeddinggemma-2)                                                         |
+| Grafo de cultura en vivo (Fase 3) | Pantalla web con **D3.js** (opcional)                                                                 |
+| Desarrollo                        | **MeshHarmes** como esqueleto (AGENTS.md, backlog por fases)                                          |
 
 ---
 
@@ -172,6 +172,7 @@ telemetria(tick, poblacion, n_divergentes, n_conformistas, n_nodos, n_aristas)
 - **`tick`** = nº de frame desde el inicio; el tiempo continuo se deriva (`seg_simulado = tick / fps * velocidad_reloj`). La `telemetria` muestrea por **intervalo**, no por frame.
 - **Flexible donde importa**: `genoma`, `habilidades`, `personalidad`, `contenido` y `texto` son JSON/texto libre.
 - **Export a Obsidian**: `nodos` + `aristas` se vuelcan a `.md` con `[[wikilinks]]` para ver la cultura en la vista de grafo de Obsidian.
+- **Guardado (concepto §17):** un único `data/world.db` es todo el estado. Cerrar = `COMMIT` + `save_meta.json` (seed, fecha, población, nº de nodos) + estado del RNG. `data/saves/` (opcional) archiva partidas antes de "nuevo mundo".
 
 ---
 

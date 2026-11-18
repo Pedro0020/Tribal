@@ -30,6 +30,10 @@ RAMAS: tuple[Rama, ...] = ("litica", "fuego", "lenguaje", "roles", "simbolico")
 #: propuesta del modelo, y el KPI de `objetivo.md` §3.2 no lo cuenta como fuera
 #: del árbol. `nodos_por_origen` los recorre todos.
 ORIGENES: tuple[str, ...] = ("arbol", "combinacion", "interaccion", "llm")
+#: Nivel de emergencia de concepto §8b que representa cada origen. `llm` no
+#: es un nivel propio, pero una propuesta del modelo es al menos tan ajena al
+#: árbol como una interacción; se informa como 2.
+NIVEL_ORIGEN: dict[str, int] = {"arbol": 0, "combinacion": 1, "interaccion": 2, "llm": 2}
 
 Origen = Literal["arbol", "combinacion", "interaccion", "llm"]
 #: Un nodo `apagado` no se borra: la técnica perdida es parte del experimento.

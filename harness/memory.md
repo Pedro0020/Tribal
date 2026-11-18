@@ -34,6 +34,45 @@ cada sesión — cualquier anotación aquí persiste entre sesiones.
   decisiones/minuto, y `keep_alive: "15m"`. Objetivo: ≤ 30 % de ciclo de
   trabajo y < 78 °C. Está detallado en stack-tecnologico.md §8.
 
+## Veredicto del modelo local (viabilidad, 2026-11-18)
+
+- **`tribal-llm` decide bien SOLO eligiendo entre acciones candidatas** (6/8 con
+  few-shot + temp 0.3), **no generando la acción desde cero** (1/6 con persona,
+  2/4 con estado numérico). Sirve para **salida JSON** y **narración en español**.
+- **En F2, contrato "candidatas → elige → valida":** las reglas proponen 2–4
+  acciones viables, el LLM elige una y la justifica (`razon`/`dialogo`), y el
+  motor corrige solo si viola una restricción dura. El instinto se queda lo
+  trivial (sed→beber, lobo→huir); el LLM, los dilemas y lo social.
+- Datos completos en `vault/01_PROYECTO/viabilidad-modelo.md`. Revisar
+  concepto §10/§10b en consecuencia.
+- La feature **`F2-CONTRATO`** está en la cola y codifica ese contrato con
+  tests; **hacerla antes de `F2-001`** (que es el cliente HTTP de decisiones).
+
+## Funciones de runtime pendientes (requisito del usuario)
+
+Añadir al backlog features para:
+- **Guardar y cerrar**: persistencia en SQLite + semilla/estado del RNG +
+  `save_meta.json`; reanudar desde el `tick` guardado.
+- **Nuevo mundo**: archivar/borrar el `world.db` actual y empezar de cero con
+  semilla nueva, **con confirmación explícita** (destructivo).
+Diseño en concepto.md §17 y stack-tecnologico.md §5.
+
+## F1-004: la ventaja del divergente no puede ser "por decreto"
+
+Antes de reimplementar la puerta F1→F2, leer
+`vault/01_PROYECTO/emergencia-seleccion.md`. Resumen: borrar los 4 canales que
+premian el rasgo `divergencia` directamente (penalización al comer, sed extra,
+ventaja reproductiva, plasticidad numérica) y corregir la reproducción en crisis
+(umbral ≥ calma, sin inyectar energía). La divergencia solo decide conducta; la
+aptitud sale de lo que esa conducta produce. La puerta se mide por mecanismo
+(descubridor vs no descubridor), no por proporción del rasgo.
+
+**Secuencia para pasar la puerta F1 honestamente (decisión del usuario):**
+tras CONNECT-001, DIVERGENCIA-002 y FIX-ENERGIA, implementar **EMER-002**
+(utilidad situacional) y **EMER-003** (gradiente ambiental) **antes de F2**, y
+reintentar la puerta F1. Sin payoff condicional la selección se diluye (EMER-001
+dio 2/10 semillas, casi azar). No saltar a F2 con la puerta sin demostrar.
+
 ## Tests conocidos en rojo en Windows (plantilla)
 
 `uv run pytest` deja 16 fallos **preexistentes** de la plantilla en Windows:
