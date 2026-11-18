@@ -11,14 +11,14 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
+from pathlib import Path
+from typing import Any
 
 from tribal import __version__
+from tribal.config import MAX_INDIVIDUOS, MIN_INDIVIDUOS, SimConfig
 from tribal.sim import MS_FRAME
 from tribal.sim import run as run_sim
-
-#: Rango jugable de Fase 0: por debajo no hay tribu, por encima no hay frame.
-MIN_INDIVIDUOS = 8
-MAX_INDIVIDUOS = 15
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,12 +30,24 @@ def build_parser() -> argparse.ArgumentParser:
     hello.add_argument("--name", default="mundo", help="A quién saludar.")
 
     run = sub.add_parser("run", help="Ejecuta la simulación de Fase 0.")
-    run.add_argument("--seed", type=int, default=42, help="Semilla del mundo (default 42).")
+    run.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Semilla del mundo; manda sobre la del --config (default 42).",
+    )
     run.add_argument(
         "--individuos",
         type=int,
-        default=12,
-        help=f"Población inicial, {MIN_INDIVIDUOS}-{MAX_INDIVIDUOS} (default 12).",
+        default=None,
+        help=f"Población inicial, {MIN_INDIVIDUOS}-{MAX_INDIVIDUOS}; manda sobre el --config "
+        "(default 12).",
+    )
+    run.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Fichero JSON con los parámetros de la partida (ver docs/config-ejemplo.json).",
     )
     run.add_argument("--ticks", type=int, default=0, help="Ticks a simular; 0 = sin límite.")
     run.add_argument("--headless", action="store_true", help="Sin ventana.")
@@ -60,10 +72,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
-    if not MIN_INDIVIDUOS <= args.individuos <= MAX_INDIVIDUOS:
+    try:
+        base = SimConfig.desde_json(args.config) if args.config else SimConfig()
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    # Precedencia: CLI > fichero > defaults.
+    individuos = base.individuos if args.individuos is None else args.individuos
+    seed = base.seed if args.seed is None else args.seed
+
+    if not MIN_INDIVIDUOS <= individuos <= MAX_INDIVIDUOS:
         print(
             f"error: --individuos debe estar entre {MIN_INDIVIDUOS} y {MAX_INDIVIDUOS} "
-            f"(recibido {args.individuos})",
+            f"(recibido {individuos})",
             file=sys.stderr,
         )
         return 2
@@ -71,7 +93,8 @@ def _run(args: argparse.Namespace) -> int:
         print("error: --headless necesita --ticks mayor que 0", file=sys.stderr)
         return 2
 
-    simulacion = run_sim(args.ticks, args.seed, args.headless, individuos=args.individuos)
+    config = replace(base, seed=seed, individuos=individuos)
+    simulacion = run_sim(args.ticks, seed, args.headless, individuos=individuos, config=config)
     resumen = simulacion.resumen()
 
     if args.json:
@@ -95,7 +118,7 @@ def _benchmark(ms_tick_medio: float) -> int:
     return 0
 
 
-def _texto_resumen(resumen: dict[str, int | float]) -> str:
+def _texto_resumen(resumen: dict[str, Any]) -> str:
     return "\n".join(
         [
             f"seed {resumen['seed']}  ticks {resumen['ticks']}  "

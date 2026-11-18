@@ -24,12 +24,22 @@ UMBRAL_AGOTAMIENTO = 10.0
 UMBRAL_SALUD = 20.0
 
 
-def evolucionar(necesidades: Necesidades, genoma: Genoma) -> None:
-    """Un tick de homeostasis. El metabolismo del genoma escala el desgaste."""
-    necesidades.sed = min(100.0, necesidades.sed + SED_POR_TICK * genoma.metabolismo)
-    necesidades.energia = max(0.0, necesidades.energia - ENERGIA_POR_TICK * genoma.metabolismo)
+def evolucionar(
+    necesidades: Necesidades,
+    genoma: Genoma,
+    tasa_sed: float = SED_POR_TICK,
+    tasa_energia: float = ENERGIA_POR_TICK,
+    tasa_salud: float = DANO_SALUD,
+) -> None:
+    """Un tick de homeostasis. El metabolismo del genoma escala el desgaste.
+
+    Las tasas llegan de `SimConfig`; los defaults son los de Fase 0 para quien
+    llame a este módulo sin configuración.
+    """
+    necesidades.sed = min(100.0, necesidades.sed + tasa_sed * genoma.metabolismo)
+    necesidades.energia = max(0.0, necesidades.energia - tasa_energia * genoma.metabolismo)
     if necesidades.sed >= 100.0 or necesidades.energia <= 0.0:
-        necesidades.salud = max(0.0, necesidades.salud - DANO_SALUD * genoma.metabolismo)
+        necesidades.salud = max(0.0, necesidades.salud - tasa_salud * genoma.metabolismo)
     else:
         necesidades.salud = min(100.0, necesidades.salud + RECUPERACION_SALUD)
 

@@ -9,8 +9,11 @@ que el motor se puede ejercitar y medir sin abrir ventana ni cargar SDL.
 from __future__ import annotations
 
 import time
+from dataclasses import replace
+from typing import Any
 
 from tribal.agents import instinto, necesidades
+from tribal.config import SimConfig
 from tribal.core import acciones, recursos
 from tribal.core import mundo as modulo_mundo
 from tribal.core.modelos import Mundo
@@ -22,8 +25,14 @@ MS_FRAME = 16.67
 class Simulacion:
     """Estado de una partida: mundo + contadores que no viven en el mundo."""
 
-    def __init__(self, mundo: Mundo) -> None:
+    def __init__(self, mundo: Mundo, config: SimConfig | None = None) -> None:
         self.mundo = mundo
+        self.config = config or SimConfig(
+            seed=mundo.seed,
+            individuos=len(mundo.individuos),
+            ancho=mundo.ancho,
+            alto=mundo.alto,
+        )
         self.poblacion_inicial = len(mundo.individuos)
         self.muertes = 0
         self.nacimientos = 0
@@ -38,7 +47,13 @@ class Simulacion:
         recursos.regenerar(self.mundo)
 
         for individuo in self.mundo.individuos:
-            necesidades.evolucionar(individuo.necesidades, individuo.genoma)
+            necesidades.evolucionar(
+                individuo.necesidades,
+                individuo.genoma,
+                self.config.tasa_sed,
+                self.config.tasa_energia,
+                self.config.tasa_salud,
+            )
 
         vivos = []
         for individuo in self.mundo.individuos:
@@ -66,7 +81,7 @@ class Simulacion:
     def ms_tick_medio(self) -> float:
         return self._ms_acumulados / self.mundo.tick if self.mundo.tick else 0.0
 
-    def resumen(self) -> dict[str, int | float]:
+    def resumen(self) -> dict[str, Any]:
         """Dict serializable y determinista: no incluye tiempos de reloj de pared."""
         vivos = self.mundo.individuos
         media_energia = (
@@ -85,20 +100,32 @@ class Simulacion:
             "media_energia": round(media_energia, 2),
             "media_sed": round(media_sed, 2),
             "individuos_movidos": self._movidos,
+            "config": self.config.a_json(),
         }
 
 
-def crear(seed: int, individuos: int = 12) -> Simulacion:
-    return Simulacion(modulo_mundo.crear(seed, individuos))
+def crear(seed: int, individuos: int = 12, config: SimConfig | None = None) -> Simulacion:
+    """Partida nueva. `seed` e `individuos` mandan sobre lo que diga `config`."""
+    if config is None:
+        config = SimConfig(seed=seed, individuos=individuos)
+    else:
+        config = replace(config, seed=seed, individuos=individuos)
+    return Simulacion(modulo_mundo.crear(seed, individuos, config=config), config)
 
 
-def run(ticks: int, seed: int, headless: bool, individuos: int = 12) -> Simulacion:
+def run(
+    ticks: int,
+    seed: int,
+    headless: bool,
+    individuos: int = 12,
+    config: SimConfig | None = None,
+) -> Simulacion:
     """Corre la partida `ticks` ticks (`0` = sin límite) y devuelve la simulación.
 
     En modo ventana el límite lo pone el usuario con ESC o cerrando la ventana;
     `ticks` sigue sirviendo como tope opcional.
     """
-    simulacion = crear(seed, individuos)
+    simulacion = crear(seed, individuos, config)
     if headless:
         for _ in range(ticks):
             simulacion.step()

@@ -1,0 +1,9 @@
+{
+  "seed": 42,
+  "individuos": 12,
+  "ancho": 60,
+  "alto": 34,
+  "tasa_sed": 0.16,
+  "tasa_energia": 0.15,
+  "tasa_salud": 0.6
+}

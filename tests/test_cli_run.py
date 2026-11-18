@@ -19,6 +19,7 @@ CLAVES = {
     "media_energia",
     "media_sed",
     "individuos_movidos",
+    "config",
 }
 
 
@@ -30,6 +31,7 @@ def test_run_headless_json_imprime_un_objeto(capsys: pytest.CaptureFixture[str])
     assert datos["ticks"] == 120
     assert datos["poblacion_inicial"] == 12
     assert datos["nacimientos"] == 0
+    assert datos["config"]["seed"] == 42
 
 
 def test_dos_ejecuciones_json_dan_la_misma_salida(capsys: pytest.CaptureFixture[str]) -> None:

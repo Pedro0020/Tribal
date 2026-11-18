@@ -1,6 +1,8 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.0
+    # Misma versión que `uv run ruff` (dev): con dos versiones distintas, el
+    # local decía verde y el hook rojo ante la misma regla.
+    rev: v0.16.1
     hooks:
       - id: ruff
         args: [--fix]

@@ -447,3 +447,46 @@ $ uv run python -m agents --json run harness gate
 ```
 
 </details>
+
+## HARD-000 — Reproducibilidad por semilla y configuracion (Fase 0)
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 48 passed in 2.45s
+- **Cambios:** tribal/config.py (nuevo: SimConfig frozen/slots + validacion tipada + desde_json/a_json); tribal/core/mundo.py (crear recibe config; _mancha parametrizada); tribal/agents/necesidades.py (evolucionar recibe tasas con defaults); tribal/sim.py (config en crear/run y en resumen); tribal/cli.py (--config y precedencia); tests/test_config.py (nuevo, 22 casos); tests/test_cli_run.py (CLAVES); docs/config-ejemplo.json; README (Configuracion y semilla)
+- **Decisiones:** SimConfig es la unica fuente de parametros y se serializa al resumen, para que una partida se pueda repetir desde el JSON que la describe. Defaults identicos a Fase 0 (60x34, 0.16/0.15/0.6, 12 individuos): el comportamiento no cambia. La validacion es tipada y nombra clave y valor, porque dos configs que pasaban antes reventaban con traza dentro del motor. MIN_LADO=9 es el minimo real del mapa por el radio de la mancha de recursos. La precedencia es CLI > fichero > defaults y esta documentada. Tests de determinismo a nivel de proceso (subprocess), no solo intra-proceso.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m tribal run --headless --config docs/config-ejemplo.json --ticks 600 --json
+{"seed": 42, "ticks": 600, ..., "media_energia": 66.62, "media_sed": 42.32, "individuos_movidos": 12,
+ "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34,
+            "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6}}
+(dos procesos CLI distintos -> stdout byte a byte identico)
+
+$ uv run python -m tribal run --config docs/config-ejemplo.json --headless --json --seed 7 --individuos 9
+poblacion_inicial 9 | config.seed 7 | config.individuos 9   (precedencia CLI > fichero > defaults)
+
+$ configs invalidas -> exit 2, error con la clave, sin Traceback
+ancho 6 -> debe ser al menos 9 tiles | ancho 60.7 -> debe ser un entero
+tasa_sed "0.2" -> debe ser un numero | seed "hola" -> debe ser un entero
+individuos true -> no vale bool | individuos 5 -> entre 8 y 15
+tasa_salud -0.1 -> mayor que 0 | clave gravedad -> claves desconocidas: gravedad
+
+$ uv run pytest tests/test_config.py -q
+22 passed
+$ uv run pytest -q
+577 passed, 15 skipped in 61.81s
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 25 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 25 source files
+
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 48 passed
+
+Mutacion verificada por el reviewer: quitar el cableado de tasas en sim.step ->
+test_cambiar_una_tasa_cambia_el_resumen FALLA (1 failed, 21 passed); restaurado.
+```
+
+</details>

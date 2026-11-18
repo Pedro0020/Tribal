@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import random
 
+from tribal.config import SimConfig
 from tribal.core import recursos
 from tribal.core.modelos import (
-    ALTO_TILES,
-    ANCHO_TILES,
     Genoma,
     Individuo,
     Mundo,
@@ -28,18 +27,33 @@ RADIO_LAGO = 2
 RADIO_BOSQUE = 2
 
 
-def crear(seed: int, individuos: int = 12) -> Mundo:
-    """Genera un mapa nuevo con `individuos` habitantes. Determinista por semilla."""
+def crear(seed: int, individuos: int = 12, *, config: SimConfig | None = None) -> Mundo:
+    """Genera un mapa nuevo con `individuos` habitantes. Determinista por semilla.
+
+    Las dimensiones y las tasas salen de `config`; sin ella se usan los defaults
+    de Fase 0, que es lo que esperan los tests y el camino de la CLI sin fichero.
+    """
+    if config is None:
+        config = SimConfig(seed=seed, individuos=individuos)
+
     azar = random.Random(seed)
-    tiles = [[TipoTile.HIERBA for _ in range(ANCHO_TILES)] for _ in range(ALTO_TILES)]
+    tiles = [[TipoTile.HIERBA for _ in range(config.ancho)] for _ in range(config.alto)]
     for _ in range(N_LAGOS):
-        _mancha(tiles, azar, RADIO_LAGO, TipoTile.AGUA)
+        _mancha(tiles, azar, RADIO_LAGO, TipoTile.AGUA, config.ancho, config.alto)
     for _ in range(N_BOSQUES):
-        _mancha(tiles, azar, RADIO_BOSQUE, TipoTile.BOSQUE, respetar=TipoTile.AGUA)
+        _mancha(
+            tiles,
+            azar,
+            RADIO_BOSQUE,
+            TipoTile.BOSQUE,
+            config.ancho,
+            config.alto,
+            respetar=TipoTile.AGUA,
+        )
 
     mundo = Mundo(
-        ancho=ANCHO_TILES,
-        alto=ALTO_TILES,
+        ancho=config.ancho,
+        alto=config.alto,
         tiles=tiles,
         recursos=[],
         individuos=[],
@@ -56,11 +70,13 @@ def _mancha(
     azar: random.Random,
     radio: int,
     tipo: TipoTile,
+    ancho: int,
+    alto: int,
     respetar: TipoTile | None = None,
 ) -> None:
     """Dibuja una mancha romboidal del tipo pedido en un punto al azar."""
-    centro_x = azar.randint(radio + 2, ANCHO_TILES - radio - 3)
-    centro_y = azar.randint(radio + 2, ALTO_TILES - radio - 3)
+    centro_x = azar.randint(radio + 2, ancho - radio - 3)
+    centro_y = azar.randint(radio + 2, alto - radio - 3)
     for dy in range(-radio, radio + 1):
         for dx in range(-radio, radio + 1):
             if abs(dx) + abs(dy) > radio:

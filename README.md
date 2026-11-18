@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.7-green)
+![Version](https://img.shields.io/badge/Version-0.1.8-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -68,7 +68,7 @@ sexo) y una franja de HUD con tick, población y media de energía y sed.
 Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 
 ```json
-{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 12, "nacimientos": 0, "muertes": 0, "media_energia": 66.62, "media_sed": 42.32, "individuos_movidos": 12}
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 12, "nacimientos": 0, "muertes": 0, "media_energia": 66.62, "media_sed": 42.32, "individuos_movidos": 12, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6}}
 ```
 
 `--seed 7 --benchmark --headless --ticks 600` (comprueba el presupuesto de
@@ -88,8 +88,49 @@ benchmark: 0.24 ms/tick, cabe en 16.67 ms
 ```
 
 Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
-`--ticks` (`0` = sin límite en ventana; obligatorio > 0 con `--headless`),
-`--headless`, `--json` y `--benchmark`.
+`--config` (fichero JSON), `--ticks` (`0` = sin límite en ventana; obligatorio
+> 0 con `--headless`), `--headless`, `--json` y `--benchmark`.
+
+## Configuración y semilla
+
+Una partida se reproduce con **semilla + configuración**: la semilla fija el
+azar del mundo y la configuración fija todo lo demás (población, tamaño del
+mapa y tasas de desgaste). `SimConfig` (`tribal/config.py`) reúne esos
+parámetros, es inmutable y se serializa a JSON; el resumen de la partida los
+incluye en su campo `config`, así que una salida inesperada se puede volver a
+ejecutar en vez de solo anotarse.
+
+El fichero de ejemplo, commiteado como [`docs/config-ejemplo.json`](docs/config-ejemplo.json),
+es exactamente una partida por defecto:
+
+```json
+{
+  "seed": 42,
+  "individuos": 12,
+  "ancho": 60,
+  "alto": 34,
+  "tasa_sed": 0.16,
+  "tasa_energia": 0.15,
+  "tasa_salud": 0.6
+}
+```
+
+```bash
+uv run python -m tribal run --headless --config docs/config-ejemplo.json --json --ticks 600
+```
+
+Las claves que falten toman su default. Es **error** —código 2, mensaje con la
+clave y el valor, sin traza— una clave desconocida, `individuos` fuera de
+8–15, un mapa menor que 9×9 tiles, una tasa ≤ 0 o un valor de tipo equivocado
+(`"ancho": 60.7`, `"seed": "hola"`, `"individuos": true`).
+
+Precedencia: **CLI > fichero > defaults**. `--seed` y `--individuos` pasados a
+mano mandan sobre el fichero (y el resumen refleja los valores efectivos):
+
+```bash
+uv run python -m tribal run --headless --config docs/config-ejemplo.json --seed 7 --individuos 9 --json --ticks 30
+# ... "seed": 7, "poblacion_inicial": 9, "config": {"seed": 7, "individuos": 9, ...}
+```
 
 Una partida más larga enseña el coste de no cubrir una necesidad:
 `uv run python -m tribal run --seed 2 --headless --json --ticks 3000` acaba con

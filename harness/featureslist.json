@@ -128,10 +128,13 @@
         "README documenta la configuracion y un ejemplo de fichero",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "CORE-001"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 1,
+      "closed": "2026-11-18"
     },
     {
       "id": "F0-002",
