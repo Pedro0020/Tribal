@@ -559,8 +559,11 @@
         "La proporcion de divergentes responde a seleccion por conducta, medible por mecanismo (descubridor vs no descubridor)",
         "uv run pytest -q pasa"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-18",
+      "review_rounds": 1,
+      "closed": "2026-11-18"
     },
     {
       "id": "FIX-ENERGIA",

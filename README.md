@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.13-green)
+![Version](https://img.shields.io/badge/Version-0.1.14-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -300,6 +300,74 @@ La **reproducción** no subvenciona la crisis: el umbral es el mismo en calma y
 en sequía (65 de energía) y la cría nace con 50 que paga la madre, así que un
 nacimiento no inyecta energía neta en la población.
 
+### Conducta en calma
+
+El rasgo no espera a la crisis: en el tramo ocioso el **paseo** también depende
+de `divergencia` ([`tribal/agents/instinto.py`](tribal/agents/instinto.py)). El
+radio del deambular va de **3 tiles** en el conformista a **10** en el
+divergente (5 en el neutro), y el sesgo de cohesión es firmado: el conformista
+apunta al vecino más cercano y el divergente se aparta de él. El destino se
+recuerda hasta llegar, así que un radio grande es un rumbo largo y no una
+difusión. La misma semilla da la misma trayectoria: todo sale de `Mundo.azar`.
+
+La urgencia manda por encima del temperamento: con sed crítica los dos van al
+agua y con un depredador encima los dos huyen. El paseo no cuesta energía ni
+cambia la sed, el bocado, la cría o el genoma: el rasgo decide **qué hace**, no
+**cuánto rinde**. Medido con 8 semillas × 120 ticks, mismo mapa y misma posición
+de partida: el divergente explora un radio medio de 10.0 tiles y el conformista
+6.2.
+
+### Telemetría de la selección
+
+`run --json` publica quién descubrió y qué le pasó (eje 6: no se puede refinar
+lo que no se mide):
+
+| Clave | Qué mide |
+|---|---|
+| `descubridores` | ids que descubrieron al menos una combinación |
+| `supervivencia_descubridores` | fracción de esos ids que sigue viva |
+| `supervivencia_no_descubridores` | lo mismo para el resto de quienes alguna vez vivieron |
+| `diferencial_seleccion` | la resta: > 0 si descubrir sale a cuenta |
+
+```bash
+uv run python -m tribal run --headless --json --ticks 2000 --crisis
+# ... "combinaciones_logradas": 5, "descubridores": [1, 2, 7, 9],
+#     "supervivencia_descubridores": 1.0,
+#     "supervivencia_no_descubridores": 0.895, "diferencial_seleccion": 0.105,
+#     ... se lee como: los cuatro que descubrieron siguen vivos y los demás
+#     han perdido un 10 % de efectivos
+```
+
+La ventaja no se codifica: viene de la habilidad que el autor aprende al
+descubrir (+25 % de bayas con `raedera`, −50 % de daño con
+`turnos_de_vigilia`…) y de que su recurso escasee. Un divergente que no descubre
+nada rinde exactamente igual que un conformista, y dos individuos con la **misma
+divergencia** solo se diferencian por lo que saben hacer.
+
+2000 ticks, 12 individuos, `crisis=true`; `div%` es la proporción de divergentes
+vivos y `dif` el diferencial de selección:
+
+```
+seed | div% calma->crisis | descubridores | supD/supN | dif
+   1 |  11.8 ->  11.8 | 1 | 1.000/0.842 | +0.158
+   2 |  40.0 ->  17.6 | 2 | 0.500/0.842 | -0.342
+   3 |  29.4 ->  52.9 | 3 | 0.667/0.882 | -0.216
+   4 |  44.4 ->  25.0 | 3 | 0.667/0.714 | -0.048
+   5 |  61.1 ->  58.8 | 3 | 0.667/0.833 | -0.167
+   6 |   0.0 ->   0.0 | 0 | 0.000/0.579 |  0.000
+   7 |  10.0 ->   6.2 | 2 | 0.500/0.789 | -0.289
+   8 |   0.0 ->   5.0 | 1 | 1.000/0.864 | +0.136
+   9 |  11.1 ->  21.1 | 3 | 1.000/0.941 | +0.059
+  10 |  37.5 ->  20.0 | 3 | 0.667/0.812 | -0.146
+```
+
+Lectura honesta: el mecanismo ya es medible, pero con doce individuos la deriva
+manda. El signo del diferencial cambia según la semilla (4/10 a favor), y la
+proporción de divergentes no sube de forma sistemática: descubrir cuesta ticks y
+la técnica se transmite a los conformistas en cuanto se usa. Lo que sí es
+estable es de quién es la ventaja cuando aparece —del descubridor que aprendió
+la habilidad, no del rasgo—.
+
 Las combinaciones activas aportan un efecto determinista, publicado en
 `beneficios`:
 
@@ -361,9 +429,11 @@ están en `harness/progress/implementer-EMER-001.md`.
 Ese barrido es anterior a CONNECT-001: entonces solo se alcanzaba `raedera`.
 Desde CONNECT-001 las cinco ramas tienen práctica y los cinco cruces son
 alcanzables en una partida corta con crisis —incluido `canto_ritual`, que exige
-`proto_palabras` (lenguaje) y `ritual` (símbolo)—. Lo que sigue sin medirse es
-la puerta F1→F2 completa: que la proporción de divergentes reaccione a la
-crisis. Eso es de DIVERGENCIA-002, no de este material.
+`proto_palabras` (lenguaje) y `ritual` (símbolo)—. Desde DIVERGENCIA-002 la
+divergencia también cambia la conducta en calma y el resumen trae
+`descubridores` y `diferencial_seleccion`, así que la puerta F1→F2 ya se puede
+medir en vez de discutir: la tabla de la sección anterior dice que el mecanismo
+existe y que la proporción todavía no reacciona de forma sistemática.
 
 ## Principios
 

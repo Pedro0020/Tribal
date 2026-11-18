@@ -83,6 +83,9 @@ class Individuo:
     huyendo: bool = False
     #: Lo que sabe hacer; se aprende enseñando o imitando, nunca por genoma.
     habilidades: Habilidades = field(default_factory=Habilidades)
+    #: Destino del paseo ocioso. Se recuerda para que el deambular tenga
+    #: dirección: el radio del paseo depende del temperamento, no del tick.
+    paseo: tuple[float, float] | None = None
 
 
 @dataclass(slots=True)

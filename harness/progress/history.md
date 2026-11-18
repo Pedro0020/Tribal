@@ -697,3 +697,44 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 40 so
 ```
 
 </details>
+
+## DIVERGENCIA-002 — La divergencia es conducta tambien en calma, no solo en crisis
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 176 passed in 31.54s
+- **Cambios:** tribal/agents/instinto.py (radio de deambulacion 3/5/10 por temperamento, sesgo de cohesion firmado, rumbo recordado en Individuo.paseo); tribal/core/modelos.py (campo paseo); tribal/sim.py (descubridores, supervivencia con y sin descubrimiento, diferencial_seleccion); tests/test_divergencia_calma.py (nuevo, 16 casos); README; arquitectura.md §9.2
+- **Decisiones:** La divergencia solo decide conducta: en calma cambia el radio explorado (3/5/10 tiles) y el sesgo de cohesion, y nunca la urgencia. La aptitud se mide, no se decretada: diferencial_seleccion = supervivencia de descubridores - no descubridores, con las crias en el denominador y descubridores = autores de nodos origen combinacion (no imitadores). La vigilancia contra ventajas por decreto pasa a ser un guard por lista blanca de accesos a divergencia recorriendo funciones de todo tribal/, mas cuatro tests conductuales (bocado, sed al beber 50/90, umbral de cria +-1, genoma congelado a 500 ticks): las cinco mutaciones probadas caen. LIMITES ANOTADOS: el whitelist es por funcion, no por linea, asi que una ventaja dentro de _intentar_combinacion o via temperamento() aun pasaria; se cierra en F1-005 con snapshots alrededor de las funciones permitidas. La proporcion de divergentes aun no sube de forma sistematica (4/10): es lo que atacan UTIL-001, AMB-001 y la puerta F1-005, no se maquilla aqui.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 176 passed
+
+$ conducta en calma (pradera 60x34, 1 individuo, 120 ticks, misma semilla)
+div 0.1 -> radio medio 6.15 | 0.5 -> 7.61 | 0.7 -> 9.00 | 0.9 -> 10.04
+8/8 semillas radio(0.9) > radio(0.1); con sed critica los tres devuelven la misma accion
+paseo no es genoma, no se hereda y no se serializa
+
+$ sin ventaja directa: mutaciones que deben caer, y caen
+M1 comer -20 % al divergente        -> falla (guard + test conductual)
+M2 beber sacia -20 % al divergente  -> falla
+M3b umbral de cria -10 al divergente-> falla
+M4 divergencia += 0.01 por tick     -> falla
+E1 getattr(ind, genoma).divergencia > 0.5: energia += 1 dentro de una funcion -> falla
+  (whitelist AST de accesos a divergencia; 5 modulos; hashes restaurados)
+
+$ telemetria de seleccion (seed 42, 2000 ticks, crisis)
+descubridores [1,2,7,9] | supervivencia descubridores 1.0 | no descubridores 17/19 = 0.895
+diferencial_seleccion +0.105 ; en calma descubridores [] y diferencial 0.0
+descubridores == autores de nodos origen combinacion en 6/6 semillas
+
+$ uv run pytest -q
+705 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 41 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 41 source files
+```
+
+</details>

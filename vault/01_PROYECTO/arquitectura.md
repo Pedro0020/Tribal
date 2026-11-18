@@ -417,6 +417,36 @@ Lo que esta fase **no** hace es medir la puerta completa: la proporción de
 divergentes que reacciona a la crisis es de DIVERGENCIA-002/EMER-001, y el
 `pct_fuera_arbol` de `objetivo.md` §3.2 (por encima del 50 %) es de Fase 3.
 
+### 9.2 La divergencia como conducta (DIVERGENCIA-002)
+
+`divergencia` no es aptitud: no toca el bocado, la sed, la cría ni el genoma.
+El contrato está en `tests/test_divergencia_calma.py` y tiene dos mitades: una
+**lista blanca** de los únicos sitios que pueden leer el rasgo
+(`genoma.temperamento`, `genoma.heredar`, el paseo de `instinto` y la
+probabilidad de experimentar en `sim`) —cualquier otro acceso falla el test,
+sea comparación, umbral o `+=`— y tests de conducta para el bocado (`comer`), la
+sed al beber, el umbral de cría (`UMBRAL±1` con 0.1 y 0.9) y el genoma congelado
+en una partida de 500 ticks. Lo que cambia el rasgo es **qué hace** el
+individuo:
+
+| Tramo | Radio del paseo | Sesgo de cohesión |
+|---|---|---|
+| conformista (`div < 0.4`) | 3 tiles | hacia el vecino más cercano |
+| neutro | 5 tiles | ninguno |
+| divergente (`div > 0.6`) | 10 tiles | se aparta del vecino |
+
+El sesgo es firmado (`SESGO_COHESION * (1 - 2 * divergencia)`) y el destino se
+recuerda hasta llegar, así que el radio es un rumbo y no difusión. La urgencia
+manda por encima del rasgo: sed crítica y depredador dan la misma acción a los
+dos temperamentos. Todo sale de `Mundo.azar`: misma semilla, misma trayectoria.
+
+Para que la selección sea medible y no una opinión, `Simulacion.resumen()`
+publica `descubridores` (ids que descubrieron una combinación),
+`supervivencia_descubridores`, `supervivencia_no_descubridores` y
+`diferencial_seleccion` (la resta). La ventaja, cuando aparece, es de la
+habilidad que el autor aprende al descubrir; el informe de 10 semillas de
+DIVERGENCIA-002 está en el README.
+
 ---
 
 ## 10. Referencias

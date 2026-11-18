@@ -110,6 +110,11 @@ class Simulacion:
         self._ms_acumulados = 0.0
         #: Lo que la tribu ha descubierto. Vive aquí y no en el mundo.
         self.grafo = Grafo()
+        #: Quién ha descubierto una combinación y quién ha existido alguna vez.
+        #: Con los dos conjuntos, `resumen` mide la supervivencia de cada grupo
+        #: (eje 6: no se puede refinar lo que no se mide).
+        self._descubridores: set[int] = set()
+        self._registrados: set[int] = {individuo.id for individuo in mundo.individuos}
         self._agua_tiles = {
             (x, y)
             for y, fila in enumerate(mundo.tiles)
@@ -258,6 +263,7 @@ class Simulacion:
         madre.cooldown_reproduccion = self.config.cooldown_reproduccion
         padre.cooldown_reproduccion = self.config.cooldown_reproduccion
         self.mundo.individuos.append(hijo)
+        self._registrados.add(hijo.id)
         self.nacimientos += 1
 
     def _junto_al_agua(self) -> int:
@@ -273,6 +279,26 @@ class Simulacion:
         if not self.config.crisis:
             return False
         return self.config.sequia_ticks <= 0 or self.mundo.tick <= self.config.sequia_ticks
+
+    def _supervivencia(self, ids: set[int]) -> float:
+        """Fracción de esos ids —que alguna vez vivieron— que sigue viva."""
+        if not ids:
+            return 0.0
+        vivos = {individuo.id for individuo in self.mundo.individuos}
+        return len(ids & vivos) / len(ids)
+
+    def _diferencial_seleccion(self) -> float:
+        """Supervivencia de los descubridores menos la de los demás.
+
+        La ventaja del descubridor, si existe, viene de la habilidad que
+        aprendió al descubrir (y de que su técnica sirva bajo escasez), no del
+        rasgo: por eso el diferencial compara conducta —descubrir— y no
+        temperamento. Sin descubridores o sin grupo de comparación vale 0.0.
+        """
+        resto = self._registrados - self._descubridores
+        if not self._descubridores or not resto:
+            return 0.0
+        return self._supervivencia(self._descubridores) - self._supervivencia(resto)
 
     def _intentar_combinacion(self, individuo: Individuo) -> bool:
         """Un divergente gasta el tick probando un cruce. True si lo intentó.
@@ -319,6 +345,7 @@ class Simulacion:
                 modulo_beneficios.HABILIDAD_POR_COMBINACION[candidata.id]
             )
             self.combinaciones_logradas += 1
+            self._descubridores.add(individuo.id)
         return True
 
     def _practicar(self, individuo: Individuo, accion: str, *, descubrir: bool) -> bool:
@@ -403,6 +430,12 @@ class Simulacion:
             "n_neutros": temperamentos.count("neutro"),
             "intentos_divergentes": self.intentos_divergentes,
             "combinaciones_logradas": self.combinaciones_logradas,
+            "descubridores": sorted(self._descubridores),
+            "supervivencia_descubridores": round(self._supervivencia(self._descubridores), 3),
+            "supervivencia_no_descubridores": round(
+                self._supervivencia(self._registrados - self._descubridores), 3
+            ),
+            "diferencial_seleccion": round(self._diferencial_seleccion(), 3),
             "tradiciones": self.tradiciones,
             "imitaciones": sum(self.grafo.imitado.values()),
             "beneficios": modulo_beneficios.activos(self.grafo).a_json(),
