@@ -1,8 +1,8 @@
-"""Permite `python -m app`."""
+"""Permite `python -m tribal`."""
 
 import sys
 
-from app.cli import main
+from tribal.cli import main
 
 if __name__ == "__main__":
     sys.exit(main())

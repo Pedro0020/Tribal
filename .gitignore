@@ -45,6 +45,11 @@ coverage.xml
 .mypy_cache/
 profile.prof
 
+# --- Obsidian: estado de la ventana, no conocimiento ---
+# workspace.json guarda qué notas tienes abiertas y dónde; cambia con cada clic
+# y no aporta nada al repo. El resto de vault/.obsidian/ sí se versiona.
+vault/.obsidian/workspace.json
+
 # --- IDEs ---
 .idea/
 *.iml

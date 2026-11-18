@@ -12,6 +12,18 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- docs: arquitectura del motor y renombra el paquete a tribal (DESIGN-001)
+
+## [Unreleased] — 2026-11-18
+
+### Añadido
+
+- docs: arquitectura del motor y renombra el paquete a tribal (DESIGN-001)
+
+## [Unreleased] — 2026-11-18
+
+### Añadido
+
 - docs: define objetivo y criterio de hecho medible (SCOPE-001)
 
 ## [Unreleased]

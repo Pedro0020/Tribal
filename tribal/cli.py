@@ -1,9 +1,9 @@
 """
-app.cli — punto de entrada del proyecto: `python -m app` o `make run`.
+tribal.cli — punto de entrada del proyecto: `python -m tribal` o `make run`.
 
 Un esqueleto, no un framework: argparse de la stdlib y un subcomando de
-ejemplo. Si tu proyecto no es una CLI, borra este fichero y `__main__.py` —
-el arnés no los necesita.
+ejemplo. El subcomando `hello` se mantiene como humo del renombrado: si
+responde, el paquete y el entry point de consola apuntan al sitio correcto.
 """
 
 from __future__ import annotations
@@ -12,11 +12,11 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from app import __version__
+from tribal import __version__
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="app", description="Proyecto MeshHarmes.")
+    parser = argparse.ArgumentParser(prog="tribal", description="La Tribu.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     sub = parser.add_subparsers(dest="command", required=True)

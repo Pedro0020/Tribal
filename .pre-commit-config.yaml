@@ -17,7 +17,7 @@ repos:
     rev: v1.15.0
     hooks:
       - id: mypy
-        files: ^(app|tests)/
+        files: ^(tribal|tests)/
         stages: [push]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -25,7 +25,11 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+      # project.yml NO es YAML: es una lista plana `clave: valor` que parsea
+      # agents/config.py (una descripción con `: ` dentro del valor rompe el
+      # parser YAML). Validarlo como YAML es un falso positivo permanente.
       - id: check-yaml
+        exclude: ^project\.yml$
       - id: check-toml
       - id: check-added-large-files
       - id: check-merge-conflict

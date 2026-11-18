@@ -7,7 +7,7 @@
 # Si renombras el paquete, `project_slug` es lo que hay que cambiar aquí.
 
 project_name: Tribal
-project_slug: app
+project_slug: tribal
 project_author_name: Pedro0020
 project_description: Civilización emergente con agentes LLM: una tribu paleolítica en 2D cuyo motor de reglas, cultura y memoria hacen que la civilización aparezca sola.
 project_version: 0.1.0

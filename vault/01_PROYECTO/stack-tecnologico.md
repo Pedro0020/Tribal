@@ -12,7 +12,7 @@
 | Lenguaje | **Python** |
 | Visualización 2D | **Pygame**, mapa top-down, **pixel art** |
 | Datos | **SQLite** (con columnas JSON) + grafo en dos tablas + export a Markdown |
-| LLM local (Fase 2) | **llama.cpp (`llama-server`, binarios precompilados) + JSON schema/GBNF** · Qwen 2.5 3B Q8_0 |
+| LLM local (Fase 2) | **Ollama** (`tribal-llm`, base qwen2.5-3B Q8_0, ctx 8192) + JSON schema · API local `127.0.0.1:11434` |
 | Embeddings (Fase 2–3) | **Qwen3-Embedding-0.6B** (o embeddinggemma-2) |
 | Grafo de cultura en vivo (Fase 3) | Pantalla web con **D3.js** (opcional) |
 | Desarrollo | **MeshHarmes** como esqueleto (AGENTS.md, backlog por fases) |
@@ -54,32 +54,48 @@ El diseño asume tener **LLM + modelo de embeddings a la vez**. Con 6 GB no cabe
 ### Verificación pendiente
 Confirmar la **disponibilidad real** de los modelos nombrados (p. ej. "Qwen3.5-2B") antes de Fase 2; los nombres de la tabla son orientativos.
 
-### Instalación de llama.cpp en Windows (Fase 2)
+### Motor LLM en Windows (Fase 2)
 
-Dos rutas. La A es la de por defecto: **no compila nada**.
+**A. Ollama (camino oficial).** Es un llama.cpp empaquetado: mismo GGUF, misma GPU, sin compilar nada y sin gestionar binarios a mano.
 
-**A. Binarios precompilados `llama-server` (recomendada).**
-1. Descargar de https://github.com/ggml-org/llama.cpp/releases los binarios del tag diario `b####` (el release `latest` solo trae un fichero de texto: los binarios van en el tag `b####`).
-   - `llama-b####-bin-win-cuda-12.4-x64.zip` (RTX 2060 = CUDA 12.x)
-   - `cudart-llama-bin-win-cuda-12.4-x64.zip` (runtime CUDA, solo si no tienes el CUDA Toolkit)
-2. Extraer a una carpeta propia, p. ej. `C:\Users\pedro\llama.cpp\`. Los `.exe` quedan dentro de `bin/`.
-3. El modelo va a `models/` del proyecto (ignorado por git, ver §.gitignore):
-   `models/Qwen2.5-3B-Instruct-Q8_0.gguf` (~3.4 GB).
-4. Arrancar:
-   ```powershell
-   llama-server.exe -m models\Qwen2.5-3B-Instruct-Q8_0.gguf -ngl 99 -c 8192 --port 8080
-   ```
-   `-ngl 99` descarga todas las capas a la GPU; `-c 8192` es el contexto.
-5. Python no carga el modelo: habla HTTP con `127.0.0.1:8080` (`httpx`/`requests`). La salida estructurada se pide con `response_format: {"type":"json_schema", ...}` en `/v1/chat/completions`.
-
-**B. `llama-cpp-python` en proceso (alternativa).**
 ```powershell
-uv add llama-cpp-python --index https://abetlen.github.io/llama-cpp-python/whl/cu124
-# CPU: .../whl/cpu
+ollama pull qwen2.5:3b-instruct-q8_0   # ~3.4 GB → C:\Users\pedro\.ollama\models
+ollama ps                              # con el modelo cargado debe decir 100% GPU
 ```
-Usa las wheels precompiladas de ese índice; si no hay para tu versión, intentará compilar (requiere CMake + Visual Studio Build Tools) — es justo lo que la ruta A evita.
 
-> **Decisión:** ruta **A** por defecto (menos frágil en Windows y permite reiniciar el modelo sin reiniciar la simulación). Ollama queda como alternativa manual de pruebas: mismo GGUF, mismo HTTP, pero no es el camino oficial para no duplicar mantenimiento.
+Modelo propio con la configuración del proyecto (creado y verificado):
+
+```
+FROM qwen2.5:3b-instruct-q8_0
+PARAMETER num_ctx 8192
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+```
+
+```powershell
+ollama create tribal-llm -f tribal.Modelfile
+```
+
+- Identificador del modelo en el código: **`tribal-llm`**.
+- Medido en la RTX 2060 (6 GB): **66 tok/s** de generación, GPU al **95 %**, **3,6 GB** de VRAM con contexto 8192 (quedan ~2,3 GB libres).
+- `keep_alive` por defecto 5 min: entre peticiones la GPU está al 0 % pero la VRAM sigue ocupada. Si molesta, `"keep_alive": "60s"` en la petición.
+- API local: `http://127.0.0.1:11434` (`/api/chat`, `/v1/chat/completions`).
+- Salida estructurada: campo **`format`** con un JSON schema (equivale a las gramáticas GBNF para este uso).
+- El modelo vive en el almacén de Ollama, **no** en el repo. `models/` del proyecto queda para pruebas manuales y está ignorado por git.
+- Si el servicio no está levantado: `ollama serve` (en Windows suele estar como app de bandeja).
+
+**B. Binarios de `llama-server` (alternativa, control total).**
+1. GitHub `ggml-org/llama.cpp`: los binarios van en el tag diario `b####`, no en `latest`.
+   - `llama-b####-bin-win-cuda-12.4-x64.zip` (RTX 2060 = CUDA 12.x)
+   - `cudart-llama-bin-win-cuda-12.4-x64.zip` (runtime CUDA, si no hay CUDA Toolkit)
+2. Extraer a `C:\Users\pedro\llama.cpp\` y descargar el GGUF a `models/` (ignorado por git).
+3. `llama-server.exe -m models\...q8_0.gguf -ngl 99 -c 8192 --port 8080`
+4. La salida estructurada se pide con `response_format: {"type":"json_schema", ...}`.
+
+**C. `llama-cpp-python` en proceso (último recurso).** Solo con wheels precompiladas (`--index https://abetlen.github.io/llama-cpp-python/whl/cu124`); si no hay, intenta compilar y requiere CMake + VS Build Tools. Evitarlo: es justo la fragilidad que A y B eliminan.
+
+> **Decisión:** **A (Ollama)**. Misma interfaz HTTP que B, pero sin gestión de binarios ni versiones. El diseño de la simulación no cambia: el LLM nunca se llama desde el hilo de render (§8).
 
 ---
 
@@ -212,13 +228,30 @@ Todo con los modelos de embedding ya disponibles (Qwen3-Embedding-0.6B, embeddin
 
 ### Concurrencia del LLM (60 fps sin bloqueo)
 
-Con la ruta A (§2), el LLM vive en **`llama-server`**, un proceso aparte: la simulación nunca lo bloquea y, si el modelo se cae, el mundo sigue. El patrón es siempre el mismo:
+Con Ollama (§2), el LLM vive en un **proceso aparte**: la simulación nunca lo bloquea y, si el modelo se cae, el mundo sigue. El patrón es siempre el mismo:
 
-1. **Un hilo de cliente dedicado** que consume una cola (`queue.Queue`) y habla HTTP con `llama-server` (`127.0.0.1:8080`). El bucle de Pygame **encola** la petición y, en frames posteriores, **pregunta** por el resultado sin esperar. Timeout corto: si no llega, el agente sigue por instinto y la decisión se descarta.
+1. **Un hilo de cliente dedicado** que consume una cola (`queue.Queue`) y habla HTTP con Ollama (`127.0.0.1:11434`). El bucle de Pygame **encola** la petición y, en frames posteriores, **pregunta** por el resultado sin esperar. Timeout corto: si no llega, el agente sigue por instinto y la decisión se descarta.
 2. **Un hilo aparte para embeddings en CPU** (§2), independiente del hilo del LLM en GPU.
-3. Si algún día se usa `llama-cpp-python` en proceso (ruta B), ese objeto **no es thread-safe**: solo un hilo de inferencia, jamás dos a la vez.
+3. Si algún día se usa `llama-cpp-python` en proceso (ruta C), ese objeto **no es thread-safe**: solo un hilo de inferencia, jamás dos a la vez.
 
 > Regla: **el LLM nunca se llama desde el hilo de render.** Se encola, y el resultado se aplica cuando llega — o no se aplica.
+
+### Presupuesto de GPU en runtime (no saturar la gráfica)
+
+Objetivo: la GPU trabaja en **ráfagas cortas**, con un ciclo de trabajo (duty cycle) ≤ 30 % y temperatura holgada. Medido en esta RTX 2060: una decisión de 62 tokens ocupa la GPU **1,5 s**; con 32 tokens, ~0,7 s.
+
+| Regla | Valor | Por qué |
+|---|---|---|
+| `num_predict` por decisión | **≤ 32 tokens** | Una acción + razón cabe de sobra; 62 → 32 reduce la carga a la mitad |
+| Inferencias simultáneas | **1** (semáforo) | Ollama ya serializa; el cliente no debe encolar 6 a la vez |
+| Enfriamiento por agente | **≥ 8 s** entre consultas del mismo individuo | El resto del tiempo va por instinto (§10b) |
+| Tope global | **≤ 15 decisiones/minuto** (token bucket) | 15 × 0,7 s ≈ 10,5 s/min → **~18 % de ciclo de trabajo** |
+| `keep_alive` | **15 min** en sesión; `ollama stop tribal-llm` al cerrar | Sin recargas de 2–4 s; VRAM libre al terminar |
+| Freno térmico | si `temp ≥ 78 °C` o `util ≥ 95 %` durante >60 s → parar de encolar | Protección de salud, no de rendimiento |
+
+`nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,power.draw --format=csv,noheader` es la fuente para el freno.
+
+> Resultado esperado: ráfagas de ~0,7 s separadas por varios segundos, ~20 % de uso medio, 50–55 °C. La simulación sigue a 60 fps porque el render es CPU/Pygame, no el LLM.
 
 ### Observación
 | Herramienta | Veredicto |
@@ -259,7 +292,7 @@ Con la ruta A (§2), el LLM vive en **`llama-server`**, un proceso aparte: la si
 |---|---|
 | **Fase 0** | Python + Pygame + Pydantic + config/semilla (reproducibilidad) + scaffold MeshHarmes + (opcional) SQLite |
 | **Fase 1** | Genoma + árbol de conocimiento + clustering |
-| **Fase 2** | `llama-server` + JSON schema + embeddings en CPU + grafo en memoria |
+| **Fase 2** | Ollama + JSON schema + embeddings en CPU + grafo en memoria |
 | **Fase 3** | Memoria colectiva + export a Obsidian + grafo vivo (D3) + telemetría |
 
 > **Reproducibilidad:** una semilla (`seed`) + un archivo de configuración (parámetros de la simulación) permiten re-ver una run interesante y comparar variantes. Barato y esencial para "observar" en serio.
@@ -281,3 +314,4 @@ Con la ruta A (§2), el LLM vive en **`llama-server`**, un proceso aparte: la si
 - **Enrutado de modelos (local + nube gratuita)**: usar un modelo de nube gratis (Groq / Google Gemini / OpenRouter) para las decisiones importantes (narrar hitos, inventar, nombrar), con **fallback al modelo local**. Diferido; por ahora, todo local.
 - **Intervención del usuario**: por ahora solo observar; poder intervenir (alimentar, proteger, sembrar) queda para otra ocasión.
 - **Docker**: empaquetar/distribuir el proyecto cuando haga falta (no antes).
+- **Límite de potencia de la GPU** (`nvidia-smi -pl 130`, requiere admin): baja de 160 W a 130 W con ~5–8 % menos de velocidad y más margen térmico. Sugerido, no aplicado. El presupuesto de §8 ya mantiene el ciclo de trabajo en ~18 %, así que no es necesario por ahora.

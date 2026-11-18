@@ -234,3 +234,44 @@ $ Select-String -Pattern '^## ' vault/01_PROYECTO/objetivo.md
 ```
 
 </details>
+
+## DESIGN-001 — Decidir cómo se va a resolver
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 7 passed in 0.32s
+- **Cambios:** vault/01_PROYECTO/arquitectura.md (nuevo, 394 lineas); app/ renombrado a tribal/ (4 ficheros, git mv); project.yml; pyproject.toml; Makefile; .pre-commit-config.yaml; tests/test_cli.py; tests/test_main_import.py; tests/test_paths.py; docs/source/index.rst; README.md; vault/00_META/IA_index.md; vault/01_PROYECTO/stack-tecnologico.md y harness/memory.md (alineados a Ollama/tribal-llm); uv.lock; harness/progress/{explorer,implementer,reviewer}-DESIGN-001.md
+- **Decisiones:** Paquete renombrado app -> tribal con git mv; project_slug, scripts, hatch, coverage y MODULE coherentes; PACKAGE_DIR se deriva de __file__. arquitectura.md fija tres invariantes: el LLM nunca en el hilo de render, motor determinista por (semilla, config, orden de ticks) y cultura como grafo persistido. El backend LLM queda como cliente HTTP (Ollama, model tribal-llm con num_ctx 8192) y no como llama-cpp-python en proceso: es la decision que aparecio documentada en stack-tecnologico.md y harness/memory.md durante la feature, y la arquitectura se alineo a ella; llama-server/llama-cpp-python quedan como alternativas con su disparador de reapertura. Dueño unico del export en tribal/store/export.py y de sqlite3 en store. Deuda conocida que NO se toca aqui: agents/tools/rag_tool.py sigue con la fuente hardcodeada app, asi que el RAG no indexa tribal/ hasta la feature FIX-002.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "message": "ENTORNO LISTO - se puede trabajar." | "ready": true | "errors": 0 | "warnings": 0
+checks 14/14 ok: paquete tribal/ presente (project.yml) | pytest 7 passed in 0.33s
+
+$ uv run python -m tribal hello
+Hola, mundo.
+
+$ uv run python -m pytest tests -q
+7 passed in 0.30s
+
+$ uv run ruff check tribal/ tests/
+All checks passed!
+$ uv run ruff format --check tribal/ tests/
+7 files already formatted
+$ uv run mypy tribal/ tests/
+Success: no issues found in 7 source files
+
+$ git status --short (extracto)
+RM app/__init__.py -> tribal/__init__.py
+RM app/__main__.py -> tribal/__main__.py
+RM app/cli.py -> tribal/cli.py
+RM app/paths.py -> tribal/paths.py
+
+$ referencias obsoletas (from app | import app | app/ | --cov=app | module app) en
+  tribal/, tests/, pyproject.toml, Makefile, project.yml, README.md, docs/, .pre-commit-config.yaml
+0 coincidencias
+```
+
+</details>

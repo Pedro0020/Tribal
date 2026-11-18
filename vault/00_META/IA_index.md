@@ -6,7 +6,7 @@
 ## Metadata del proyecto
 
 - **Nombre:** MeshHarmes
-- **Paquete:** `app/` (declarado en `project.yml`)
+- **Paquete:** `tribal/` (declarado en `project.yml` como `project_slug`)
 - **Versión:** 0.1.0
 - **Descripción:** Arnés de agentes e infraestructura de proyecto para trabajo general en Python.
 - **Autor:** cacelass

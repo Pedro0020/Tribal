@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.1-green)
+![Version](https://img.shields.io/badge/Version-0.1.3-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -62,7 +62,7 @@ make check     # lint + typecheck + test + arnés
 ## Estructura
 
 ```
-app/                    ← código de Tribal (motor, agentes, capa LLM)
+tribal/                 ← código de Tribal (motor, agentes, capa LLM)
 tests/                  ← tests
 agents/                 ← arnés de build (24 agentes Python)
 harness/                ← backlog y memoria del arnés
