@@ -115,6 +115,12 @@ class Simulacion:
         #: (eje 6: no se puede refinar lo que no se mide).
         self._descubridores: set[int] = set()
         self._registrados: set[int] = {individuo.id for individuo in mundo.individuos}
+        #: Utilidad situacional aplicada a cada nodo (eje 1): suma y número de
+        #: ticks con el nodo activo, para publicar `utilidad_media` en `resumen`.
+        self._utilidad_suma: dict[str, float] = {}
+        self._utilidad_cuenta: dict[str, int] = {}
+        #: Beneficios de cada vivo en el tick en curso; los usa el depredador.
+        self._beneficios_tick: dict[int, modulo_beneficios.Beneficios] = {}
         self._agua_tiles = {
             (x, y)
             for y, fila in enumerate(mundo.tiles)
@@ -136,12 +142,23 @@ class Simulacion:
         en_crisis = self._en_crisis()
         recursos.regenerar(self.mundo, PENALIZACION_SEQUIA if en_crisis else 1.0)
 
+        #: La utilidad de cada técnica depende del mundo de este tick (escasez
+        #: del recurso que explota y cuántos saben usarla), no de un +X % fijo,
+        #: y no del temperamento: solo mira habilidades y estado (eje 1).
+        estado = modulo_beneficios.situacion(self.mundo)
+        utilidades = modulo_beneficios.utilidades(self.grafo, self.mundo, estado)
+        for nodo_id, valor in utilidades.items():
+            self._utilidad_suma[nodo_id] = self._utilidad_suma.get(nodo_id, 0.0) + valor
+            self._utilidad_cuenta[nodo_id] = self._utilidad_cuenta.get(nodo_id, 0) + 1
+
         #: Beneficios que disfruta cada vivo este tick, según lo que sabe. La
         #: crisis no cambia el temperamento de nadie: cambia la capacidad de
         #: carga del mundo y, con ella, cuánto importa saber una técnica.
         beneficios: dict[int, modulo_beneficios.Beneficios] = {}
         for individuo in self.mundo.individuos:
-            efecto = modulo_beneficios.conocidos(self.grafo, individuo.habilidades.conocidas)
+            efecto = modulo_beneficios.conocidos(
+                self.grafo, individuo.habilidades.conocidas, utilidades
+            )
             beneficios[individuo.id] = efecto
             necesidades.evolucionar(
                 individuo.necesidades,
@@ -154,6 +171,7 @@ class Simulacion:
             if individuo.cooldown_reproduccion > 0:
                 individuo.cooldown_reproduccion -= 1
 
+        self._beneficios_tick = beneficios
         modulo_depredador.mover(self.mundo, self._factor_dano)
         self._enterrar()
 
@@ -202,8 +220,17 @@ class Simulacion:
         self._ms_acumulados += (time.perf_counter() - inicio) * 1000.0
 
     def _factor_dano(self, presa: Individuo) -> float:
-        """Cuánto le muerde el depredador: quien sabe la técnica de vigilia, menos."""
-        return modulo_beneficios.conocidos(self.grafo, presa.habilidades.conocidas).dano_depredador
+        """Cuánto le muerde el depredador: la utilidad de vigilia del tick."""
+        efecto = self._beneficios_tick.get(presa.id)
+        return efecto.dano_depredador if efecto is not None else 1.0
+
+    def _utilidad_media(self) -> dict[str, float]:
+        """Media de la utilidad aplicada a cada nodo durante la corrida."""
+        return {
+            nodo_id: round(suma / self._utilidad_cuenta[nodo_id], 4)
+            for nodo_id, suma in self._utilidad_suma.items()
+            if self._utilidad_cuenta.get(nodo_id)
+        }
 
     def _enterrar(self) -> None:
         """Retira a quien se quedó sin salud o sin edad. Un contador por individuo."""
@@ -442,7 +469,9 @@ class Simulacion:
             "diferencial_seleccion": round(self._diferencial_seleccion(), 3),
             "tradiciones": self.tradiciones,
             "imitaciones": sum(self.grafo.imitado.values()),
-            "beneficios": modulo_beneficios.activos(self.grafo).a_json(),
+            "beneficios": modulo_beneficios.activos(self.grafo, self.mundo).a_json(),
+            "utilidad_media": self._utilidad_media(),
+            **modulo_beneficios.situacion(self.mundo).a_json(),
             **self.grafo.a_json(),
             "config": self.config.a_json(),
         }

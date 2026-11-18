@@ -108,8 +108,10 @@ def comer(
 
     La habilidad de la fuente (recolectar para bayas, cazar para caza) suma un
     50 % de energía y, de paso, quien lo ve comer puede imitarla. Los bonus de
-    las combinaciones activas llegan de `tribal.culture.beneficios`: quien
-    sabe la técnica cobra más de la misma fuente, sea divergente o no.
+    las combinaciones activas llegan de `tribal.culture.beneficios`: son la
+    utilidad situacional de la técnica en el mundo de ese tick —escasez del
+    recurso y cuántos la saben—, y la cobra quien sabe usarla, sea divergente o
+    no. El temperamento no se mira aquí ni en `beneficios`.
     """
     comida = recursos.mas_cercano(mundo, individuo, (TipoRecurso.BAYAS, TipoRecurso.CAZA))
     if comida is None or not recursos.en_alcance(individuo, comida):

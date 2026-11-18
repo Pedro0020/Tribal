@@ -774,3 +774,45 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 43 so
 ```
 
 </details>
+
+## UTIL-001 — Utilidad situacional: el invento vale segun el estado
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 186 passed in 49.52s
+- **Cambios:** tribal/culture/beneficios.py (utilidad situacional por escasez, densidad de portadores y gancho de estacion; se elimina el multiplicador fijo); tribal/sim.py (situacion por tick, beneficio por individuo, utilidad_media/escasez/estacion en el resumen); tribal/core/acciones.py (aplica la utilidad, sin mirar temperamento); tests/test_utilidad.py (nuevo, 5 casos); tests/test_divergencia*.py y test_cli_run.py (CLAVES); README (tabla nominal, densidad y salidas reales de 600 y 5000 ticks)
+- **Decisiones:** La utilidad es condicional, no un buff: en abundancia vale 1.0 exacta y solo se acerca a su efecto nominal cuando el recurso escasea; ademas se diluye con la densidad de portadores (utilidad de oportunidad, no de rasgo). Se calcula una vez por tick desde las cantidades reales de mundo.recursos, no desde constantes. La prueba es la misma semilla en calma y crisis: +0.00 frente a +3.32 de energia media, y las dos mutaciones de la escasez tumban el test por lados opuestos. estacion queda como gancho null hasta AMB-001 y esta documentado como no implementado, no como hecho. El temperamento no entra en la cuenta (AST limpio y guard de DIVERGENCIA-002 verde).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 186 passed
+
+$ formula: utilidad = 1 + (efecto_nominal - 1) * escasez * 1/(1 + 0.1*portadores)
+  escasez = 1 - cantidad/capacidad, calculada de mundo.recursos
+  abundancia -> utilidad 1.0 exacta; densidad con portadores reales (15/16 -> 1.0833)
+  temperamento: cero accesos a divergencia/genoma en beneficios.py
+
+$ tabla con la MISMA semilla (energia media, 3000 ticks; calma vs crisis)
+semilla:      1       2       3       4       5      media
+calma dif: +0.00   +0.00   +0.00   +0.00   +0.00    +0.00
+crisis dif:+1.95   +4.63   +2.58   +2.90   +4.53    +3.32
+(reproducido por el reviewer con 7 semillas: calma +0.00 en todas)
+
+$ mutaciones (caen los dos lados)
+escasez := 1.0 -> en calma +4.40, test FALLA | escasez := 0.0 -> crisis +0.00, test FALLA
+
+$ run --headless --json --ticks 5000 (crisis)
+"utilidad_media": {"raedera": 1.0868, "caceria_dirigida": 1.19, "turnos_de_vigilia": 0.8245, ...},
+"escasez": {"agua": 0.5, "bayas": 0.833, "caza": 0.688}, "estacion": null
+  (cuentas independientes: 120/120, 26/156, 5/16)
+
+$ uv run pytest -q
+715 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 44 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 44 source files
+```
+
+</details>

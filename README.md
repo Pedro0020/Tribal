@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.15-green)
+![Version](https://img.shields.io/badge/Version-0.1.16-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -78,7 +78,7 @@ con ojo rojo y una franja de HUD con tick, población y media de energía y sed.
 Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 
 ```json
-{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 15, "nacimientos": 3, "muertes": 0, "media_energia": 70.22, "media_sed": 37.91, "media_genes": {"velocidad": 1.002, "metabolismo": 1.031, "longevidad": 1.085, "fuerza": 1.045, "resistencia": 0.983, "inteligencia": 1.012, "salud": 1.02, "divergencia": 0.503}, "habilidades_distintas": 1, "habilidades": {"1": ["recolectar"], "2": ["recolectar"], "3": ["recolectar"], "4": ["recolectar"], "5": ["recolectar"], "6": ["recolectar"], "7": ["recolectar"], "8": ["recolectar"], "9": ["recolectar"], "10": ["recolectar"], "11": ["recolectar"], "12": ["recolectar"], "13": ["recolectar"], "14": ["recolectar"], "15": ["recolectar"]}, "individuos_movidos": 15, "depredador": {"activos": 1, "ataques": 1, "muertes": 0}, "agrupamiento_max": 4, "huidas": 313, "n_divergentes": 5, "n_conformistas": 5, "n_neutros": 5, "intentos_divergentes": 0, "combinaciones_logradas": 0, "tradiciones": 4, "imitaciones": 764, "beneficios": {"bayas": 1.0, "caza": 1.0, "dano_depredador": 1.0, "tasa_sed": 1.0}, "nodos": [{"id": "guijarro", "rama": "litica", "nivel": 0, "titulo": "Guijarro", "origen": "arbol", "autor": 6, "tick": 1}, {"id": "lasca", "rama": "litica", "nivel": 1, "titulo": "Lasca", "origen": "arbol", "autor": 6, "tick": 4}, {"id": "bifaz", "rama": "litica", "nivel": 2, "titulo": "Bifaz", "origen": "arbol", "autor": 6, "tick": 7}, {"id": "punta_de_lanza", "rama": "litica", "nivel": 3, "titulo": "Punta de lanza", "origen": "arbol", "autor": 6, "tick": 10}, {"id": "caza_cooperativa", "rama": "litica", "nivel": 4, "titulo": "Caza cooperativa", "origen": "arbol", "autor": 6, "tick": 13}, {"id": "observar_rayo", "rama": "fuego", "nivel": 0, "titulo": "Observar el rayo", "origen": "arbol", "autor": 6, "tick": 2}, {"id": "conservar_brasas", "rama": "fuego", "nivel": 1, "titulo": "Conservar brasas", "origen": "arbol", "autor": 6, "tick": 5}, {"id": "friccion", "rama": "fuego", "nivel": 2, "titulo": "Fricci\u00f3n", "origen": "arbol", "autor": 6, "tick": 8}, {"id": "cocinar", "rama": "fuego", "nivel": 3, "titulo": "Cocinar", "origen": "arbol", "autor": 6, "tick": 11}, {"id": "ahuyentar_depredadores", "rama": "fuego", "nivel": 4, "titulo": "Ahuyentar depredadores", "origen": "arbol", "autor": 6, "tick": 14}, {"id": "gestos", "rama": "lenguaje", "nivel": 0, "titulo": "Gestos y gru\u00f1idos", "origen": "arbol", "autor": 9, "tick": 9}, {"id": "proto_palabras", "rama": "lenguaje", "nivel": 1, "titulo": "Proto-palabras", "origen": "arbol", "autor": 9, "tick": 12}, {"id": "vocabulario", "rama": "lenguaje", "nivel": 2, "titulo": "Vocabulario", "origen": "arbol", "autor": 9, "tick": 16}, {"id": "transmision_eficaz", "rama": "lenguaje", "nivel": 3, "titulo": "Transmisi\u00f3n eficaz", "origen": "arbol", "autor": 9, "tick": 17}, {"id": "tradicion_ahuyentar_depredadores", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de ahuyentar depredadores", "origen": "interaccion", "autor": 11, "tick": 219}, {"id": "tradicion_caza_cooperativa", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de caza cooperativa", "origen": "interaccion", "autor": 11, "tick": 218}, {"id": "arte_rupestre", "rama": "simbolico", "nivel": 0, "titulo": "Arte rupestre", "origen": "arbol", "autor": 6, "tick": 3}, {"id": "ritual", "rama": "simbolico", "nivel": 1, "titulo": "Ritual", "origen": "arbol", "autor": 6, "tick": 6}, {"id": "mito", "rama": "simbolico", "nivel": 2, "titulo": "Mito", "origen": "arbol", "autor": 6, "tick": 15}, {"id": "identidad_grupo", "rama": "simbolico", "nivel": 3, "titulo": "Identidad del grupo", "origen": "arbol", "autor": 6, "tick": 18}, {"id": "tradicion_identidad_grupo", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de identidad del grupo", "origen": "interaccion", "autor": 11, "tick": 220}, {"id": "tradicion_transmision_eficaz", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de transmisi\u00f3n eficaz", "origen": "interaccion", "autor": 5, "tick": 49}], "aristas": [{"origen": "guijarro", "destino": "lasca"}, {"origen": "observar_rayo", "destino": "conservar_brasas"}, {"origen": "arte_rupestre", "destino": "ritual"}, {"origen": "lasca", "destino": "bifaz"}, {"origen": "conservar_brasas", "destino": "friccion"}, {"origen": "bifaz", "destino": "punta_de_lanza"}, {"origen": "friccion", "destino": "cocinar"}, {"origen": "gestos", "destino": "proto_palabras"}, {"origen": "punta_de_lanza", "destino": "caza_cooperativa"}, {"origen": "cocinar", "destino": "ahuyentar_depredadores"}, {"origen": "proto_palabras", "destino": "mito"}, {"origen": "ritual", "destino": "mito"}, {"origen": "proto_palabras", "destino": "vocabulario"}, {"origen": "vocabulario", "destino": "transmision_eficaz"}, {"origen": "mito", "destino": "identidad_grupo"}, {"origen": "transmision_eficaz", "destino": "tradicion_transmision_eficaz"}, {"origen": "caza_cooperativa", "destino": "tradicion_caza_cooperativa"}, {"origen": "ahuyentar_depredadores", "destino": "tradicion_ahuyentar_depredadores"}, {"origen": "identidad_grupo", "destino": "tradicion_identidad_grupo"}], "pct_fuera_arbol": 18.2, "nodos_por_origen": {"arbol": 18, "combinacion": 0, "interaccion": 4, "llm": 0}, "nivel_max": 2, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true, "crisis": false, "sequia_ticks": 0}}
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 13, "nacimientos": 1, "coste_reproduccion": 50.0, "muertes": 0, "media_energia": 66.58, "media_sed": 37.26, "media_genes": {"velocidad": 0.975, "metabolismo": 1.02, "longevidad": 1.074, "fuerza": 1.049, "resistencia": 1.007, "inteligencia": 1.021, "salud": 1.03, "divergencia": 0.497}, "habilidades_distintas": 1, "habilidades": {"1": ["recolectar"], "2": ["recolectar"], "3": ["recolectar"], "4": ["recolectar"], "5": ["recolectar"], "6": ["recolectar"], "7": ["recolectar"], "8": ["recolectar"], "9": ["recolectar"], "10": ["recolectar"], "11": ["recolectar"], "12": ["recolectar"], "13": ["recolectar"]}, "individuos_movidos": 12, "depredador": {"activos": 1, "ataques": 0, "muertes": 0}, "agrupamiento_max": 4, "huidas": 307, "n_divergentes": 4, "n_conformistas": 4, "n_neutros": 5, "intentos_divergentes": 0, "combinaciones_logradas": 0, "descubridores": [], "supervivencia_descubridores": 0.0, "supervivencia_no_descubridores": 1.0, "diferencial_seleccion": 0.0, "tradiciones": 4, "imitaciones": 522, "beneficios": {"bayas": 1.0, "caza": 1.0, "dano_depredador": 1.0, "tasa_sed": 1.0}, "utilidad_media": {}, "escasez": {"agua": 0.0, "bayas": 0.179, "caza": 0.312}, "estacion": null, "nodos": [{"id": "guijarro", "rama": "litica", "nivel": 0, "titulo": "Guijarro", "origen": "arbol", "autor": 6, "tick": 1}, {"id": "lasca", "rama": "litica", "nivel": 1, "titulo": "Lasca", "origen": "arbol", "autor": 6, "tick": 4}, {"id": "bifaz", "rama": "litica", "nivel": 2, "titulo": "Bifaz", "origen": "arbol", "autor": 6, "tick": 7}, {"id": "punta_de_lanza", "rama": "litica", "nivel": 3, "titulo": "Punta de lanza", "origen": "arbol", "autor": 6, "tick": 10}, {"id": "caza_cooperativa", "rama": "litica", "nivel": 4, "titulo": "Caza cooperativa", "origen": "arbol", "autor": 6, "tick": 13}, {"id": "observar_rayo", "rama": "fuego", "nivel": 0, "titulo": "Observar el rayo", "origen": "arbol", "autor": 6, "tick": 2}, {"id": "conservar_brasas", "rama": "fuego", "nivel": 1, "titulo": "Conservar brasas", "origen": "arbol", "autor": 6, "tick": 5}, {"id": "friccion", "rama": "fuego", "nivel": 2, "titulo": "Fricci\u00f3n", "origen": "arbol", "autor": 6, "tick": 8}, {"id": "cocinar", "rama": "fuego", "nivel": 3, "titulo": "Cocinar", "origen": "arbol", "autor": 6, "tick": 11}, {"id": "ahuyentar_depredadores", "rama": "fuego", "nivel": 4, "titulo": "Ahuyentar depredadores", "origen": "arbol", "autor": 6, "tick": 14}, {"id": "gestos", "rama": "lenguaje", "nivel": 0, "titulo": "Gestos y gru\u00f1idos", "origen": "arbol", "autor": 9, "tick": 9}, {"id": "proto_palabras", "rama": "lenguaje", "nivel": 1, "titulo": "Proto-palabras", "origen": "arbol", "autor": 9, "tick": 12}, {"id": "vocabulario", "rama": "lenguaje", "nivel": 2, "titulo": "Vocabulario", "origen": "arbol", "autor": 9, "tick": 16}, {"id": "transmision_eficaz", "rama": "lenguaje", "nivel": 3, "titulo": "Transmisi\u00f3n eficaz", "origen": "arbol", "autor": 9, "tick": 17}, {"id": "tradicion_ahuyentar_depredadores", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de ahuyentar depredadores", "origen": "interaccion", "autor": 5, "tick": 342}, {"id": "tradicion_caza_cooperativa", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de caza cooperativa", "origen": "interaccion", "autor": 5, "tick": 335}, {"id": "arte_rupestre", "rama": "simbolico", "nivel": 0, "titulo": "Arte rupestre", "origen": "arbol", "autor": 6, "tick": 3}, {"id": "ritual", "rama": "simbolico", "nivel": 1, "titulo": "Ritual", "origen": "arbol", "autor": 6, "tick": 6}, {"id": "mito", "rama": "simbolico", "nivel": 2, "titulo": "Mito", "origen": "arbol", "autor": 6, "tick": 15}, {"id": "identidad_grupo", "rama": "simbolico", "nivel": 3, "titulo": "Identidad del grupo", "origen": "arbol", "autor": 6, "tick": 18}, {"id": "tradicion_identidad_grupo", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de identidad del grupo", "origen": "interaccion", "autor": 5, "tick": 343}, {"id": "tradicion_transmision_eficaz", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de transmisi\u00f3n eficaz", "origen": "interaccion", "autor": 4, "tick": 228}], "aristas": [{"origen": "guijarro", "destino": "lasca"}, {"origen": "observar_rayo", "destino": "conservar_brasas"}, {"origen": "arte_rupestre", "destino": "ritual"}, {"origen": "lasca", "destino": "bifaz"}, {"origen": "conservar_brasas", "destino": "friccion"}, {"origen": "bifaz", "destino": "punta_de_lanza"}, {"origen": "friccion", "destino": "cocinar"}, {"origen": "gestos", "destino": "proto_palabras"}, {"origen": "punta_de_lanza", "destino": "caza_cooperativa"}, {"origen": "cocinar", "destino": "ahuyentar_depredadores"}, {"origen": "proto_palabras", "destino": "mito"}, {"origen": "ritual", "destino": "mito"}, {"origen": "proto_palabras", "destino": "vocabulario"}, {"origen": "vocabulario", "destino": "transmision_eficaz"}, {"origen": "mito", "destino": "identidad_grupo"}, {"origen": "transmision_eficaz", "destino": "tradicion_transmision_eficaz"}, {"origen": "caza_cooperativa", "destino": "tradicion_caza_cooperativa"}, {"origen": "ahuyentar_depredadores", "destino": "tradicion_ahuyentar_depredadores"}, {"origen": "identidad_grupo", "destino": "tradicion_identidad_grupo"}], "pct_fuera_arbol": 18.2, "nodos_por_origen": {"arbol": 18, "combinacion": 0, "interaccion": 4, "llm": 0}, "nivel_max": 2, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true, "crisis": false, "sequia_ticks": 0}}
 ```
 
 `--seed 7 --benchmark --headless --ticks 600` (comprueba el presupuesto de
@@ -87,15 +87,15 @@ Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 ```
 seed 7  ticks 600  poblacion 12 -> 13
 muertes 0  nacimientos 1  individuos movidos 13
-depredadores 1  ataques 1  agrupamiento max 6  huidas 162
-media energia 47.61  media sed 49.94
+depredadores 1  ataques 2  agrupamiento max 9  huidas 160
+media energia 44.62  media sed 43.56
 ```
 
 y en **stderr** (el `ms/tick` no entra en el resumen, que es determinista; su
 valor varía unas centésimas entre ejecuciones):
 
 ```
-benchmark: 0.31 ms/tick, cabe en 16.67 ms
+benchmark: 0.52 ms/tick, cabe en 16.67 ms
 ```
 
 Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
@@ -370,16 +370,28 @@ la técnica se transmite a los conformistas en cuanto se usa. Lo que sí es
 estable es de quién es la ventaja cuando aparece —del descubridor que aprendió
 la habilidad, no del rasgo—.
 
-Las combinaciones activas aportan un efecto determinista, publicado en
-`beneficios`:
+Las combinaciones activas no son multiplicadores fijos: su **utilidad depende
+del estado del mundo** (eje 1 de la hoja de ruta). La tabla da el efecto
+nominal, el que se cobra cuando el recurso que explota el nodo está agotado:
 
-| Combinación | Habilidad | Efecto |
-|---|---|---|
-| `raedera` | `fabricar` | +25 % de energía de las bayas |
-| `cuchillo_al_fuego` | `fuego` | +25 % de energía de la caza |
-| `caceria_dirigida` | `cazar` | +50 % de energía de la caza |
-| `turnos_de_vigilia` | `cazar` | −50 % de daño del depredador |
-| `canto_ritual` | `ensenar` | −10 % de tasa de sed |
+| Combinación | Habilidad | Recurso | Efecto nominal |
+|---|---|---|---|
+| `raedera` | `fabricar` | bayas | +25 % de energía de las bayas |
+| `cuchillo_al_fuego` | `fuego` | caza | +25 % de energía de la caza |
+| `caceria_dirigida` | `cazar` | caza | +50 % de energía de la caza |
+| `turnos_de_vigilia` | `cazar` | caza | −50 % de daño del depredador |
+| `canto_ritual` | `ensenar` | agua | −10 % de tasa de sed |
+
+La utilidad se interpola entre 1.0 (recurso lleno: no hay premio, lo que sobra
+no distingue a nadie) y ese efecto nominal, según
+`escasez = 1 − cantidad / capacidad`. Además se diluye con la **densidad de
+portadores** (`1 / (1 + 0.1 · portadores)`): si todo el grupo sabe la técnica,
+la ventaja de tenerla es de oportunidad, no de rasgo. El temperamento no entra
+en la cuenta: dos individuos con la misma habilidad rinden igual.
+
+El resumen publica la media aplicada en la corrida (`utilidad_media` por nodo),
+la escasez de cada recurso y `estacion` — hoy `null`, el gancho que conectará
+el clima en AMB-001.
 
 Además, cuando una práctica se imita lo suficiente —tres imitadores distintos o
 cinco imitaciones en 600 ticks— nace una **tradición** de nivel 2
@@ -390,13 +402,16 @@ la emergencia (`arbol` = 0, `combinacion` = 1, `interaccion` = 2).
 
 ```bash
 uv run python -m tribal run --headless --json --ticks 5000 --crisis
-# ... "intentos_divergentes": 15, "combinaciones_logradas": 5, "tradiciones": 5,
-#     "beneficios": {"bayas": 1.25, "caza": 1.875, "dano_depredador": 0.5, ...},
+# ... "intentos_divergentes": 8, "combinaciones_logradas": 5, "tradiciones": 5,
+#     "beneficios": {"bayas": 1.0833, "caza": 1.2729, "dano_depredador": 0.809, ...},
+#     "utilidad_media": {"raedera": 1.0868, "caceria_dirigida": 1.19, ...},
+#     "escasez": {"agua": 0.5, "bayas": 0.833, "caza": 0.688}, "estacion": null,
 #     "nodos_por_origen": {"arbol": 23, "combinacion": 5, "interaccion": 5, "llm": 0}
 #     ... los cinco cruces, incluido "canto_ritual" (proto_palabras + ritual)
 uv run python -m tribal run --headless --json --ticks 5000
 # ... "intentos_divergentes": 0, "combinaciones_logradas": 0,
-#     "nodos_por_origen": {"arbol": 23, "combinacion": 0, "interaccion": 4, ...}
+#     "utilidad_media": {},
+#     "nodos_por_origen": {"arbol": 23, "combinacion": 0, "interaccion": 5, ...}
 ```
 
 ### Resultado medido del barrido (EMER-001)

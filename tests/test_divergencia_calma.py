@@ -457,9 +457,14 @@ def test_con_escasez_el_descubridor_conserva_mas_energia() -> None:
     sabio.habilidades = Habilidades({"fabricar"})
     ignorante = _con_hambre(2)
     mundo = _mundo_con_comida(sabio, ignorante)
+    # Con las bayas llenas la utilidad vale 1.0 y la técnica no distingue a
+    # nadie; con escasez (2 de 8) sí paga, que es lo que mide este test.
+    mundo.recursos[0].cantidad = 2
+    estado = beneficios.situacion(mundo)
+    utilidades_tick = beneficios.utilidades(grafo, mundo, estado)
 
-    efecto_sabio = beneficios.conocidos(grafo, sabio.habilidades.conocidas)
-    efecto_ignorante = beneficios.conocidos(grafo, ignorante.habilidades.conocidas)
+    efecto_sabio = beneficios.conocidos(grafo, sabio.habilidades.conocidas, utilidades_tick)
+    efecto_ignorante = beneficios.conocidos(grafo, ignorante.habilidades.conocidas, utilidades_tick)
     assert acciones.comer(sabio, mundo, bonus_bayas=efecto_sabio.bayas)
     assert acciones.comer(ignorante, mundo, bonus_bayas=efecto_ignorante.bayas)
 

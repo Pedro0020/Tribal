@@ -273,8 +273,13 @@ def _sin_habilidad(id_: int, divergencia: float = 0.5) -> Individuo:
 
 
 def _energia_tras_comer(individuo: Individuo, grafo: Grafo) -> float:
-    efecto = beneficios.conocidos(grafo, individuo.habilidades.conocidas)
     mundo = _mundo_de_dos(individuo)
+    # Escasez (2 de 8): la utilidad de la técnica solo paga cuando falta el
+    # recurso, así que en abundancia este mismo test daría 80 para los dos.
+    mundo.recursos[0].cantidad = 2
+    estado = beneficios.situacion(mundo)
+    utilidades_tick = beneficios.utilidades(grafo, mundo, estado)
+    efecto = beneficios.conocidos(grafo, individuo.habilidades.conocidas, utilidades_tick)
     assert acciones.comer(individuo, mundo, bonus_bayas=efecto.bayas, bonus_caza=efecto.caza)
     return individuo.necesidades.energia
 
@@ -380,9 +385,16 @@ def test_el_bonus_de_una_tecnica_es_igual_para_quien_la_sabe() -> None:
     conformista.habilidades = Habilidades({"fabricar"})
     divergente.habilidades = Habilidades({"fabricar"})
 
-    assert _energia_tras_comer(conformista, grafo) == pytest.approx(90.0)
-    assert _energia_tras_comer(divergente, grafo) == pytest.approx(90.0)
-    assert beneficios.conocidos(grafo, {"fabricar"}).bayas == 1.25
+    # Escasez 0.75 y un portador: 1 + 0.25 · 0.75 / 1.1 ≈ 1.1705.
+    esperado = 40.0 + 40.0 * (1.0 + 0.25 * 0.75 / 1.1)
+    assert _energia_tras_comer(conformista, grafo) == pytest.approx(esperado)
+    assert _energia_tras_comer(divergente, grafo) == pytest.approx(esperado)
+    mundo = _mundo_de_dos()
+    mundo.recursos[0].cantidad = 2
+    estado = beneficios.situacion(mundo)
+    assert beneficios.utilidad("raedera", estado, portadores=1) == pytest.approx(
+        1.0 + 0.25 * 0.75 / 1.1
+    )
 
 
 def test_bajo_escasez_quien_descubrio_la_tecnica_rinde_mas() -> None:
@@ -395,7 +407,10 @@ def test_bajo_escasez_quien_descubrio_la_tecnica_rinde_mas() -> None:
     energia_ignorante = _energia_tras_comer(ignorante, grafo)
 
     assert energia_sabio > energia_ignorante
-    assert (energia_sabio, energia_ignorante) == (pytest.approx(90.0), pytest.approx(80.0))
+    assert (energia_sabio, energia_ignorante) == (
+        pytest.approx(86.818, abs=1e-2),
+        pytest.approx(80.0),
+    )
 
 
 def test_un_divergente_que_no_descubre_nada_rinde_como_un_conformista() -> None:
