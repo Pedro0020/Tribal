@@ -28,7 +28,7 @@ MIN_LADO = 9
 
 #: Campos que el motor indexa o usa como cuenta: enteros, y `bool` no vale
 #: (`True` es un `int` para Python, pero un JSON así casi siempre es un error).
-CAMPOS_ENTEROS = ("seed", "individuos", "ancho", "alto")
+CAMPOS_ENTEROS = ("seed", "individuos", "ancho", "alto", "depredadores", "cooldown_reproduccion")
 #: Campos que el motor multiplica: número real, nunca una cadena.
 CAMPOS_TASA = ("tasa_sed", "tasa_energia", "tasa_salud")
 
@@ -51,6 +51,11 @@ class SimConfig:
     tasa_sed: float = TASA_SED
     tasa_energia: float = TASA_ENERGIA
     tasa_salud: float = TASA_SALUD
+    #: Ticks de espera entre crías de un mismo individuo.
+    cooldown_reproduccion: int = 600
+    #: Cuántos depredadores pueblan el mapa (0 = ninguno) y si están activos.
+    depredadores: int = 1
+    depredador_activo: bool = True
 
     @classmethod
     def desde_json(cls, path: str | Path) -> SimConfig:
@@ -94,6 +99,20 @@ def validar(config: SimConfig, origen: str = "config") -> None:
         raise ValueError(
             f"{origen}: individuos debe estar entre {MIN_INDIVIDUOS} y {MAX_INDIVIDUOS} "
             f"(recibido {config.individuos})"
+        )
+    if config.depredadores < 0:
+        raise ValueError(
+            f"{origen}: depredadores no puede ser negativo (recibido {config.depredadores})"
+        )
+    if config.cooldown_reproduccion <= 0:
+        raise ValueError(
+            f"{origen}: cooldown_reproduccion debe ser mayor que 0 "
+            f"(recibido {config.cooldown_reproduccion})"
+        )
+    if not isinstance(config.depredador_activo, bool):
+        raise ValueError(
+            f"{origen}: depredador_activo debe ser true o false "
+            f"(recibido {config.depredador_activo!r})"
         )
     if config.ancho < MIN_LADO or config.alto < MIN_LADO:
         raise ValueError(

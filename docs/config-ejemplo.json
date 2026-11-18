@@ -5,5 +5,8 @@
   "alto": 34,
   "tasa_sed": 0.16,
   "tasa_energia": 0.15,
-  "tasa_salud": 0.6
+  "tasa_salud": 0.6,
+  "cooldown_reproduccion": 600,
+  "depredadores": 1,
+  "depredador_activo": true
 }

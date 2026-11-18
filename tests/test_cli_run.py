@@ -19,6 +19,9 @@ CLAVES = {
     "media_energia",
     "media_sed",
     "individuos_movidos",
+    "depredador",
+    "agrupamiento_max",
+    "huidas",
     "config",
 }
 

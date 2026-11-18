@@ -125,6 +125,9 @@ def _texto_resumen(resumen: dict[str, Any]) -> str:
             f"poblacion {resumen['poblacion_inicial']} -> {resumen['poblacion_final']}",
             f"muertes {resumen['muertes']}  nacimientos {resumen['nacimientos']}  "
             f"individuos movidos {resumen['individuos_movidos']}",
+            f"depredadores {resumen['depredador']['activos']}  "
+            f"ataques {resumen['depredador']['ataques']}  "
+            f"agrupamiento max {resumen['agrupamiento_max']}  huidas {resumen['huidas']}",
             f"media energia {resumen['media_energia']}  media sed {resumen['media_sed']}",
         ]
     )

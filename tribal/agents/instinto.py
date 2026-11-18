@@ -15,11 +15,18 @@ from __future__ import annotations
 from tribal.agents import necesidades as nec
 from tribal.core import recursos
 from tribal.core.acciones import Accion
-from tribal.core.modelos import Individuo, Mundo, Recurso, TipoRecurso
+from tribal.core.modelos import Depredador, Individuo, Mundo, Recurso, TipoRecurso
+
+#: Radio en el que el depredador deja de ser paisaje y pasa a ser urgencia.
+UMBRAL_HUIDA = 4.0
 
 
 def elegir(individuo: Individuo, mundo: Mundo) -> Accion:
     """Acción que corresponde a este individuo en este tick."""
+    amenaza = _depredador_cercano(individuo, mundo)
+    if amenaza is not None and not nec.agotado(individuo.necesidades):
+        return Accion("huir", amenaza=(amenaza.x, amenaza.y))
+
     agua = recursos.mas_cercano(mundo, individuo, (TipoRecurso.AGUA,))
     comida = recursos.mas_cercano(mundo, individuo, (TipoRecurso.BAYAS, TipoRecurso.CAZA))
 
@@ -49,6 +56,20 @@ def elegir(individuo: Individuo, mundo: Mundo) -> Accion:
 
 def _al_alcance(individuo: Individuo, recurso: Recurso | None) -> bool:
     return recurso is not None and recursos.en_alcance(individuo, recurso)
+
+
+def _depredador_cercano(individuo: Individuo, mundo: Mundo) -> Depredador | None:
+    """El depredador más próximo, si está dentro del radio de huida."""
+    if not mundo.depredadores:
+        return None
+    cercano = min(
+        mundo.depredadores,
+        key=lambda depredador: recursos.distancia(
+            individuo.x, individuo.y, depredador.x, depredador.y
+        ),
+    )
+    distancia = recursos.distancia(individuo.x, individuo.y, cercano.x, cercano.y)
+    return cercano if distancia <= UMBRAL_HUIDA else None
 
 
 def _mas_cercano(mundo: Mundo, individuo: Individuo) -> Individuo | None:

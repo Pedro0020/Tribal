@@ -150,11 +150,14 @@
         "uv run python -m tribal run --headless --json --ticks 3000 muestra nacimientos, muertes, depredador y agrupamiento",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "CORE-001",
         "HARD-000"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 1,
+      "closed": "2026-11-18"
     },
     {
       "id": "F1-001",

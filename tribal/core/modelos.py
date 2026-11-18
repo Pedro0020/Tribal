@@ -10,7 +10,7 @@ inmutables (genoma) son `frozen`; lo que el tick muta (`Necesidades`,
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Literal
 
@@ -18,6 +18,10 @@ from typing import Literal
 ANCHO_TILES = 60
 ALTO_TILES = 34
 TILE_PX = 8
+
+#: Ticks que tarda una cría en ser adulta y ticks que vive un adulto medio.
+MADUREZ_TICKS = 300
+LONGEVIDAD_TICKS = 3000
 
 
 class TipoTile(IntEnum):
@@ -34,10 +38,11 @@ class TipoRecurso(IntEnum):
 
 @dataclass(frozen=True, slots=True)
 class Genoma:
-    """Rasgos heredables. En Fase 0 solo modulan velocidad y metabolismo."""
+    """Rasgos heredables: velocidad, metabolismo y longevidad (multiplicador)."""
 
     velocidad: float = 1.0
     metabolismo: float = 1.0
+    longevidad: float = 1.0
 
 
 @dataclass(slots=True)
@@ -72,6 +77,25 @@ class Individuo:
     y: float
     vivo: bool = True
     movido: bool = False
+    #: Ticks vividos; `madurez` es la edad mínima para reproducirse.
+    edad: int = 0
+    madurez: int = MADUREZ_TICKS
+    #: Ticks que le quedan antes de poder volver a tener cría (0 = disponible).
+    cooldown_reproduccion: int = 0
+    #: True mientras la última decisión fue huir de un depredador.
+    huyendo: bool = False
+
+
+@dataclass(slots=True)
+class Depredador:
+    """Acechador: persigue a la presa viva más cercana y la muerde al alcanzarla."""
+
+    x: float
+    y: float
+    cooldown: int = 0
+    ataques: int = 0
+    #: Presas que quedaron sin salud por un mordisco (la muerte se cobra ese tick).
+    muertes: int = 0
 
 
 @dataclass(slots=True)
@@ -84,6 +108,7 @@ class Mundo:
     azar: random.Random
     seed: int = 0
     tick: int = 0
+    depredadores: list[Depredador] = field(default_factory=list)
 
     def pisable(self, x: float, y: float) -> bool:
         """Un tile es pisable si está dentro del mapa y no es agua."""

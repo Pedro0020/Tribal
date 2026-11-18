@@ -23,6 +23,9 @@ CLAVES = {
     "tasa_sed",
     "tasa_energia",
     "tasa_salud",
+    "cooldown_reproduccion",
+    "depredadores",
+    "depredador_activo",
 }
 
 
@@ -43,6 +46,9 @@ def test_los_defaults_son_los_de_fase_0() -> None:
         "tasa_sed": 0.16,
         "tasa_energia": 0.15,
         "tasa_salud": 0.6,
+        "cooldown_reproduccion": 600,
+        "depredadores": 1,
+        "depredador_activo": True,
     }
     assert set(config.a_json()) == CLAVES
 
@@ -79,6 +85,9 @@ def test_config_sin_claves_toma_los_defaults(tmp_path: Path) -> None:
         ({"individuos": MIN_INDIVIDUOS - 3}, "individuos"),
         ({"individuos": True}, "individuos"),
         ({"tasa_salud": -0.1}, "tasa_salud"),
+        ({"depredadores": -1}, "depredadores"),
+        ({"cooldown_reproduccion": 0}, "cooldown_reproduccion"),
+        ({"depredador_activo": 1}, "depredador_activo"),
         ({"gravedad": 9.8}, "gravedad"),
     ],
 )

@@ -13,6 +13,8 @@ import random
 from tribal.config import SimConfig
 from tribal.core import recursos
 from tribal.core.modelos import (
+    MADUREZ_TICKS,
+    Depredador,
     Genoma,
     Individuo,
     Mundo,
@@ -62,6 +64,8 @@ def crear(seed: int, individuos: int = 12, *, config: SimConfig | None = None) -
     )
     recursos.sembrar(mundo)
     _poblar(mundo, individuos)
+    if config.depredador_activo and config.depredadores > 0:
+        _sembrar_depredadores(mundo, config.depredadores)
     return mundo
 
 
@@ -109,6 +113,7 @@ def _poblar(mundo: Mundo, cuantos: int) -> None:
                 genoma=Genoma(
                     velocidad=mundo.azar.uniform(0.85, 1.15),
                     metabolismo=mundo.azar.uniform(0.85, 1.20),
+                    longevidad=mundo.azar.uniform(0.85, 1.20),
                 ),
                 necesidades=Necesidades(
                     energia=mundo.azar.uniform(80.0, 100.0),
@@ -116,6 +121,10 @@ def _poblar(mundo: Mundo, cuantos: int) -> None:
                 ),
                 x=float(x),
                 y=float(y),
+                # La generación fundadora llega adulta, pero con un periodo de
+                # asentamiento: la partida no empieza con un baby boom.
+                edad=mundo.azar.randint(MADUREZ_TICKS, MADUREZ_TICKS + 600),
+                cooldown_reproduccion=MADUREZ_TICKS,
             )
         )
     mundo.individuos.sort(key=lambda individuo: individuo.id)
@@ -130,3 +139,23 @@ def _casilla_libre(
         if all(abs(x - ux) + abs(y - uy) >= 2 for ux, uy in usados):
             return x, y
     return azar.choice(libres)
+
+
+def _sembrar_depredadores(mundo: Mundo, cuantos: int) -> None:
+    """Coloca los depredadores lejos de la tribu para que la partida empiece en calma."""
+    libres = [
+        (x, y)
+        for y, fila in enumerate(mundo.tiles)
+        for x, tipo in enumerate(fila)
+        if tipo != TipoTile.AGUA
+    ]
+    for _ in range(cuantos):
+        lejanas = [
+            (x, y)
+            for x, y in libres
+            if all(
+                abs(x - individuo.x) + abs(y - individuo.y) >= 12 for individuo in mundo.individuos
+            )
+        ]
+        x, y = mundo.azar.choice(lejanas or libres)
+        mundo.depredadores.append(Depredador(x=float(x), y=float(y)))

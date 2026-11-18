@@ -490,3 +490,44 @@ test_cambiar_una_tasa_cambia_el_resumen FALLA (1 failed, 21 passed); restaurado.
 ```
 
 </details>
+
+## F0-002 — Puerta F0 a F1: reproduccion y comportamiento emergente
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 63 passed in 5.99s
+- **Cambios:** tribal/core/modelos.py (Genoma.longevidad; Individuo edad/madurez/cooldown/huyendo; Depredador; Mundo.depredadores); tribal/core/depredador.py (nuevo: persecucion, mordisco, digestión, no entra al agua); tribal/core/{mundo,acciones}.py (reproduccion, vejez, huida); tribal/agents/instinto.py (huida prioritaria); tribal/sim.py (orden homeostasis -> depredador -> enterrar -> decisiones; resumen con nacimientos, agrupamiento_max, huidas y depredador); tribal/config.py (depredadores, depredador_activo, cooldown_reproduccion); tribal/cli.py; tribal/ui/render.py (depredador y crias); tests/test_puerta_f0.py (nuevo); tests/{test_motor,test_config,test_cli_run}.py; docs/config-ejemplo.json; docs/img/fase0-puerta.png; README
+- **Decisiones:** Orden del tick: homeostasis -> depredador.mover -> _enterrar -> decisiones. El chequeo de muerte tiene que ir DESPUES del dano; con el orden anterior la recuperacion de salud resucitaba a la presa (0 -> 0.02) y el depredador no podia matar nunca. La reproduccion exige pareja adulta a <=2 tiles, energia > 65 y cooldown 600; la cria hereda la media de los padres con mutacion acotada al 5 por ciento del genoma. El agrupamiento se mide como maximo de individuos a <=2 tiles de un tile de agua (no bebiendo a la vez) y el test no es vacuo: con la sed congelada el pico cae de 11 a 5. La huida se mide por distancia euclidea real al depredador, no por el flag. depredador_activo=false desactiva de verdad (test). Limitacion conocida: si un anciano muere de vejez el mismo tick en que lo muerden, la muerte se acredita al depredador.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 63 passed
+
+$ uv run python -m tribal run --headless --json --ticks 3000 --seed 2
+{"seed": 2, "ticks": 3000, "poblacion_inicial": 12, "poblacion_final": 10, "nacimientos": 10,
+ "muertes": 12, "media_energia": ..., "media_sed": ..., "individuos_movidos": ...,
+ "agrupamiento_max": 11, "huidas": 3688,
+ "depredador": {"activos": 1, "ataques": 8, "muertes": 3},
+ "config": {...}}
+   final = inicial + nacimientos - muertes, exacto en 6 semillas (1,2,3,7,42,123)
+
+$ letalidad del depredador (presa sana acorralada, isla de 1 tile)
+salud 100 -> 70 -> 43.20 -> 14.80 -> 0.00 ; muere en el tick 248 ; muertes=1 = depredador.muertes
+control identico sin depredador: viva a 300 ticks, salud 100.00, muertes=0
+Mutacion: revertir el orden de _enterrar -> test de letalidad FALLA (assert 0 == 1);
+_morder sin restar dano -> FALLA igual. Restaurado (sha256 verificado) y gate repetido en verde.
+
+$ agrupamiento: seed 2 pico 11 (umbral 6); inicio 1/12. Con la sed congelada el pico baja a 5:
+  lo produce beber, no el spawn.
+$ huida: distancia euclidea real al depredador; 4-5 de 5 suben en cada tramo.
+
+$ uv run pytest -q
+592 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 27 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 27 source files
+```
+
+</details>

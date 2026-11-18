@@ -119,12 +119,15 @@ def _intentar(individuo: Individuo, mundo: Mundo, ux: float, uy: float, paso: fl
 
 
 def huir(individuo: Individuo, mundo: Mundo, amenaza: tuple[float, float]) -> bool:
-    """Se aleja de `amenaza` unos tiles, en la dirección opuesta."""
+    """Se aleja de `amenaza` en un sprint de dos pasos, en la dirección opuesta."""
     dx = individuo.x - amenaza[0]
     dy = individuo.y - amenaza[1]
     if dx == 0.0 and dy == 0.0:
         dx = 1.0
-    return moverse(individuo, mundo, (individuo.x + 4 * dx, individuo.y + 4 * dy))
+    destino = (individuo.x + 4 * dx, individuo.y + 4 * dy)
+    primero = moverse(individuo, mundo, destino)
+    segundo = moverse(individuo, mundo, destino)
+    return primero or segundo
 
 
 def aplicar(individuo: Individuo, mundo: Mundo, accion: Accion) -> bool:

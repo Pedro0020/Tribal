@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.8-green)
+![Version](https://img.shields.io/badge/Version-0.1.9-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -46,11 +46,14 @@ make check     # lint + typecheck + test + arnés
 
 La Fase 0 es una tribu de 8–15 individuos en un mapa top-down de 60×34 tiles
 (480×272 px) con tres necesidades —energía, sed y salud— que evolucionan por
-tick. Cada individuo nace con un **genoma mínimo** (velocidad y metabolismo)
-que modula cuánto avanza por tick y cuánto gasta; la herencia y la mutación
-llegan en la Fase 1. Se mueven, beben en los lagos, comen bayas o caza y
-descansan siguiendo reglas locales; si no cubren una necesidad, enferman y
-mueren. Todavía **no** hay cultura ni LLM: eso son fases posteriores.
+tick. Cada individuo nace con un **genoma mínimo** (velocidad, metabolismo y
+longevidad) que modula cuánto avanza, cuánto gasta y cuánto vive. Las parejas
+adultas y bien alimentadas tienen crías junto al agua, que heredan la media de
+sus progenitores con una mutación pequeña; con la edad llega la muerte. Un
+**depredador** recorre el mapa, persigue a la presa viva más cercana y la
+muerde: quien lo ve cerca huye en un sprint. De ahí salen dos comportamientos
+que nadie guioniza —la tribu se agolpa en los lagos y huye en manada— y que la
+puerta F0→F1 mide. Todavía **no** hay cultura ni LLM: eso son fases posteriores.
 
 ```bash
 uv run python -m tribal run                                      # ventana 60 fps, 12 individuos
@@ -58,26 +61,28 @@ uv run python -m tribal run --headless --ticks 600 --json        # una partida, 
 uv run python -m tribal run --seed 7 --benchmark --headless --ticks 600
 ```
 
-![Fase 0: mapa top-down con lagos, bosques y la tribu](docs/img/fase0.png)
+![Fase 0: la tribu junto al lago con un depredador acechando](docs/img/fase0-puerta.png)
 
 En la ventana se ve el mapa (hierba, lagos azules, bosques con bayas rojas y
 caza marrón), los individuos como sprites de 6×8 px (túnica ocre o roja según
-sexo) y una franja de HUD con tick, población y media de energía y sed.
+sexo, más pequeños mientras son crías), el depredador como un cuadrúpedo oscuro
+con ojo rojo y una franja de HUD con tick, población y media de energía y sed.
 **ESC** o cerrar la ventana termina la partida.
 
 Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 
 ```json
-{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 12, "nacimientos": 0, "muertes": 0, "media_energia": 66.62, "media_sed": 42.32, "individuos_movidos": 12, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6}}
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 12, "nacimientos": 1, "muertes": 1, "media_energia": 43.55, "media_sed": 38.88, "individuos_movidos": 13, "depredador": {"activos": 1, "ataques": 4, "muertes": 1}, "agrupamiento_max": 6, "huidas": 49, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true}}
 ```
 
 `--seed 7 --benchmark --headless --ticks 600` (comprueba el presupuesto de
 16,67 ms/tick; sale con código != 0 si no cabe):
 
 ```
-seed 7  ticks 600  poblacion 12 -> 12
-muertes 0  nacimientos 0  individuos movidos 12
-media energia 40.85  media sed 38.25
+seed 7  ticks 600  poblacion 12 -> 13
+muertes 0  nacimientos 1  individuos movidos 13
+depredadores 1  ataques 2  agrupamiento max 11  huidas 150
+media energia 50.53  media sed 29.6
 ```
 
 y en **stderr** (el `ms/tick` no entra en el resumen, que es determinista; su
@@ -111,7 +116,10 @@ es exactamente una partida por defecto:
   "alto": 34,
   "tasa_sed": 0.16,
   "tasa_energia": 0.15,
-  "tasa_salud": 0.6
+  "tasa_salud": 0.6,
+  "cooldown_reproduccion": 600,
+  "depredadores": 1,
+  "depredador_activo": true
 }
 ```
 
@@ -121,8 +129,10 @@ uv run python -m tribal run --headless --config docs/config-ejemplo.json --json 
 
 Las claves que falten toman su default. Es **error** —código 2, mensaje con la
 clave y el valor, sin traza— una clave desconocida, `individuos` fuera de
-8–15, un mapa menor que 9×9 tiles, una tasa ≤ 0 o un valor de tipo equivocado
-(`"ancho": 60.7`, `"seed": "hola"`, `"individuos": true`).
+8–15, un mapa menor que 9×9 tiles, una tasa o un `cooldown_reproduccion` ≤ 0,
+un `depredadores` negativo, un `depredador_activo` que no sea booleano o un
+valor de tipo equivocado (`"ancho": 60.7`, `"seed": "hola"`,
+`"individuos": true`).
 
 Precedencia: **CLI > fichero > defaults**. `--seed` y `--individuos` pasados a
 mano mandan sobre el fichero (y el resumen refleja los valores efectivos):
@@ -132,10 +142,13 @@ uv run python -m tribal run --headless --config docs/config-ejemplo.json --seed 
 # ... "seed": 7, "poblacion_inicial": 9, "config": {"seed": 7, "individuos": 9, ...}
 ```
 
-Una partida más larga enseña el coste de no cubrir una necesidad:
-`uv run python -m tribal run --seed 2 --headless --json --ticks 3000` acaba con
-`poblacion_final: 11` y `muertes: 1` (sed al 100 lejos del agua). Sin ningún
-recurso la tribu se extingue; ese caso lo cubren los tests del motor.
+Una partida más larga enseña la puerta F0→F1 completa:
+`uv run python -m tribal run --seed 2 --headless --json --ticks 3000` acaba
+con `poblacion_final: 10`, `nacimientos: 10`, `muertes: 12` (3 de ellas por
+mordiscos del depredador), 8 ataques, `huidas: 3688` y un
+`agrupamiento_max: 11`: once individuos a ≤2 tiles de un lago en el mismo tick
+(no necesariamente bebiendo a la vez). Sin ningún recurso la tribu se extingue;
+ese caso lo cubren los tests del motor.
 
 ## Principios
 

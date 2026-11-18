@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: puerta F0 con reproduccion y depredador (F0-002)
 - feat: configuracion de simulacion reproducible por semilla (HARD-000)
 - fix: el RAG indexa el paquete desde project_slug (FIX-002)
 - fix: commit_feature idempotente y lock al dia (FIX-005)

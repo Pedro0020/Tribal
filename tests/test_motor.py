@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from tribal.agents import necesidades
+from tribal.config import SimConfig
 from tribal.core import acciones
 from tribal.core import mundo as modulo_mundo
 from tribal.core.modelos import (
@@ -128,16 +129,20 @@ def test_las_necesidades_evolucionan_por_tick() -> None:
     assert individuo.necesidades.salud == 100.0
 
 
-def test_la_tribu_sobrevive_en_un_mundo_con_recursos() -> None:
-    simulacion = Simulacion(modulo_mundo.crear(seed=42, individuos=12))
+def test_la_tribu_sobrevive_y_se_reproduce_en_un_mundo_con_recursos() -> None:
+    config = SimConfig(seed=42, individuos=12, depredador_activo=False)
+    simulacion = Simulacion(modulo_mundo.crear(seed=42, individuos=12, config=config), config)
 
     for _ in range(1200):
         simulacion.step()
 
     resumen = simulacion.resumen()
+    # Sin depredador, cubrir las necesidades basta: nadie muere y cada cría suma.
     assert resumen["muertes"] == 0
-    assert resumen["poblacion_final"] == 12
-    assert resumen["individuos_movidos"] == 12
+    assert resumen["poblacion_final"] == resumen["poblacion_inicial"] + resumen["nacimientos"]
+    assert resumen["nacimientos"] > 0
+    assert resumen["depredador"]["activos"] == 0
+    assert resumen["individuos_movidos"] >= 12
 
 
 def test_sin_agua_el_individuo_muere_de_sed() -> None:

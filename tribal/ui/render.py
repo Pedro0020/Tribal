@@ -35,6 +35,10 @@ _PIEL = (232, 190, 150)
 _PELO = (44, 30, 22)
 _PIERNAS = (58, 48, 40)
 _TUNICA = {"m": (146, 88, 46), "f": (170, 66, 60)}
+#: Depredador: pelaje oscuro y ojo rojo, para no confundirlo con la tribu.
+_PELAJE = (66, 58, 52)
+_PELAJE_CLARO = (92, 80, 70)
+_OJO = (214, 54, 42)
 
 
 def tamano_ventana(mundo: Mundo) -> tuple[int, int]:
@@ -62,12 +66,16 @@ def dibujar_frame(mundo: Mundo) -> pygame.Surface:
             )
 
     for individuo in mundo.individuos:
+        cria = individuo.edad < individuo.madurez
+        sprite = _sprite_cria(individuo.sexo) if cria else _sprite(individuo.sexo)
+        x = int(individuo.x * TILE_PX) + (2 if cria else 1)
+        y = ALTO_HUD + int(individuo.y * TILE_PX) + (3 if cria else 1)
+        lienzo.blit(sprite, (x, y))
+
+    for depredador in mundo.depredadores:
         lienzo.blit(
-            _sprite(individuo.sexo),
-            (
-                int(individuo.x * TILE_PX) + 1,
-                ALTO_HUD + int(individuo.y * TILE_PX) + 1,
-            ),
+            _sprite_depredador(),
+            (int(depredador.x * TILE_PX), ALTO_HUD + int(depredador.y * TILE_PX)),
         )
 
     _dibujar_hud(lienzo, mundo)
@@ -120,6 +128,32 @@ def _sprite(sexo: str) -> pygame.Surface:
     pygame.draw.rect(sprite, _PIEL, pygame.Rect(5, 3, 1, 2))
     pygame.draw.rect(sprite, _PIERNAS, pygame.Rect(1, 6, 1, 2))
     pygame.draw.rect(sprite, _PIERNAS, pygame.Rect(4, 6, 1, 2))
+    return sprite
+
+
+@cache
+def _sprite_cria(sexo: str) -> pygame.Surface:
+    """Cría: misma paleta que el adulto, un tercio más baja."""
+    sprite = pygame.Surface((4, 5), pygame.SRCALPHA)
+    pygame.draw.rect(sprite, _PELO, pygame.Rect(1, 0, 2, 1))
+    pygame.draw.rect(sprite, _PIEL, pygame.Rect(1, 1, 2, 1))
+    pygame.draw.rect(sprite, _TUNICA[sexo], pygame.Rect(0, 2, 4, 2))
+    pygame.draw.rect(sprite, _PIERNAS, pygame.Rect(1, 4, 1, 1))
+    pygame.draw.rect(sprite, _PIERNAS, pygame.Rect(2, 4, 1, 1))
+    return sprite
+
+
+@cache
+def _sprite_depredador() -> pygame.Surface:
+    """Cuadrúpedo de 8x6: lomo oscuro, cabeza a la derecha y ojo rojo."""
+    sprite = pygame.Surface((8, 6), pygame.SRCALPHA)
+    pygame.draw.rect(sprite, _PELAJE, pygame.Rect(0, 2, 8, 3))
+    pygame.draw.rect(sprite, _PELAJE_CLARO, pygame.Rect(0, 2, 5, 1))
+    pygame.draw.rect(sprite, _PELAJE, pygame.Rect(5, 0, 3, 3))
+    pygame.draw.rect(sprite, _PELAJE_CLARO, pygame.Rect(7, 0, 1, 1))
+    pygame.draw.rect(sprite, _OJO, pygame.Rect(6, 1, 1, 1))
+    pygame.draw.rect(sprite, _PELAJE, pygame.Rect(1, 4, 1, 2))
+    pygame.draw.rect(sprite, _PELAJE, pygame.Rect(6, 4, 1, 2))
     return sprite
 
 
