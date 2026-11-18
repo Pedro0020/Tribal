@@ -213,10 +213,13 @@
         "uv run python -m tribal run --headless --json --ticks 5000 reporta n_divergentes, n_conformistas y nodos por origen",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F1-002"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 1,
+      "closed": "2026-11-18"
     },
     {
       "id": "F1-004",

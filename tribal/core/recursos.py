@@ -59,10 +59,17 @@ def sembrar(mundo: Mundo) -> None:
         siguiente_id += 1
 
 
-def regenerar(mundo: Mundo) -> None:
-    """Un punto de recurso por intervalo; nunca por encima de la capacidad."""
+def regenerar(mundo: Mundo, penalizacion: float = 1.0) -> None:
+    """Un punto de recurso por intervalo; nunca por encima de la capacidad.
+
+    `penalizacion` (sequía, concepto §13) espacia la regeneración del agua y
+    las bayas: 2.0 tarda el doble, 3.0 el triple. La caza no se toca.
+    """
     for recurso in mundo.recursos:
-        if recurso.cantidad < recurso.capacidad and mundo.tick % recurso.regeneracion == 0:
+        intervalo = recurso.regeneracion
+        if penalizacion > 1.0 and recurso.tipo in (TipoRecurso.AGUA, TipoRecurso.BAYAS):
+            intervalo = int(recurso.regeneracion * penalizacion)
+        if recurso.cantidad < recurso.capacidad and mundo.tick % intervalo == 0:
             recurso.cantidad += 1
 
 

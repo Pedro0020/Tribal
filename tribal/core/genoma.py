@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from typing import Literal
 
 #: Mutación relativa máxima de un rasgo al heredar (5 % de la media).
 MUTACION = 0.05
@@ -28,6 +29,12 @@ RASGO_MAX = 1.5
 #: Rango del temperamento divergente (conformista 0.0 <-> divergente 1.0).
 DIVERGENCIA_MIN = 0.0
 DIVERGENCIA_MAX = 1.0
+#: Fronteras del temperamento de concepto §9b: por encima experimenta, por
+#: debajo imita, y en medio no destaca en ninguna de las dos cosas.
+UMBRAL_DIVERGENTE = 0.6
+UMBRAL_CONFORMISTA = 0.4
+
+Temperamento = Literal["divergente", "neutro", "conformista"]
 
 #: Los rasgos, en el orden en que se heredan y se resumen.
 RASGOS: tuple[str, ...] = (
@@ -54,6 +61,19 @@ class Genoma:
     inteligencia: float = 1.0
     salud: float = 1.0
     divergencia: float = 0.5
+
+
+def temperamento(genoma: Genoma) -> Temperamento:
+    """Clasifica el rasgo `divergencia` de concepto §9b.
+
+    El divergente es quien prueba combinaciones nuevas; el conformista, quien
+    copia lo que ve funcionar. El neutro no destaca en ninguna de las dos cosas.
+    """
+    if genoma.divergencia > UMBRAL_DIVERGENTE:
+        return "divergente"
+    if genoma.divergencia < UMBRAL_CONFORMISTA:
+        return "conformista"
+    return "neutro"
 
 
 def heredar(madre: Genoma, padre: Genoma, azar: random.Random) -> Genoma:

@@ -55,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fichero JSON con los parámetros de la partida (ver docs/config-ejemplo.json).",
     )
     run.add_argument("--ticks", type=int, default=0, help="Ticks a simular; 0 = sin límite.")
+    run.add_argument(
+        "--crisis",
+        action="store_true",
+        help="Sequía (concepto §13): menos agua y bayas, más sed y más intentos divergentes.",
+    )
     run.add_argument("--headless", action="store_true", help="Sin ventana.")
     run.add_argument("--json", action="store_true", help="Resumen como un único objeto JSON.")
     run.add_argument("--benchmark", action="store_true", help="Falla si no cabe en 16.67 ms/tick.")
@@ -132,7 +137,7 @@ def _run(args: argparse.Namespace) -> int:
         print("error: --headless necesita --ticks mayor que 0", file=sys.stderr)
         return 2
 
-    config = replace(base, seed=seed, individuos=individuos)
+    config = replace(base, seed=seed, individuos=individuos, crisis=base.crisis or args.crisis)
     simulacion = run_sim(args.ticks, seed, args.headless, individuos=individuos, config=config)
     resumen = simulacion.resumen()
 

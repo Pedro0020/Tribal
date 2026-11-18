@@ -22,6 +22,7 @@ from typing import Any
 
 from tribal.core.habilidades import Rama
 from tribal.culture.arbol import ARBOL, ORIGENES, RAMAS, Nodo, Origen
+from tribal.culture.combinaciones import COMBINACIONES
 
 
 class PrerequisitoFaltante(ValueError):
@@ -47,10 +48,43 @@ class Grafo:
     def __init__(self) -> None:
         self.nodos: dict[str, Nodo] = {}
         self.aristas: list[Arista] = []
+        #: Cuántas veces se ha practicado cada nodo del árbol.
+        self.veces_usado: dict[str, int] = {}
+        #: Cuántas de esas veces las usó un conformista que no lo descubrió.
+        self.imitado: dict[str, int] = {}
 
     def activo(self, nodo_id: str) -> bool:
         nodo = self.nodos.get(nodo_id)
         return nodo is not None and nodo.estado == "activo"
+
+    def ultimo_activo(self, rama: Rama) -> Nodo | None:
+        """Nodo del árbol más avanzado de `rama`; None si la rama no ha empezado.
+
+        Las combinaciones no cuentan: no son la técnica que practica el
+        instinto, sino un cruce que solo nace cuando alguien lo intenta.
+        """
+        activos = [
+            nodo
+            for nodo in self.nodos.values()
+            if nodo.rama == rama and nodo.estado == "activo" and nodo.id in ARBOL
+        ]
+        return max(activos, key=lambda nodo: (nodo.nivel, nodo.id)) if activos else None
+
+    def registrar_uso(self, nodo_id: str, usuario: int, es_conformista: bool) -> bool:
+        """Suma un uso del nodo. True si además cuenta como imitación.
+
+        La cultura es colectiva y no se guarda por individuo: la transmisión se
+        mide con el contador `imitado` del nodo. Un conformista que usa una
+        técnica que no descubrió está copiando lo que vio funcionar (§9b).
+        """
+        nodo = self.nodos.get(nodo_id)
+        if nodo is None:
+            return False
+        self.veces_usado[nodo_id] = self.veces_usado.get(nodo_id, 0) + 1
+        if es_conformista and nodo.autor != usuario:
+            self.imitado[nodo_id] = self.imitado.get(nodo_id, 0) + 1
+            return True
+        return False
 
     def descubrir(self, nodo_id: str, autor: int, tick: int, origen: Origen = "arbol") -> Nodo:
         """Crea el nodo si se puede; `PrerequisitoFaltante` si le falta alguno.
@@ -61,7 +95,7 @@ class Grafo:
         existente = self.nodos.get(nodo_id)
         if existente is not None:
             return existente
-        plantilla = ARBOL.get(nodo_id)
+        plantilla = ARBOL.get(nodo_id) or COMBINACIONES.get(nodo_id)
         if plantilla is None:
             raise ValueError(f"nodo desconocido: {nodo_id!r}")
         faltan = tuple(
@@ -70,6 +104,8 @@ class Grafo:
         if faltan:
             raise PrerequisitoFaltante(nodo_id, faltan)
 
+        if nodo_id in COMBINACIONES:
+            origen = "combinacion"
         nodo = replace(plantilla, autor=autor, tick=tick, origen=origen)
         self.nodos[nodo_id] = nodo
         self.aristas.extend(Arista(requisito, nodo_id) for requisito in plantilla.requisitos)

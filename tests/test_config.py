@@ -26,6 +26,8 @@ CLAVES = {
     "cooldown_reproduccion",
     "depredadores",
     "depredador_activo",
+    "crisis",
+    "sequia_ticks",
 }
 
 
@@ -49,6 +51,8 @@ def test_los_defaults_son_los_de_fase_0() -> None:
         "cooldown_reproduccion": 600,
         "depredadores": 1,
         "depredador_activo": True,
+        "crisis": False,
+        "sequia_ticks": 0,
     }
     assert set(config.a_json()) == CLAVES
 

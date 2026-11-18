@@ -8,5 +8,7 @@
   "tasa_salud": 0.6,
   "cooldown_reproduccion": 600,
   "depredadores": 1,
-  "depredador_activo": true
+  "depredador_activo": true,
+  "crisis": false,
+  "sequia_ticks": 0
 }

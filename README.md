@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.11-green)
+![Version](https://img.shields.io/badge/Version-0.1.12-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -76,7 +76,7 @@ con ojo rojo y una franja de HUD con tick, población y media de energía y sed.
 Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 
 ```json
-{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 13, "nacimientos": 1, "muertes": 0, "media_energia": 55.8, "media_sed": 39.4, "media_genes": {"velocidad": 0.982, "metabolismo": 1.038, "longevidad": 1.075, "fuerza": 1.042, "resistencia": 0.985, "inteligencia": 1.011, "salud": 1.027, "divergencia": 0.509}, "habilidades_distintas": 1, "habilidades": {"1": ["recolectar"], "2": ["recolectar"], "3": ["recolectar"], "4": ["recolectar"], "5": ["recolectar"], "6": ["recolectar"], "7": ["recolectar"], "8": ["recolectar"], "9": ["recolectar"], "10": ["recolectar"], "11": ["recolectar"], "12": ["recolectar"], "13": ["recolectar"]}, "individuos_movidos": 13, "depredador": {"activos": 1, "ataques": 1, "muertes": 0}, "agrupamiento_max": 8, "huidas": 188, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true}}
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 13, "nacimientos": 1, "muertes": 0, "media_energia": 55.8, "media_sed": 39.4, "media_genes": {"velocidad": 0.982, "metabolismo": 1.038, "longevidad": 1.075, "fuerza": 1.042, "resistencia": 0.985, "inteligencia": 1.011, "salud": 1.027, "divergencia": 0.509}, "habilidades_distintas": 1, "habilidades": {"1": ["recolectar"], "2": ["recolectar"], "3": ["recolectar"], "4": ["recolectar"], "5": ["recolectar"], "6": ["recolectar"], "7": ["recolectar"], "8": ["recolectar"], "9": ["recolectar"], "10": ["recolectar"], "11": ["recolectar"], "12": ["recolectar"], "13": ["recolectar"]}, "individuos_movidos": 13, "depredador": {"activos": 1, "ataques": 1, "muertes": 0}, "agrupamiento_max": 8, "huidas": 188, "n_divergentes": 5, "n_conformistas": 4, "n_neutros": 4, "intentos_divergentes": 0, "combinaciones_logradas": 0, "imitaciones": 3, "nodos": [{"id": "guijarro", "rama": "litica", "nivel": 0, "titulo": "Guijarro", "origen": "arbol", "autor": 7, "tick": 263}, {"id": "lasca", "rama": "litica", "nivel": 1, "titulo": "Lasca", "origen": "arbol", "autor": 10, "tick": 272}, {"id": "bifaz", "rama": "litica", "nivel": 2, "titulo": "Bifaz", "origen": "arbol", "autor": 8, "tick": 279}, {"id": "punta_de_lanza", "rama": "litica", "nivel": 3, "titulo": "Punta de lanza", "origen": "arbol", "autor": 1, "tick": 313}, {"id": "caza_cooperativa", "rama": "litica", "nivel": 4, "titulo": "Caza cooperativa", "origen": "arbol", "autor": 12, "tick": 319}], "aristas": [{"origen": "guijarro", "destino": "lasca"}, {"origen": "lasca", "destino": "bifaz"}, {"origen": "bifaz", "destino": "punta_de_lanza"}, {"origen": "punta_de_lanza", "destino": "caza_cooperativa"}], "pct_fuera_arbol": 0.0, "nodos_por_origen": {"arbol": 5, "combinacion": 0, "interaccion": 0, "llm": 0}, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true, "crisis": false, "sequia_ticks": 0}}
 ```
 
 `--seed 7 --benchmark --headless --ticks 600` (comprueba el presupuesto de
@@ -98,7 +98,8 @@ benchmark: 0.31 ms/tick, cabe en 16.67 ms
 
 Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
 `--config` (fichero JSON), `--ticks` (`0` = sin límite en ventana; obligatorio
-> 0 con `--headless`), `--headless`, `--json` y `--benchmark`.
+> 0 con `--headless`), `--crisis` (sequía: menos agua y bayas, más sed y más
+intentos divergentes), `--headless`, `--json` y `--benchmark`.
 
 ## Árbol de conocimiento (Fase 1)
 
@@ -162,7 +163,9 @@ es exactamente una partida por defecto:
   "tasa_salud": 0.6,
   "cooldown_reproduccion": 600,
   "depredadores": 1,
-  "depredador_activo": true
+  "depredador_activo": true,
+  "crisis": false,
+  "sequia_ticks": 0
 }
 ```
 
@@ -173,9 +176,9 @@ uv run python -m tribal run --headless --config docs/config-ejemplo.json --json 
 Las claves que falten toman su default. Es **error** —código 2, mensaje con la
 clave y el valor, sin traza— una clave desconocida, `individuos` fuera de
 8–15, un mapa menor que 9×9 tiles, una tasa o un `cooldown_reproduccion` ≤ 0,
-un `depredadores` negativo, un `depredador_activo` que no sea booleano o un
-valor de tipo equivocado (`"ancho": 60.7`, `"seed": "hola"`,
-`"individuos": true`).
+un `depredadores` negativo, un `depredador_activo` o `crisis` que no sean
+booleanos, un `sequia_ticks` negativo o un valor de tipo equivocado
+(`"ancho": 60.7`, `"seed": "hola"`, `"individuos": true`).
 
 Precedencia: **CLI > fichero > defaults**. `--seed` y `--individuos` pasados a
 mano mandan sobre el fichero (y el resumen refleja los valores efectivos):
@@ -198,8 +201,8 @@ extingue; ese caso lo cubren los tests del motor.
 El genoma ([`tribal/core/genoma.py`](tribal/core/genoma.py)) tiene ocho rasgos:
 siete funcionales en [0.5, 1.5] con 1.0 neutro —velocidad, metabolismo,
 longevidad, fuerza, resistencia, inteligencia y salud— y `divergencia` en
-[0.0, 1.0], el temperamento conformista ↔ divergente de concepto §9b que usará
-F1-003. La generación fundadora llega con los ocho rasgos repartidos al azar
+[0.0, 1.0], el temperamento conformista ↔ divergente de concepto §9b que en
+F1-003 decide quién experimenta y quién imita. La generación fundadora llega con los ocho rasgos repartidos al azar
 (los siete funcionales entre 0.85 y 1.15, `divergencia` entre 0.2 y 0.8), y la
 descendencia hereda la media de sus dos progenitores con una mutación normal
 del 5 % acotada al rango del rasgo: la misma semilla produce los mismos
@@ -219,6 +222,38 @@ más).
 
 El resumen de `run --json` añade `media_genes` (los ocho rasgos),
 `habilidades_distintas` y `habilidades` por individuo.
+
+## Divergentes y conformistas (Fase 1)
+
+El rasgo `divergencia` del genoma decide el temperamento de concepto §9b:
+por encima de **0.6** el individuo es **divergente**, por debajo de **0.4**
+**conformista**, y en medio **neutro**. El conformista **imita** lo que ve
+funcionar: cuando usa una técnica que no descubrió él, el nodo suma una
+imitación (el resumen lo cuenta en `imitaciones`). El divergente **prueba
+cruces nuevos**: combinaciones de dos técnicas ya activas que no están en el
+árbol, catalogadas en
+[`tribal/culture/combinaciones.py`](tribal/culture/combinaciones.py) con su
+rama, sus dos requisitos y su justificación (`raedera`, `cuchillo_al_fuego`,
+`canto_ritual`, `caceria_dirigida`, `turnos_de_vigilia`). El cruce nace con
+`origen: "combinacion"` —nivel 1 de §8b—, consume el tick y puede fallar.
+
+La presión ambiental dispara la experimentación: con `--crisis` (o
+`"crisis": true` en el JSON) el agua y las bayas regeneran a la mitad, la sed
+sube un 25 % y los divergentes intentan cruces; `sequia_ticks` limita la
+sequía a esos ticks (`0` = toda la partida). **Sin crisis no hay intentos ni
+nodos `combinacion`**: en calma prospera la tradición, y el motor no gasta
+ticks en experimentar.
+
+```bash
+uv run python -m tribal run --headless --json --ticks 5000 --crisis
+# ... "n_divergentes": 4, "n_conformistas": 2, "n_neutros": 21,
+#     "intentos_divergentes": 2, "combinaciones_logradas": 1, "imitaciones": 41,
+#     "nodos_por_origen": {"arbol": 5, "combinacion": 1, "interaccion": 0, "llm": 0}
+#     ... un nodo "raedera" con "origen": "combinacion"
+uv run python -m tribal run --headless --json --ticks 5000
+# ... "intentos_divergentes": 0, "combinaciones_logradas": 0,
+#     "nodos_por_origen": {"arbol": 5, "combinacion": 0, ...}
+```
 
 ## Principios
 

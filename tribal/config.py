@@ -28,7 +28,15 @@ MIN_LADO = 9
 
 #: Campos que el motor indexa o usa como cuenta: enteros, y `bool` no vale
 #: (`True` es un `int` para Python, pero un JSON así casi siempre es un error).
-CAMPOS_ENTEROS = ("seed", "individuos", "ancho", "alto", "depredadores", "cooldown_reproduccion")
+CAMPOS_ENTEROS = (
+    "seed",
+    "individuos",
+    "ancho",
+    "alto",
+    "depredadores",
+    "cooldown_reproduccion",
+    "sequia_ticks",
+)
 #: Campos que el motor multiplica: número real, nunca una cadena.
 CAMPOS_TASA = ("tasa_sed", "tasa_energia", "tasa_salud")
 
@@ -56,6 +64,10 @@ class SimConfig:
     #: Cuántos depredadores pueblan el mapa (0 = ninguno) y si están activos.
     depredadores: int = 1
     depredador_activo: bool = True
+    #: Sequía de concepto §13: menos agua y bayas, más sed. `sequia_ticks` es
+    #: su duración; 0 significa que dura toda la partida.
+    crisis: bool = False
+    sequia_ticks: int = 0
 
     @classmethod
     def desde_json(cls, path: str | Path) -> SimConfig:
@@ -109,11 +121,17 @@ def validar(config: SimConfig, origen: str = "config") -> None:
             f"{origen}: cooldown_reproduccion debe ser mayor que 0 "
             f"(recibido {config.cooldown_reproduccion})"
         )
+    if config.sequia_ticks < 0:
+        raise ValueError(
+            f"{origen}: sequia_ticks no puede ser negativo (recibido {config.sequia_ticks})"
+        )
     if not isinstance(config.depredador_activo, bool):
         raise ValueError(
             f"{origen}: depredador_activo debe ser true o false "
             f"(recibido {config.depredador_activo!r})"
         )
+    if not isinstance(config.crisis, bool):
+        raise ValueError(f"{origen}: crisis debe ser true o false (recibido {config.crisis!r})")
     if config.ancho < MIN_LADO or config.alto < MIN_LADO:
         raise ValueError(
             f"{origen}: ancho y alto deben ser al menos {MIN_LADO} tiles "

@@ -613,3 +613,44 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 33 so
 ```
 
 </details>
+
+## F1-003 — Divergentes y conformistas: variacion y transmision
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 115 passed in 15.57s
+- **Cambios:** tribal/culture/combinaciones.py (nuevo: 5 cruces plausibles fuera del arbol); tribal/culture/grafo.py (descubrir combinaciones con origen forzado, veces_usado/imitado); tribal/core/genoma.py (clasificacion por divergencia), tribal/core/recursos.py (crisis); tribal/config.py (crisis, sequia_ticks); tribal/sim.py (intentos solo de divergentes, imitacion solo de conformistas, contadores en el resumen); tribal/cli.py (--crisis); tests/test_divergencia.py (nuevo, 13 casos); tests/{test_config,test_cli_run}.py; docs/config-ejemplo.json; README
+- **Decisiones:** Divergente > 0.6, conformista < 0.4, neutro en medio: los neutros ni intentan ni imitan. Los cruces son nivel 1 de §8b (origen combinacion) y solo se intentan en crisis: sin crisis, 10/10 semillas dan 0 intentos y 0 combinaciones, con crisis 9/10 dan al menos una. La crisis reduce la regeneracion de agua/bayas a la mitad y sube la sed un 25 por ciento. La transmision se mide con veces_usado e imitado, y solo los conformistas suman imitaciones: el reviewer ancla ambas mitades del criterio con tests negativo y positivo. LIMITACION ABIERTA para F1-004: la proporcion de divergentes no sube en crisis con el modelo actual (15 vs 33 por ciento); la puerta F1 exige que reaccione, asi que F1-004 tiene que meter seleccion real (ventaja de supervivencia o reproduccion del divergente en crisis) y demostrarla en varias semillas.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 115 passed
+
+$ uv run python -m tribal run --headless --json --ticks 5000 --crisis
+"n_divergentes": 4, "n_conformistas": 2, "n_neutros": 21,
+"intentos_divergentes": 2, "combinaciones_logradas": 1, "imitaciones": ...,
+"nodos_por_origen": {"arbol": 5, "combinacion": 1, "interaccion": 0, "llm": 0},
+"pct_fuera_arbol": 16.7   -> nodo raedera (lasca + conservar_brasas) en el tick 349
+
+$ misma semilla SIN crisis
+"intentos_divergentes": 0, "combinaciones_logradas": 0, "nodos_por_origen.combinacion": 0
+  10/10 semillas sin crisis: 0 intentos y 0 combinaciones; 9/10 con crisis: >=1 combinacion
+
+$ transmision: autor divergente + usuarios divergente/neutro -> veces_usado 2, imitado {}
+  mismo montaje con conformista -> imitado {"guijarro": 1}
+  contadores reales: caza_cooperativa 7/3 a 600 ticks -> 46/12 a 1500
+
+Mutaciones verificadas por el reviewer (SHA-256 restaurado):
+  quitar es_conformista -> CAE | quitar registrar_uso -> CAE | no forzar origen -> CAE |
+  sin filtro de requisitos -> CAE | quitar gate de crisis -> CAE
+
+$ uv run pytest -q
+644 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 33 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 33 source files
+```
+
+</details>

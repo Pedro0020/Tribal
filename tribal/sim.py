@@ -27,6 +27,7 @@ from tribal.core.modelos import (
     Necesidades,
     TipoTile,
 )
+from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.grafo import Grafo
 
 #: Presupuesto de frame a 60 fps.
@@ -48,6 +49,14 @@ RADIO_AGUA = 2.0
 PRACTICAS: dict[str, tuple[str, Rama]] = {
     "comer": ("recolectar", "litica"),
 }
+#: Sequía de concepto §13: la regeneración de agua y bayas se espacia y la sed
+#: sube. En calma el factor es 1.0 y nada cambia respecto a Fase 0.
+PENALIZACION_SEQUIA = 2.0
+FACTOR_SED_SEQUIA = 1.25
+#: Un divergente experimenta con probabilidad proporcional a lo que se desvía
+#: (máximo 15 % por tick) y completa el cruce la mitad de las veces.
+PROB_INTENTO_DIVERGENTE = 0.15
+PROB_COMPLETAR_COMBINACION = 0.5
 
 
 class Simulacion:
@@ -66,6 +75,9 @@ class Simulacion:
         self.nacimientos = 0
         self.agrupamiento_max = 0
         self.huidas = 0
+        #: Experimentos de los divergentes y cruces que llegaron a nodo (§9b).
+        self.intentos_divergentes = 0
+        self.combinaciones_logradas = 0
         self._movidos = 0
         self._ms_acumulados = 0.0
         #: Lo que la tribu ha descubierto. Vive aquí y no en el mundo.
@@ -88,13 +100,14 @@ class Simulacion:
         inicio = time.perf_counter()
 
         self.mundo.tick += 1
-        recursos.regenerar(self.mundo)
+        en_crisis = self._en_crisis()
+        recursos.regenerar(self.mundo, PENALIZACION_SEQUIA if en_crisis else 1.0)
 
         for individuo in self.mundo.individuos:
             necesidades.evolucionar(
                 individuo.necesidades,
                 individuo.genoma,
-                self.config.tasa_sed,
+                self.config.tasa_sed * (FACTOR_SED_SEQUIA if en_crisis else 1.0),
                 self.config.tasa_energia,
                 self.config.tasa_salud,
             )
@@ -107,6 +120,10 @@ class Simulacion:
 
         descubierto = False
         for individuo in self.mundo.individuos:
+            # Experimentar consume el tick: el divergente que prueba un cruce
+            # no come ni bebe en ese tick (concepto §9b).
+            if self._intentar_combinacion(individuo):
+                continue
             ya_se_movio = individuo.movido
             accion = instinto.elegir(individuo, self.mundo)
             huyendo_antes = individuo.huyendo
@@ -120,9 +137,10 @@ class Simulacion:
             if individuo.movido and not ya_se_movio:
                 self._movidos += 1
             # Un nodo nuevo como mucho por tick: el árbol avanza al ritmo de la
-            # tribu, no de golpe en el primer tick en que alguien come.
-            if aplicada and not descubierto:
-                descubierto = self._practicar(individuo, accion.nombre)
+            # tribu, no de golpe en el primer tick en que alguien come. Practicar
+            # se cuenta siempre, descubra nodo o no: así se mide la imitación.
+            if aplicada and self._practicar(individuo, accion.nombre, descubrir=not descubierto):
+                descubierto = True
 
         self._reproducir()
         self.agrupamiento_max = max(self.agrupamiento_max, self._junto_al_agua())
@@ -183,18 +201,75 @@ class Simulacion:
             1 for individuo in self.mundo.individuos if _cerca_de_agua(individuo, self._agua_tiles)
         )
 
-    def _practicar(self, individuo: Individuo, accion: str) -> bool:
-        """Aplica la práctica de `accion`: True si descubrió un nodo del árbol.
+    def _en_crisis(self) -> bool:
+        """True mientras dure la sequía: sin límite (`sequia_ticks=0`) o hasta su tick."""
+        if not self.config.crisis:
+            return False
+        return self.config.sequia_ticks <= 0 or self.mundo.tick <= self.config.sequia_ticks
 
-        Solo avanza quien **sabe** la habilidad de la práctica (concepto §5: la
-        cultura sale de lo que ya se sabe hacer), y el nodo nace con su origen
-        escrito por `Grafo.descubrir`, que es quien valida los prerrequisitos.
+    def _intentar_combinacion(self, individuo: Individuo) -> bool:
+        """Un divergente gasta el tick probando un cruce. True si lo intentó.
+
+        Solo pasa en crisis (concepto §9b y §13): en calma la tradición basta y
+        el motor no gasta ticks en experimentar, así que sin crisis no aparece
+        ningún nodo `combinacion`. El candidato tiene que tener sus dos nodos
+        activos y no existir aún; si el cruce no cuaja, el intento se cuenta
+        igual, porque el experimento ocurrió.
+        """
+        if not self._en_crisis():
+            return False
+        if modulo_genoma.temperamento(individuo.genoma) != "divergente":
+            return False
+        if necesidades.sed_critica(individuo.necesidades) or necesidades.energia_baja(
+            individuo.necesidades
+        ):
+            return False
+        candidatas = [
+            combinacion
+            for combinacion in COMBINACIONES.values()
+            if combinacion.id not in self.grafo.nodos
+            and all(self.grafo.activo(requisito) for requisito in combinacion.requisitos)
+        ]
+        if not candidatas:
+            return False
+        exceso = individuo.genoma.divergencia - modulo_genoma.UMBRAL_DIVERGENTE
+        margen = modulo_genoma.DIVERGENCIA_MAX - modulo_genoma.UMBRAL_DIVERGENTE
+        if self.mundo.azar.random() >= PROB_INTENTO_DIVERGENTE * exceso / margen:
+            return False
+
+        self.intentos_divergentes += 1
+        candidata = self.mundo.azar.choice(candidatas)
+        if self.mundo.azar.random() < PROB_COMPLETAR_COMBINACION:
+            self.grafo.descubrir(
+                candidata.id,
+                autor=individuo.id,
+                tick=self.mundo.tick,
+                origen="combinacion",
+            )
+            self.combinaciones_logradas += 1
+        return True
+
+    def _practicar(self, individuo: Individuo, accion: str, *, descubrir: bool) -> bool:
+        """Registra la práctica de `accion` y, si toca, avanza su rama del árbol.
+
+        Solo cuenta quien **sabe** la habilidad de la práctica (concepto §5: la
+        cultura sale de lo que ya se sabe hacer). El uso se anota en el nodo más
+        avanzado de la rama —la técnica que está funcionando— y un conformista
+        que la usa sin haberla descubierto suma una imitación (§9b). El nodo
+        nuevo nace con su origen escrito por `Grafo.descubrir`, que valida los
+        prerrequisitos.
         """
         practica = PRACTICAS.get(accion)
         if practica is None:
             return False
         habilidad, rama = practica
         if not individuo.habilidades.sabe(habilidad):
+            return False
+        en_uso = self.grafo.ultimo_activo(rama)
+        if en_uso is not None:
+            conformista = modulo_genoma.temperamento(individuo.genoma) == "conformista"
+            self.grafo.registrar_uso(en_uso.id, usuario=individuo.id, es_conformista=conformista)
+        if not descubrir:
             return False
         return self.grafo.avanzar(rama, autor=individuo.id, tick=self.mundo.tick) is not None
 
@@ -224,6 +299,7 @@ class Simulacion:
             for rasgo in modulo_genoma.RASGOS
         }
         habilidades = {individuo.id: sorted(individuo.habilidades.conocidas) for individuo in vivos}
+        temperamentos = [modulo_genoma.temperamento(individuo.genoma) for individuo in vivos]
         return {
             "seed": self.mundo.seed,
             "ticks": self.mundo.tick,
@@ -244,6 +320,12 @@ class Simulacion:
             },
             "agrupamiento_max": self.agrupamiento_max,
             "huidas": self.huidas,
+            "n_divergentes": temperamentos.count("divergente"),
+            "n_conformistas": temperamentos.count("conformista"),
+            "n_neutros": temperamentos.count("neutro"),
+            "intentos_divergentes": self.intentos_divergentes,
+            "combinaciones_logradas": self.combinaciones_logradas,
+            "imitaciones": sum(self.grafo.imitado.values()),
             **self.grafo.a_json(),
             "config": self.config.a_json(),
         }

@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: divergentes y conformistas con crisis (F1-003)
 - feat: arbol de conocimiento con origen de nodo (F1-002)
 - feat: genoma heredable y habilidades por ensenanza (F1-001)
 - feat: puerta F0 con reproduccion y depredador (F0-002)
