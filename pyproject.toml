@@ -1,6 +1,6 @@
 [project]
 name = "tribal"
-version = "0.1.3"
+version = "0.1.4"
 description = "Civilización emergente con agentes LLM: una tribu paleolítica en 2D."
 authors = [
   { name = "Pedro0020" }
@@ -12,7 +12,9 @@ license = { text = "MIT" }
 # puro, así que `uv sync` en un repo recién clonado no descarga nada de
 # producción. Añade aquí lo que tu proyecto necesite — `uv add <paquete>`, o
 # pídeselo al agente `env`, que es el dueño de esta sección.
-dependencies = []
+dependencies = [
+    "pygame-ce>=2.5.8",
+]
 
 [project.optional-dependencies]
 dev = [

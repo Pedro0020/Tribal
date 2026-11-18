@@ -275,3 +275,46 @@ $ referencias obsoletas (from app | import app | app/ | --cov=app | module app) 
 ```
 
 </details>
+
+## CORE-001 — Primera pieza funcional de punta a punta (Fase 0)
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 25 passed in 1.51s
+- **Cambios:** tribal/core/{modelos,mundo,recursos,acciones}.py; tribal/agents/{necesidades,instinto}.py; tribal/ui/{render,app}.py; tribal/sim.py; tribal/cli.py (subcomando run); tests/{test_motor,test_render,test_cli_run}.py; docs/img/fase0.png; README.md (Ejecutar Fase 0 con salida real y captura); pyproject.toml + uv.lock (pygame-ce 2.5.8)
+- **Decisiones:** Motor puro sin pygame: sim.py importa tribal.ui.app de forma perezosa solo en modo ventana, y un test en subprocess exige que importar tribal.sim no meta pygame en sys.modules. Un unico random.Random(seed) en el mundo y lista de individuos ordenada por id: misma semilla y ticks dan el mismo JSON byte a byte. El bucle usa Clock().tick(60) y exactamente un step() por frame (test con ticks_max=5 por mutacion). ms_tick_medio sale solo por stderr con --benchmark: dentro del JSON hacia la salida no reproducible y el numero del README caducaba. Pixel art generado por codigo y cacheado (sin assets externos). Dataclasses de stdlib, sin Pydantic, en Fase 0. Fase 0 no incluye herencia/mutacion, cultura, LLM ni SQLite.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "message": "ENTORNO LISTO - se puede trabajar." | "ready": true | "errors": 0 | "warnings": 0
+checks 14/14 ok | pytest 25 passed in 1.44s
+
+$ uv run python -m tribal run --headless --json --ticks 600   (dos corridas)
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 12, "nacimientos": 0, "muertes": 0, "media_energia": 66.62, "media_sed": 42.32, "individuos_movidos": 12}
+IDENTICOS=True (176 bytes cada una)
+
+$ uv run python -m tribal run --seed 2 --headless --json --ticks 3000
+{"seed": 2, ..., "poblacion_final": 11, "muertes": 1, "individuos_movidos": 12}   exit 0
+
+$ uv run python -m tribal run --seed 7 --benchmark --headless --ticks 600
+stderr: benchmark: 0.23 ms/tick, cabe en 16.67 ms   (stdout limpio, sin ms en el JSON)
+
+$ app.bucle con SDL_VIDEODRIVER=dummy
+120 frames en 1.960 s -> 61.2 fps ; mundo.tick = 120 (un step por frame)
+
+$ uv run python -c "import tribal.sim, sys; print('pygame' in sys.modules)"
+False
+
+$ uv run pytest tests -q
+25 passed in 1.42s
+$ uv run ruff check tribal/ tests/
+All checks passed!
+$ uv run ruff format --check tribal/ tests/
+22 files already formatted
+$ uv run mypy tribal/ tests/
+Success: no issues found in 22 source files
+```
+
+</details>

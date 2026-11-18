@@ -51,10 +51,13 @@
         "make check pasa (lint + typecheck + test + arnés)",
         "El README documenta cómo ejecutarlo, con la salida esperada"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "DESIGN-001"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 1,
+      "closed": "2026-11-18"
     },
     {
       "id": "QA-001",

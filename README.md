@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.3-green)
+![Version](https://img.shields.io/badge/Version-0.1.4-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -41,6 +41,60 @@ make init      # la puerta: ¿se puede trabajar?
 make run       # ejecuta el paquete
 make check     # lint + typecheck + test + arnés
 ```
+
+## Ejecutar (Fase 0)
+
+La Fase 0 es una tribu de 8–15 individuos en un mapa top-down de 60×34 tiles
+(480×272 px) con tres necesidades —energía, sed y salud— que evolucionan por
+tick. Cada individuo nace con un **genoma mínimo** (velocidad y metabolismo)
+que modula cuánto avanza por tick y cuánto gasta; la herencia y la mutación
+llegan en la Fase 1. Se mueven, beben en los lagos, comen bayas o caza y
+descansan siguiendo reglas locales; si no cubren una necesidad, enferman y
+mueren. Todavía **no** hay cultura ni LLM: eso son fases posteriores.
+
+```bash
+uv run python -m tribal run                                      # ventana 60 fps, 12 individuos
+uv run python -m tribal run --headless --ticks 600 --json        # una partida, resumen JSON
+uv run python -m tribal run --seed 7 --benchmark --headless --ticks 600
+```
+
+![Fase 0: mapa top-down con lagos, bosques y la tribu](docs/img/fase0.png)
+
+En la ventana se ve el mapa (hierba, lagos azules, bosques con bayas rojas y
+caza marrón), los individuos como sprites de 6×8 px (túnica ocre o roja según
+sexo) y una franja de HUD con tick, población y media de energía y sed.
+**ESC** o cerrar la ventana termina la partida.
+
+Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
+
+```json
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 12, "nacimientos": 0, "muertes": 0, "media_energia": 66.62, "media_sed": 42.32, "individuos_movidos": 12}
+```
+
+`--seed 7 --benchmark --headless --ticks 600` (comprueba el presupuesto de
+16,67 ms/tick; sale con código != 0 si no cabe):
+
+```
+seed 7  ticks 600  poblacion 12 -> 12
+muertes 0  nacimientos 0  individuos movidos 12
+media energia 40.85  media sed 38.25
+```
+
+y en **stderr** (el `ms/tick` no entra en el resumen, que es determinista; su
+valor varía unas centésimas entre ejecuciones):
+
+```
+benchmark: 0.24 ms/tick, cabe en 16.67 ms
+```
+
+Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
+`--ticks` (`0` = sin límite en ventana; obligatorio > 0 con `--headless`),
+`--headless`, `--json` y `--benchmark`.
+
+Una partida más larga enseña el coste de no cubrir una necesidad:
+`uv run python -m tribal run --seed 2 --headless --json --ticks 3000` acaba con
+`poblacion_final: 11` y `muertes: 1` (sed al 100 lejos del agua). Sin ningún
+recurso la tribu se extingue; ese caso lo cubren los tests del motor.
 
 ## Principios
 

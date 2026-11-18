@@ -12,6 +12,12 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: vertical slice de Fase 0 con mapa top-down a 60 fps (CORE-001)
+
+## [Unreleased] — 2026-11-18
+
+### Añadido
+
 - docs: arquitectura del motor y renombra el paquete a tribal (DESIGN-001)
 
 ## [Unreleased] — 2026-11-18
