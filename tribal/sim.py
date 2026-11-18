@@ -19,7 +19,7 @@ from tribal.core import acciones, recursos
 from tribal.core import depredador as modulo_depredador
 from tribal.core import genoma as modulo_genoma
 from tribal.core import mundo as modulo_mundo
-from tribal.core.habilidades import Habilidades
+from tribal.core.habilidades import Habilidades, Rama
 from tribal.core.modelos import (
     LONGEVIDAD_TICKS,
     Individuo,
@@ -27,6 +27,7 @@ from tribal.core.modelos import (
     Necesidades,
     TipoTile,
 )
+from tribal.culture.grafo import Grafo
 
 #: Presupuesto de frame a 60 fps.
 MS_FRAME = 16.67
@@ -39,6 +40,14 @@ ENERGIA_CRIA = 80.0
 MUTACION = modulo_genoma.MUTACION
 #: Radio (en tiles) dentro del cual se considera que alguien está junto al agua.
 RADIO_AGUA = 2.0
+#: Qué práctica, con qué habilidad, hace avanzar qué rama del árbol (F1-002).
+#: `recolectar` es la habilidad con la que arranca la tribu, así que la lítica
+#: progresa en cuanto alguien come; beber, descansar y huir no dejan cultura.
+#: Fuego, lenguaje y roles esperan su práctica: en F1 el árbol es andamiaje y
+#: solo lo recorre lo que la tribu ya sabía hacer antes de tenerlo.
+PRACTICAS: dict[str, tuple[str, Rama]] = {
+    "comer": ("recolectar", "litica"),
+}
 
 
 class Simulacion:
@@ -59,6 +68,8 @@ class Simulacion:
         self.huidas = 0
         self._movidos = 0
         self._ms_acumulados = 0.0
+        #: Lo que la tribu ha descubierto. Vive aquí y no en el mundo.
+        self.grafo = Grafo()
         self._agua_tiles = {
             (x, y)
             for y, fila in enumerate(mundo.tiles)
@@ -94,6 +105,7 @@ class Simulacion:
         modulo_depredador.mover(self.mundo)
         self._enterrar()
 
+        descubierto = False
         for individuo in self.mundo.individuos:
             ya_se_movio = individuo.movido
             accion = instinto.elegir(individuo, self.mundo)
@@ -107,6 +119,10 @@ class Simulacion:
                 acciones.aplicar(individuo, self.mundo, instinto.deambular(individuo, self.mundo))
             if individuo.movido and not ya_se_movio:
                 self._movidos += 1
+            # Un nodo nuevo como mucho por tick: el árbol avanza al ritmo de la
+            # tribu, no de golpe en el primer tick en que alguien come.
+            if aplicada and not descubierto:
+                descubierto = self._practicar(individuo, accion.nombre)
 
         self._reproducir()
         self.agrupamiento_max = max(self.agrupamiento_max, self._junto_al_agua())
@@ -167,6 +183,21 @@ class Simulacion:
             1 for individuo in self.mundo.individuos if _cerca_de_agua(individuo, self._agua_tiles)
         )
 
+    def _practicar(self, individuo: Individuo, accion: str) -> bool:
+        """Aplica la práctica de `accion`: True si descubrió un nodo del árbol.
+
+        Solo avanza quien **sabe** la habilidad de la práctica (concepto §5: la
+        cultura sale de lo que ya se sabe hacer), y el nodo nace con su origen
+        escrito por `Grafo.descubrir`, que es quien valida los prerrequisitos.
+        """
+        practica = PRACTICAS.get(accion)
+        if practica is None:
+            return False
+        habilidad, rama = practica
+        if not individuo.habilidades.sabe(habilidad):
+            return False
+        return self.grafo.avanzar(rama, autor=individuo.id, tick=self.mundo.tick) is not None
+
     @property
     def poblacion(self) -> int:
         return len(self.mundo.individuos)
@@ -213,6 +244,7 @@ class Simulacion:
             },
             "agrupamiento_max": self.agrupamiento_max,
             "huidas": self.huidas,
+            **self.grafo.a_json(),
             "config": self.config.a_json(),
         }
 

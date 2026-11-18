@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.10-green)
+![Version](https://img.shields.io/badge/Version-0.1.11-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -56,7 +56,8 @@ y la muerde: quien lo ve cerca huye en un sprint. De ahí salen dos
 comportamientos que nadie guioniza —la tribu se agolpa en los lagos y huye en
 manada— y que la puerta F0→F1 mide. Cada individuo sabe hacer cosas
 (**habilidades**) que se aprenden enseñando o imitando, nunca por genoma.
-Todavía **no** hay LLM ni árbol de conocimiento: eso son fases posteriores.
+Todavía **no** hay LLM: el árbol de conocimiento de Fase 1 es andamiaje y se
+consulta con `report culture` (siguiente apartado).
 
 ```bash
 uv run python -m tribal run                                      # ventana 60 fps, 12 individuos
@@ -98,6 +99,45 @@ benchmark: 0.31 ms/tick, cabe en 16.67 ms
 Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
 `--config` (fichero JSON), `--ticks` (`0` = sin límite en ventana; obligatorio
 > 0 con `--headless`), `--headless`, `--json` y `--benchmark`.
+
+## Árbol de conocimiento (Fase 1)
+
+El **árbol de plausibilidad** de concepto §8 vive en `tribal/culture/arbol.py`:
+cinco ramas (lítica, fuego, lenguaje, roles y simbólico) con niveles y
+prerrequisitos. Los nodos de nivel 0 no exigen nada; el resto pide los
+anteriores de su rama y dos cruzan ramas a propósito (el `mito` necesita
+`proto_palabras` y `ritual`: sin palabras ni ceremonia sería una anécdota, y el
+`lider` necesita `anciano` y `caza_cooperativa`).
+
+Cada nodo nace con su **origen** —`arbol | combinacion | interaccion | llm`,
+los niveles de emergencia de concepto §8b— escrito en el momento de crearlo y
+sin setter para cambiarlo después: es el dato con el que se mide si la cultura
+se sale del guion. `tribal/culture/grafo.py` es el guardián: un nodo cuyos
+prerrequisitos no estén activos **no se descubre** (`PrerequisitoFaltante`), y
+redescubrirlo es idempotente. En esta fase el motor solo recorre el árbol
+(comer con `recolectar` avanza la lítica), así que `pct_fuera_arbol` es 0.0 —
+ese cero es el que la Fase 3 tiene que mover por encima del 50 %.
+
+```bash
+uv run python -m tribal report culture             # legible
+uv run python -m tribal report culture --json      # nodos, aristas y pct_fuera_arbol
+uv run python -m tribal report culture --seed 7 --ticks 900
+```
+
+Todavía no hay partida persistida, así que el informe sale de simular
+`--ticks` ticks (600 por defecto) en headless con la semilla y el `--config`
+pedidos: mismo seed y mismos ticks, mismo informe. Salida real de
+`uv run python -m tribal report culture`:
+
+```
+seed 42  ticks 600
+nodos 5  aristas 4  pct_fuera_arbol 0.0
+  litica    0  Guijarro             (arbol, autor 7, tick 263)
+  litica    1  Lasca                (arbol, autor 10, tick 272)
+  litica    2  Bifaz                (arbol, autor 8, tick 279)
+  litica    3  Punta de lanza       (arbol, autor 1, tick 313)
+  litica    4  Caza cooperativa     (arbol, autor 12, tick 319)
+```
 
 ## Configuración y semilla
 

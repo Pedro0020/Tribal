@@ -25,6 +25,10 @@ CLAVES = {
     "depredador",
     "agrupamiento_max",
     "huidas",
+    "nodos",
+    "aristas",
+    "pct_fuera_arbol",
+    "nodos_por_origen",
     "config",
 }
 

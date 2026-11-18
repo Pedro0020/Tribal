@@ -573,3 +573,43 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 31 so
 ```
 
 </details>
+
+## F1-002 — Arbol de conocimiento con progresion y origen de nodo
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 102 passed in 8.32s
+- **Cambios:** tribal/culture/arbol.py (nuevo: Nodo frozen y catalogo de 23 nodos en 5 ramas); tribal/culture/grafo.py (nuevo: descubrir con validacion, aristas, pct_fuera_arbol, a_json); tribal/sim.py (grafo en la simulacion, PRACTICAS, maximo un nodo por tick, resumen con nodos); tribal/cli.py (report culture); tests/test_arbol.py (nuevo, 15 casos); tests/test_cli_run.py; README; .opencode/agents/reviewer.md (el reviewer corrigio dos comandos muertos de su propia definicion: test coverage_summary -> coverage_report y doctor -> doctor checkup)
+- **Decisiones:** El arbol es andamiaje de plausibilidad, no guion: cada nodo declara requisitos y el grafo los valida; descubrir sin ellos lanza PrerequisitoFaltante. El origen se escribe al crear el nodo y el Nodo es frozen: no hay API para reescribirlo (setattr revienta). pct_fuera_arbol cuenta solo combinacion e interaccion, como objetivo.md §3.2; llm no entra en el KPI (es origen de propuesta, no nivel de §8b) y el docstring ya lo dice. La integracion es minima y determinista: con la habilidad de la rama y los requisitos cumplidos se descubre el siguiente nodo; maximo uno por tick. Se cerraron por adelantado los huecos de test que el reviewer dejo abiertos (gate de habilidad, tope por tick, porcentaje no cero).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 102 passed
+
+$ uv run python -m tribal report culture --json
+{"nodos": 5, "aristas": 4, "pct_fuera_arbol": 0.0,
+ "nodos_por_origen": {"arbol": 5, "combinacion": 0, "interaccion": 0, "llm": 0}, ...}
+  dos subprocesos identicos
+
+$ catálogo: 23 nodos | 5 ramas | ids unicos | 0 requisitos inexistentes | 0 ciclos
+  litica 0-4 | fuego 0-4 | lenguaje 0-3 | roles 0-2 | simbolico 0-3
+  cruces justificados: mito = proto_palabras + ritual | lider = anciano + caza_cooperativa
+
+$ descubrir sin prerrequisito -> PrerequisitoFaltante: faltan prerrequisitos guijarro (sin nodo ni arista)
+  con prerrequisito -> origen arbol, autor 5, tick 42
+  segundo intento con origen combinacion -> sigue arbol/5/42 ; setattr -> FrozenInstanceError
+
+$ gate de habilidad: sin recolectar 0 nodos, con recolectar descubre (test)
+$ tope: maximo 1 nodo por tick (test con 3 comedores)
+$ pct_fuera_arbol: nodo combinacion + interaccion -> 40.0 ; llm no cuenta (test)
+
+$ uv run pytest -q
+631 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 33 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 33 source files
+```
+
+</details>
