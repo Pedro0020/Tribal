@@ -531,3 +531,45 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 27 so
 ```
 
 </details>
+
+## F1-001 — Genoma y habilidades heredables
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 87 passed in 7.72s
+- **Cambios:** tribal/core/genoma.py (nuevo: 8 rasgos, heredar con media*(1+clamp) y rango); tribal/core/habilidades.py (nuevo: catalogo de 5 habilidades con rama y Habilidades); tribal/core/{modelos,mundo,acciones}.py (genoma en fundadores con varianza, verbo ensenar, bonus de habilidad, resistencia simetrica); tribal/agents/{instinto,necesidades}.py (ensenar en ocio, fallback deambular, sed con resistencia); tribal/sim.py y tribal/cli.py (media_genes, habilidades_distintas); tests/test_genoma.py y tests/test_habilidades.py (nuevos, 24 casos); tests/test_cli_run.py; README
+- **Decisiones:** Herencia multiplicativa con clamp del 5 por ciento y rango final [0.5,1.5]: los tests de borde y un rasgo con media 0.6 distinguen la formula multiplicativa de la aditiva y el clamp de su ausencia (el reviewer comprobo que las cuatro mutaciones caen). Los fundadores sortean los siete rasgos funcionales en 0.85-1.15 con mundo.azar: sin varianza inicial la seleccion no tendria sobre que actuar. La resistencia es simetrica (0.8-1.2 de factor de sed) porque un rasgo de una sola cara no evoluciona en las dos direcciones. Las habilidades no se heredan geneticamente: se aprenden por ensenar o imitar, y el bonus afecta al rendimiento del recurso (+50 por ciento). divergencia existe y se hereda pero no se usa hasta F1-003.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 87 passed
+
+$ uv run python -m tribal run --headless --json --ticks 3000
+"media_genes": {"velocidad": ..., "metabolismo": ..., "longevidad": ..., "fuerza": 1.037,
+                "resistencia": 0.957, "inteligencia": 0.984, "salud": ..., "divergencia": 0.56},
+"habilidades_distintas": 1, "habilidades": {...}
+
+$ herencia: 100 nacimientos con semilla fija
+  todos dentro de [0.5, 1.5]; media a +-0.008 del punto medio parental; mutacion simetrica
+  (484-524 de 1000 con signo positivo); dos subprocesos identicos en 600 y 3000 ticks
+$ bordes: padres 1.46/1.48 y 0.52/0.54 -> clamp 1.5 / 0.5 verificados
+$ fundadores: 12/12 genomas unicos; misma semilla identicos, otra semilla distintos; 0 fuera de rango en 50 semillas
+
+$ habilidades: +50 % real (bayas 40 -> 60, caza 60 -> 90); sin bonus con la habilidad equivocada
+  ensenar transfiere (2 tests); imitacion a <=2 tiles si, a 9 no; resistencia 0.8 -> sed x1.08, 1.2 -> x0.92
+$ ensenar sin aprendiz: el instinto no la elige; un fallo no clava el tick (deambula)
+
+Mutaciones verificadas por el reviewer (todas en rojo, hashes restaurados):
+  quitar clamp | media+m en vez de media*(1+m) | ensenar sin transferir | BONUS=0 |
+  factor_resistencia=1.0 | sensibilidad 0.4->0.2 | quitar fallback deambular | quitar varianza fundadora
+
+$ uv run pytest -q
+616 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 31 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 31 source files
+```
+
+</details>

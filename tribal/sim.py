@@ -9,7 +9,6 @@ que el motor se puede ejercitar y medir sin abrir ventana ni cargar SDL.
 from __future__ import annotations
 
 import math
-import random
 import time
 from dataclasses import replace
 from typing import Any
@@ -18,10 +17,11 @@ from tribal.agents import instinto, necesidades
 from tribal.config import SimConfig
 from tribal.core import acciones, recursos
 from tribal.core import depredador as modulo_depredador
+from tribal.core import genoma as modulo_genoma
 from tribal.core import mundo as modulo_mundo
+from tribal.core.habilidades import Habilidades
 from tribal.core.modelos import (
     LONGEVIDAD_TICKS,
-    Genoma,
     Individuo,
     Mundo,
     Necesidades,
@@ -35,7 +35,8 @@ UMBRAL_REPRODUCCION = 65.0
 DISTANCIA_PAREJA = 2.0
 #: Energía con la que nace una cría y desviación máxima del genoma heredado.
 ENERGIA_CRIA = 80.0
-MUTACION = 0.05
+#: Se reexporta desde `tribal.core.genoma`; los tests de F0 fijan aquí el límite.
+MUTACION = modulo_genoma.MUTACION
 #: Radio (en tiles) dentro del cual se considera que alguien está junto al agua.
 RADIO_AGUA = 2.0
 
@@ -100,7 +101,10 @@ class Simulacion:
             individuo.huyendo = accion.nombre == "huir"
             if individuo.huyendo and not huyendo_antes:
                 self.huidas += 1
-            acciones.aplicar(individuo, self.mundo, accion)
+            aplicada = acciones.aplicar(individuo, self.mundo, accion)
+            # Una enseñanza que no prende no debe clavar al individuo: deambula.
+            if not aplicada and accion.nombre == "ensenar":
+                acciones.aplicar(individuo, self.mundo, instinto.deambular(individuo, self.mundo))
             if individuo.movido and not ya_se_movio:
                 self._movidos += 1
 
@@ -143,10 +147,12 @@ class Simulacion:
         hijo = Individuo(
             id=max(individuo.id for individuo in self.mundo.individuos) + 1,
             sexo="f" if self.nacimientos % 2 == 0 else "m",
-            genoma=_heredar(madre.genoma, padre.genoma, self.mundo.azar),
+            genoma=modulo_genoma.heredar(madre.genoma, padre.genoma, self.mundo.azar),
             necesidades=Necesidades(energia=ENERGIA_CRIA),
             x=x,
             y=y,
+            # Las habilidades no se heredan: la cría solo trae lo de la tribu.
+            habilidades=Habilidades.iniciales(),
         )
         madre.cooldown_reproduccion = self.config.cooldown_reproduccion
         padre.cooldown_reproduccion = self.config.cooldown_reproduccion
@@ -178,6 +184,15 @@ class Simulacion:
         media_sed = (
             sum(individuo.necesidades.sed for individuo in vivos) / len(vivos) if vivos else 0.0
         )
+        media_genes = {
+            rasgo: round(
+                sum(getattr(individuo.genoma, rasgo) for individuo in vivos) / len(vivos), 3
+            )
+            if vivos
+            else 0.0
+            for rasgo in modulo_genoma.RASGOS
+        }
+        habilidades = {individuo.id: sorted(individuo.habilidades.conocidas) for individuo in vivos}
         return {
             "seed": self.mundo.seed,
             "ticks": self.mundo.tick,
@@ -187,6 +202,9 @@ class Simulacion:
             "muertes": self.muertes,
             "media_energia": round(media_energia, 2),
             "media_sed": round(media_sed, 2),
+            "media_genes": media_genes,
+            "habilidades_distintas": len({h for skills in habilidades.values() for h in skills}),
+            "habilidades": habilidades,
             "individuos_movidos": self._movidos,
             "depredador": {
                 "activos": len(self.mundo.depredadores),
@@ -243,20 +261,6 @@ def _puede_reproducir(individuo: Individuo) -> bool:
         and individuo.cooldown_reproduccion == 0
         and individuo.necesidades.energia > UMBRAL_REPRODUCCION
     )
-
-
-def _heredar(madre: Genoma, padre: Genoma, azar: random.Random) -> Genoma:
-    """Media de los progenitores con una mutación pequeña y acotada."""
-    return Genoma(
-        velocidad=_media(madre.velocidad, padre.velocidad, azar),
-        metabolismo=_media(madre.metabolismo, padre.metabolismo, azar),
-        longevidad=_media(madre.longevidad, padre.longevidad, azar),
-    )
-
-
-def _media(a: float, b: float, azar: random.Random) -> float:
-    factor = azar.uniform(1.0 - MUTACION, 1.0 + MUTACION)
-    return min(2.0, max(0.5, (a + b) / 2.0 * factor))
 
 
 def _posicion_cria(mundo: Mundo, madre: Individuo) -> tuple[float, float]:

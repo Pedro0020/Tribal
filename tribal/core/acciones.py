@@ -15,13 +15,21 @@ from typing import Literal
 from tribal.core import recursos
 from tribal.core.modelos import Individuo, Mundo, TipoRecurso
 
-NombreAccion = Literal["beber", "comer", "descansar", "moverse", "huir"]
+NombreAccion = Literal["beber", "comer", "descansar", "moverse", "huir", "ensenar"]
 
 #: Agua que calma una sed entera, y energía que aporta cada tipo de comida.
 SED_SACIADA = 70.0
 ENERGIA_BAYAS = 40.0
 ENERGIA_CAZA = 60.0
 ENERGIA_DESCANSO = 0.5
+#: Rendimiento extra de quien domina la habilidad de la fuente (concepto §5).
+BONUS_HABILIDAD = 0.5
+#: Alcance de la enseñanza y de la imitación pasiva, en tiles.
+DISTANCIA_ENSENANZA = 2.0
+RADIO_IMITACION = 2.0
+#: Probabilidad base; la inteligencia del aprendiz y la cercanía la modulan.
+PROB_ENSENANZA = 0.5
+PROB_IMITACION = 0.4
 #: Tiles por tick. A 60 fps son ~6 tiles/s: cruzar el mapa lleva unos 10 s.
 PASO = 0.10
 #: Distancia a la que se considera que ya se llegó al destino.
@@ -44,6 +52,8 @@ class Accion:
     nombre: NombreAccion
     destino: tuple[float, float] | None = None
     amenaza: tuple[float, float] | None = None
+    #: Individuo al que se dirige una acción social (enseñar).
+    objetivo: int | None = None
 
 
 def beber(individuo: Individuo, mundo: Mundo) -> bool:
@@ -58,13 +68,21 @@ def beber(individuo: Individuo, mundo: Mundo) -> bool:
 
 
 def comer(individuo: Individuo, mundo: Mundo) -> bool:
-    """Come bayas o caza al alcance; la caza aporta más energía."""
+    """Come bayas o caza al alcance; la caza aporta más energía.
+
+    La habilidad de la fuente (recolectar para bayas, cazar para caza) suma un
+    50 % de energía y, de paso, quien lo ve comer puede imitarla.
+    """
     comida = recursos.mas_cercano(mundo, individuo, (TipoRecurso.BAYAS, TipoRecurso.CAZA))
     if comida is None or not recursos.en_alcance(individuo, comida):
         return False
     if not recursos.consumir(comida):
         return False
     aporte = ENERGIA_CAZA if comida.tipo == TipoRecurso.CAZA else ENERGIA_BAYAS
+    habilidad = _habilidad_de(comida.tipo)
+    if habilidad is not None and individuo.habilidades.sabe(habilidad):
+        aporte *= 1.0 + BONUS_HABILIDAD
+        _imitar(individuo, habilidad, mundo)
     individuo.necesidades.energia = min(100.0, individuo.necesidades.energia + aporte)
     return True
 
@@ -130,6 +148,87 @@ def huir(individuo: Individuo, mundo: Mundo, amenaza: tuple[float, float]) -> bo
     return primero or segundo
 
 
+def candidato_a_ensenar(maestro: Individuo, mundo: Mundo) -> Individuo | None:
+    """Aprendiz más cercano al que un adulto le pueda enseñar algo (concepto §3)."""
+    if maestro.edad < maestro.madurez:
+        return None
+    mejor: Individuo | None = None
+    mejor_clave = (math.inf, 0)
+    for otro in mundo.individuos:
+        if otro.id == maestro.id:
+            continue
+        if otro.habilidades.conocidas >= maestro.habilidades.conocidas:
+            continue
+        distancia = recursos.distancia(maestro.x, maestro.y, otro.x, otro.y)
+        if distancia > DISTANCIA_ENSENANZA:
+            continue
+        clave = (distancia, otro.id)
+        if clave < mejor_clave:
+            mejor = otro
+            mejor_clave = clave
+    return mejor
+
+
+def ensenar(maestro: Individuo, mundo: Mundo, aprendiz: Individuo) -> bool:
+    """El adulto transmite una habilidad que el aprendiz todavía no tiene.
+
+    La probabilidad crece con la inteligencia del aprendiz y con la cercanía,
+    y sale de `Mundo.azar`: con la misma semilla el resultado se repite.
+    """
+    if maestro.edad < maestro.madurez:
+        return False
+    distancia = recursos.distancia(maestro.x, maestro.y, aprendiz.x, aprendiz.y)
+    if distancia > DISTANCIA_ENSENANZA:
+        return False
+    pendiente = next(
+        (
+            habilidad
+            for habilidad in sorted(maestro.habilidades.conocidas)
+            if not aprendiz.habilidades.sabe(habilidad)
+        ),
+        None,
+    )
+    if pendiente is None:
+        return False
+    probabilidad = min(
+        1.0,
+        PROB_ENSENANZA * aprendiz.genoma.inteligencia * _cercania(distancia, DISTANCIA_ENSENANZA),
+    )
+    if mundo.azar.random() >= probabilidad:
+        return False
+    return aprendiz.habilidades.aprender(pendiente)
+
+
+def _imitar(modelo: Individuo, habilidad: str, mundo: Mundo) -> None:
+    """Quien ve usar una habilidad puede copiarla (concepto §3)."""
+    for observador in mundo.individuos:
+        if observador.id == modelo.id or observador.habilidades.sabe(habilidad):
+            continue
+        distancia = recursos.distancia(observador.x, observador.y, modelo.x, modelo.y)
+        if distancia > RADIO_IMITACION:
+            continue
+        probabilidad = min(
+            1.0,
+            PROB_IMITACION * observador.genoma.inteligencia * _cercania(distancia, RADIO_IMITACION),
+        )
+        if mundo.azar.random() < probabilidad:
+            observador.habilidades.aprender(habilidad)
+
+
+def _cercania(distancia: float, radio: float) -> float:
+    """1.0 encima del modelo, 0.5 en el borde del radio de aprendizaje."""
+    return 1.0 - 0.5 * distancia / radio
+
+
+def _habilidad_de(tipo: TipoRecurso) -> str | None:
+    """Habilidad que mejora el rendimiento de cada fuente de comida."""
+    if tipo == TipoRecurso.BAYAS:
+        return "recolectar"
+    if tipo == TipoRecurso.CAZA:
+        return "cazar"
+    return None
+
+
 def aplicar(individuo: Individuo, mundo: Mundo, accion: Accion) -> bool:
     """Despacha la acción al verbo que toca. False si no se pudo aplicar."""
     if accion.nombre == "beber":
@@ -142,6 +241,13 @@ def aplicar(individuo: Individuo, mundo: Mundo, accion: Accion) -> bool:
         if accion.destino is None:
             raise ValueError("la accion moverse necesita destino")
         return moverse(individuo, mundo, accion.destino)
+    if accion.nombre == "ensenar":
+        if accion.objetivo is None:
+            raise ValueError("la accion ensenar necesita objetivo")
+        aprendiz = next((otro for otro in mundo.individuos if otro.id == accion.objetivo), None)
+        if aprendiz is None:
+            raise ValueError(f"la accion ensenar apunta a un id inexistente: {accion.objetivo}")
+        return ensenar(individuo, mundo, aprendiz)
     if accion.amenaza is None:
         raise ValueError("la accion huir necesita amenaza")
     return huir(individuo, mundo, accion.amenaza)

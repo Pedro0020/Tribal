@@ -172,10 +172,13 @@
         "uv run python -m tribal run --headless --json incluye media de rasgos y numero de habilidades distintas",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F0-002"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 1,
+      "closed": "2026-11-18"
     },
     {
       "id": "F1-002",

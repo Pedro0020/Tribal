@@ -5,6 +5,9 @@ Solo stdlib: la Fase 0 no necesita validación de esquema ni serialización, as�
 que Pydantic sería una dependencia que aún no paga lo que cuesta. Los valores
 inmutables (genoma) son `frozen`; lo que el tick muta (`Necesidades`,
 `Individuo`, `Recurso`, `Mundo`) es un dataclass normal.
+
+`Genoma` vive en `tribal.core.genoma` y se reexporta aquí para que los imports
+de Fase 0 (`from tribal.core.modelos import Genoma`) sigan valiendo.
 """
 
 from __future__ import annotations
@@ -13,6 +16,9 @@ import random
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Literal
+
+from tribal.core.genoma import Genoma
+from tribal.core.habilidades import Habilidades
 
 #: Rejilla del mundo: 60x34 tiles de 8 px -> ventana de 480x272 px.
 ANCHO_TILES = 60
@@ -34,15 +40,6 @@ class TipoRecurso(IntEnum):
     AGUA = 0
     BAYAS = 1
     CAZA = 2
-
-
-@dataclass(frozen=True, slots=True)
-class Genoma:
-    """Rasgos heredables: velocidad, metabolismo y longevidad (multiplicador)."""
-
-    velocidad: float = 1.0
-    metabolismo: float = 1.0
-    longevidad: float = 1.0
 
 
 @dataclass(slots=True)
@@ -84,6 +81,8 @@ class Individuo:
     cooldown_reproduccion: int = 0
     #: True mientras la última decisión fue huir de un depredador.
     huyendo: bool = False
+    #: Lo que sabe hacer; se aprende enseñando o imitando, nunca por genoma.
+    habilidades: Habilidades = field(default_factory=Habilidades)
 
 
 @dataclass(slots=True)

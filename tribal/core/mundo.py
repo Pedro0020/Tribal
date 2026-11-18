@@ -12,6 +12,7 @@ import random
 
 from tribal.config import SimConfig
 from tribal.core import recursos
+from tribal.core.habilidades import Habilidades
 from tribal.core.modelos import (
     MADUREZ_TICKS,
     Depredador,
@@ -114,6 +115,11 @@ def _poblar(mundo: Mundo, cuantos: int) -> None:
                     velocidad=mundo.azar.uniform(0.85, 1.15),
                     metabolismo=mundo.azar.uniform(0.85, 1.20),
                     longevidad=mundo.azar.uniform(0.85, 1.20),
+                    fuerza=mundo.azar.uniform(0.85, 1.15),
+                    resistencia=mundo.azar.uniform(0.85, 1.15),
+                    inteligencia=mundo.azar.uniform(0.85, 1.15),
+                    salud=mundo.azar.uniform(0.85, 1.15),
+                    divergencia=mundo.azar.uniform(0.2, 0.8),
                 ),
                 necesidades=Necesidades(
                     energia=mundo.azar.uniform(80.0, 100.0),
@@ -125,6 +131,7 @@ def _poblar(mundo: Mundo, cuantos: int) -> None:
                 # asentamiento: la partida no empieza con un baby boom.
                 edad=mundo.azar.randint(MADUREZ_TICKS, MADUREZ_TICKS + 600),
                 cooldown_reproduccion=MADUREZ_TICKS,
+                habilidades=Habilidades.iniciales(),
             )
         )
     mundo.individuos.sort(key=lambda individuo: individuo.id)

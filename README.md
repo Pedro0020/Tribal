@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.9-green)
+![Version](https://img.shields.io/badge/Version-0.1.10-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -46,14 +46,17 @@ make check     # lint + typecheck + test + arnés
 
 La Fase 0 es una tribu de 8–15 individuos en un mapa top-down de 60×34 tiles
 (480×272 px) con tres necesidades —energía, sed y salud— que evolucionan por
-tick. Cada individuo nace con un **genoma mínimo** (velocidad, metabolismo y
-longevidad) que modula cuánto avanza, cuánto gasta y cuánto vive. Las parejas
-adultas y bien alimentadas tienen crías junto al agua, que heredan la media de
-sus progenitores con una mutación pequeña; con la edad llega la muerte. Un
-**depredador** recorre el mapa, persigue a la presa viva más cercana y la
-muerde: quien lo ve cerca huye en un sprint. De ahí salen dos comportamientos
-que nadie guioniza —la tribu se agolpa en los lagos y huye en manada— y que la
-puerta F0→F1 mide. Todavía **no** hay cultura ni LLM: eso son fases posteriores.
+tick. Cada individuo nace con un **genoma** de ocho rasgos heredables
+(velocidad, metabolismo, longevidad, fuerza, resistencia, inteligencia, salud
+y divergencia) que modula cuánto avanza, cuánto gasta y cuánto vive. Las
+parejas adultas y bien alimentadas tienen crías junto al agua, que heredan la
+media de sus progenitores con una mutación pequeña; con la edad llega la
+muerte. Un **depredador** recorre el mapa, persigue a la presa viva más cercana
+y la muerde: quien lo ve cerca huye en un sprint. De ahí salen dos
+comportamientos que nadie guioniza —la tribu se agolpa en los lagos y huye en
+manada— y que la puerta F0→F1 mide. Cada individuo sabe hacer cosas
+(**habilidades**) que se aprenden enseñando o imitando, nunca por genoma.
+Todavía **no** hay LLM ni árbol de conocimiento: eso son fases posteriores.
 
 ```bash
 uv run python -m tribal run                                      # ventana 60 fps, 12 individuos
@@ -72,7 +75,7 @@ con ojo rojo y una franja de HUD con tick, población y media de energía y sed.
 Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 
 ```json
-{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 12, "nacimientos": 1, "muertes": 1, "media_energia": 43.55, "media_sed": 38.88, "individuos_movidos": 13, "depredador": {"activos": 1, "ataques": 4, "muertes": 1}, "agrupamiento_max": 6, "huidas": 49, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true}}
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 13, "nacimientos": 1, "muertes": 0, "media_energia": 55.8, "media_sed": 39.4, "media_genes": {"velocidad": 0.982, "metabolismo": 1.038, "longevidad": 1.075, "fuerza": 1.042, "resistencia": 0.985, "inteligencia": 1.011, "salud": 1.027, "divergencia": 0.509}, "habilidades_distintas": 1, "habilidades": {"1": ["recolectar"], "2": ["recolectar"], "3": ["recolectar"], "4": ["recolectar"], "5": ["recolectar"], "6": ["recolectar"], "7": ["recolectar"], "8": ["recolectar"], "9": ["recolectar"], "10": ["recolectar"], "11": ["recolectar"], "12": ["recolectar"], "13": ["recolectar"]}, "individuos_movidos": 13, "depredador": {"activos": 1, "ataques": 1, "muertes": 0}, "agrupamiento_max": 8, "huidas": 188, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true}}
 ```
 
 `--seed 7 --benchmark --headless --ticks 600` (comprueba el presupuesto de
@@ -81,15 +84,15 @@ Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
 ```
 seed 7  ticks 600  poblacion 12 -> 13
 muertes 0  nacimientos 1  individuos movidos 13
-depredadores 1  ataques 2  agrupamiento max 11  huidas 150
-media energia 50.53  media sed 29.6
+depredadores 1  ataques 1  agrupamiento max 6  huidas 162
+media energia 47.61  media sed 49.94
 ```
 
 y en **stderr** (el `ms/tick` no entra en el resumen, que es determinista; su
 valor varía unas centésimas entre ejecuciones):
 
 ```
-benchmark: 0.24 ms/tick, cabe en 16.67 ms
+benchmark: 0.31 ms/tick, cabe en 16.67 ms
 ```
 
 Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
@@ -144,11 +147,38 @@ uv run python -m tribal run --headless --config docs/config-ejemplo.json --seed 
 
 Una partida más larga enseña la puerta F0→F1 completa:
 `uv run python -m tribal run --seed 2 --headless --json --ticks 3000` acaba
-con `poblacion_final: 10`, `nacimientos: 10`, `muertes: 12` (3 de ellas por
-mordiscos del depredador), 8 ataques, `huidas: 3688` y un
-`agrupamiento_max: 11`: once individuos a ≤2 tiles de un lago en el mismo tick
-(no necesariamente bebiendo a la vez). Sin ningún recurso la tribu se extingue;
-ese caso lo cubren los tests del motor.
+con `poblacion_final: 22`, `nacimientos: 22`, `muertes: 12` (1 de ellas por
+mordiscos del depredador), 4 ataques, `huidas: 466` y un
+`agrupamiento_max: 14`: catorce individuos a ≤2 tiles de un lago en el mismo
+tick (no necesariamente bebiendo a la vez). Sin ningún recurso la tribu se
+extingue; ese caso lo cubren los tests del motor.
+
+## Genoma y habilidades (Fase 1)
+
+El genoma ([`tribal/core/genoma.py`](tribal/core/genoma.py)) tiene ocho rasgos:
+siete funcionales en [0.5, 1.5] con 1.0 neutro —velocidad, metabolismo,
+longevidad, fuerza, resistencia, inteligencia y salud— y `divergencia` en
+[0.0, 1.0], el temperamento conformista ↔ divergente de concepto §9b que usará
+F1-003. La generación fundadora llega con los ocho rasgos repartidos al azar
+(los siete funcionales entre 0.85 y 1.15, `divergencia` entre 0.2 y 0.8), y la
+descendencia hereda la media de sus dos progenitores con una mutación normal
+del 5 % acotada al rango del rasgo: la misma semilla produce los mismos
+genomas. Un genoma por defecto se comporta como la Fase 0.
+
+Las **habilidades** ([`tribal/core/habilidades.py`](tribal/core/habilidades.py))
+no se heredan por genoma: se aprenden viviendo. El catálogo son `cazar`,
+`recolectar`, `fabricar`, `fuego` y `ensenar`, cada una en su rama del árbol de
+concepto §8. La tribu arranca sabiendo `recolectar`; un adulto que sabe algo se
+lo **enseña** a quien no lo sabe a ≤2 tiles (la probabilidad crece con la
+inteligencia del aprendiz y con la cercanía) y quien ve a otro usar una
+habilidad puede **imitarla**. Si la enseñanza no prende, el adulto no se queda
+clavado: sigue deambulando. Las habilidades pesan en la acción:
+`recolectar`/`cazar` rinden un 50 % más de energía al comer bayas/caza, y la
+`resistencia` modula la sed de forma simétrica (1.5 → 20 % menos; 0.5 → 20 %
+más).
+
+El resumen de `run --json` añade `media_genes` (los ocho rasgos),
+`habilidades_distintas` y `habilidades` por individuo.
 
 ## Principios
 

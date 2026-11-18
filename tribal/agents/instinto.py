@@ -13,7 +13,7 @@ La decisión no aplica nada: eso lo hace el motor.
 from __future__ import annotations
 
 from tribal.agents import necesidades as nec
-from tribal.core import recursos
+from tribal.core import acciones, recursos
 from tribal.core.acciones import Accion
 from tribal.core.modelos import Depredador, Individuo, Mundo, Recurso, TipoRecurso
 
@@ -51,6 +51,16 @@ def elegir(individuo: Individuo, mundo: Mundo) -> Accion:
         if vecino is not None:
             return Accion("huir", amenaza=(vecino.x, vecino.y))
 
+    # Sin nada urgente, el adulto que sabe algo se lo enseña a quien no lo sabe.
+    aprendiz = acciones.candidato_a_ensenar(individuo, mundo)
+    if aprendiz is not None:
+        return Accion("ensenar", objetivo=aprendiz.id)
+
+    return deambular(individuo, mundo)
+
+
+def deambular(individuo: Individuo, mundo: Mundo) -> Accion:
+    """Un paso hacia un punto cercano; el descanso activo de la política."""
     return Accion("moverse", destino=_punto_errante(individuo, mundo))
 
 

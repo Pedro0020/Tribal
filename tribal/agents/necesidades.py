@@ -17,6 +17,8 @@ ENERGIA_POR_TICK = 0.15
 DANO_SALUD = 0.6
 #: Recuperación de salud por tick cuando las necesidades están cubiertas.
 RECUPERACION_SALUD = 0.02
+#: Simetría de la resistencia: 1.5 reduce la sed un 20 % y 0.5 la aumenta un 20 %.
+SENSIBILIDAD_RESISTENCIA = 0.4
 #: Umbrales de la política por defecto.
 UMBRAL_SED = 60.0
 UMBRAL_ENERGIA = 45.0
@@ -31,17 +33,25 @@ def evolucionar(
     tasa_energia: float = ENERGIA_POR_TICK,
     tasa_salud: float = DANO_SALUD,
 ) -> None:
-    """Un tick de homeostasis. El metabolismo del genoma escala el desgaste.
+    """Un tick de homeostasis. El metabolismo escala el desgaste y la resistencia la sed.
 
     Las tasas llegan de `SimConfig`; los defaults son los de Fase 0 para quien
-    llame a este módulo sin configuración.
+    llame a este módulo sin configuración. Con el genoma por defecto el
+    resultado es exactamente el de Fase 0.
     """
-    necesidades.sed = min(100.0, necesidades.sed + tasa_sed * genoma.metabolismo)
+    necesidades.sed = min(
+        100.0, necesidades.sed + tasa_sed * genoma.metabolismo * factor_resistencia(genoma)
+    )
     necesidades.energia = max(0.0, necesidades.energia - tasa_energia * genoma.metabolismo)
     if necesidades.sed >= 100.0 or necesidades.energia <= 0.0:
         necesidades.salud = max(0.0, necesidades.salud - tasa_salud * genoma.metabolismo)
     else:
         necesidades.salud = min(100.0, necesidades.salud + RECUPERACION_SALUD)
+
+
+def factor_resistencia(genoma: Genoma) -> float:
+    """Multiplicador de la sed: 1.0 con resistencia neutra, de 0.8 a 1.2 en los extremos."""
+    return 1.0 + (1.0 - genoma.resistencia) * SENSIBILIDAD_RESISTENCIA
 
 
 def sed_critica(necesidades: Necesidades) -> bool:
