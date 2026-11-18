@@ -17,10 +17,11 @@ from __future__ import annotations
 import os
 import re
 from datetime import date
+from pathlib import Path
 
 from agents.core.base_agent import AgentResult, BaseAgent
 from agents.core.registry import register_agent
-from agents.exceptions import MissingDependencyError
+from agents.exceptions import MissingDependencyError, ToolExecutionError
 from agents.tools.git_tool import GitTool
 from agents.tools.process_tool import ProcessResult, run_command
 
@@ -372,6 +373,11 @@ class GitAgent(BaseAgent):
             )
 
         warnings: list[str] = []
+        # Snapshot ANTES de escribir: si el commit falla, el árbol vuelve a su
+        # contenido previo (no al HEAD), sin perder trabajo sin commitear.
+        snapshot = self._snapshot_feature_files()
+        staged_paths = [path.relative_to(self.ctx.root).as_posix() for path in snapshot]
+
         bump_success = False
         if next_version:
             bump = doc_agent.run("bump_version", new_version=next_version)
@@ -386,15 +392,35 @@ class GitAgent(BaseAgent):
         if not changelog.success:
             warnings.append(changelog.message)
 
+        # El bump deja uv.lock desfasado (guarda la versión del propio
+        # proyecto): sincronizarlo antes de commitear evita cerrar con el
+        # lock por detrás de pyproject.toml.
+        if (self.ctx.root / "uv.lock").exists():
+            lock_problem = self._sync_lock()
+            if lock_problem:
+                self._rollback_feature_files(snapshot, staged_paths)
+                return AgentResult(
+                    False, self.name, "commit_feature",
+                    f"uv.lock no cuadra con pyproject.toml: {lock_problem}",
+                    needs=["Corrige el lock ('uv lock') antes de reintentar el cierre de la feature."],
+                    warnings=warnings,
+                )
+        else:
+            warnings.append("No hay uv.lock en la raíz — se omite la comprobación del lock.")
+
         stage = self.git.add("-A")
         if not stage.ok:
             warnings.append(f"No se pudo hacer 'git add -A': {stage.stderr.strip()}")
 
         commit_result = self.git.commit(suggested)
         if not commit_result.ok:
+            self._rollback_feature_files(snapshot, staged_paths)
+            detail = commit_result.stderr.strip() or commit_result.stdout.strip() or "sin salida"
             return AgentResult(
                 False, self.name, "commit_feature",
-                f"'git commit' falló: {commit_result.stderr.strip()}", warnings=warnings,
+                f"'git commit' falló y se revirtió el bump: {detail}",
+                needs=[f"Corrige lo que tumbó 'git commit' ({detail}) y reintenta el cierre de {id}."],
+                warnings=warnings,
             )
 
         extras = []
@@ -413,16 +439,70 @@ class GitAgent(BaseAgent):
         )
 
     def _next_patch_version(self) -> str | None:
-        """Lee `version = "X.Y.Z"` de pyproject.toml y devuelve el siguiente patch."""
+        """
+        Lee `version = "X.Y.Z"` de la versión COMMITEADA de pyproject.toml
+        (`git show HEAD:pyproject.toml`) y devuelve el siguiente patch.
+
+        Se parte de HEAD y no del working tree a propósito: un reintento tras
+        un cierre fallido ya tiene el bump aplicado en disco, y leerlo de ahí
+        sumaría otro patch (0.1.5 → 0.1.6 → 0.1.7) en cada intento.
+        """
         pyproject = self.ctx.pyproject_file
-        if not pyproject.exists():
-            return None
-        match = re.search(r'^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"',
-                          pyproject.read_text(encoding="utf-8"), re.MULTILINE)
+        rel_path = pyproject.relative_to(self.ctx.root).as_posix()
+        text = self.git.show_file(f"HEAD:{rel_path}")
+        if text is None:
+            if not pyproject.exists():
+                return None
+            text = pyproject.read_text(encoding="utf-8")
+        match = re.search(r'^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"', text, re.MULTILINE)
         if not match:
             return None
         major, minor, patch = (int(g) for g in match.groups())
         return f"{major}.{minor}.{patch + 1}"
+
+    def _snapshot_feature_files(self) -> dict[Path, bytes | None]:
+        """
+        Contenido actual de los ficheros que toca el cierre (`None` si el
+        fichero no existe todavía). Es lo que se restaura si algo falla.
+        """
+        paths = [
+            self.ctx.pyproject_file,
+            self.ctx.readme_file,
+            self.ctx.changelog_file,
+            self.ctx.root / "uv.lock",
+        ]
+        return {path: path.read_bytes() if path.exists() else None for path in paths}
+
+    def _rollback_feature_files(self, snapshot: dict[Path, bytes | None], staged_paths: list[str]) -> None:
+        """Devuelve los ficheros a su contenido previo y los saca del índice."""
+        for path, original in snapshot.items():
+            if original is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(original)
+        # Sólo las rutas que el índice conoce: un pathspec sin coincidencia
+        # haría fallar el `git restore` entero.
+        indexed = set(self.git.indexed_files())
+        to_unstage = [path for path in staged_paths if path in indexed]
+        if to_unstage:
+            self.git.restore_staged(*to_unstage)
+
+    def _sync_lock(self) -> str | None:
+        """
+        Sincroniza uv.lock con pyproject.toml (`uv lock`) y verifica el
+        resultado (`uv lock --check`). Devuelve `None` si cuadra, o el motivo
+        del fallo.
+        """
+        try:
+            lock = run_command(["uv", "lock"], cwd=self.ctx.root, timeout=120)
+            if not lock.ok:
+                return lock.stderr.strip() or "uv lock falló."
+            check = run_command(["uv", "lock", "--check"], cwd=self.ctx.root, timeout=60)
+        except (MissingDependencyError, ToolExecutionError) as exc:
+            return str(exc)
+        if check.ok:
+            return None
+        return check.stderr.strip() or "uv lock --check falló."
 
     def _proposed_files(self) -> list[str]:
         """Ficheros que entrarían en el commit: cambios rastreados + sin trackear."""

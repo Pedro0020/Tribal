@@ -23,6 +23,14 @@ commitea todo con `feat(<id>): <título>`.
 - **Siempre con `--dry-run true` primero**: devuelve la propuesta (versión,
   mensaje, ficheros) sin escribir nada. Solo tras la confirmación del usuario
   se ejecuta sin `--dry-run`.
+- **Sincroniza `uv.lock` antes de commitear** (`uv lock` + `uv lock --check`):
+  el bump deja el lock desfasado y `uv sync --frozen` fallaría. Si el lock no
+  cuadra, no commitea y devuelve `success=false` con `needs`.
+- **Si el commit falla no deja nada a medias**: restaura `pyproject.toml`,
+  `README.md`, `CHANGELOG.md` y `uv.lock` a su contenido previo (no al HEAD:
+  no borra trabajo sin commitear), los saca del índice y pide en `needs` que
+  se corrija lo que tumbó el commit. La versión se calcula desde `HEAD`, así
+  que reintentar no suma otro patch ni duplica la entrada del CHANGELOG.
 - **No crea tag**: el tag lo hace `tag_release`. Y **no hace push** — el push
   es decisión del usuario.
 

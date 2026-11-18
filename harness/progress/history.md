@@ -365,3 +365,48 @@ saltos de linea (probado byte a byte). La causa del truncado queda cerrada.
 ```
 
 </details>
+
+## FIX-005 — commit_feature idempotente: CHANGELOG y lock
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 26 passed in 1.67s
+- **Cambios:** agents/agents/git_agent.py (snapshot y rollback, version desde HEAD, uv lock + --check antes del commit); agents/agents/documentation_agent.py (entrada de CHANGELOG idempotente por feature_id y reutiliza la [Unreleased] del dia); agents/tools/git_tool.py (show_file, restore_staged, indexed_files); agents/tests/test_commit_feature_idempotente.py (nuevo, 4 casos); agents/prompts/git_agent.md; agents/README.md
+- **Decisiones:** La version del siguiente patch se lee de git show HEAD:pyproject.toml, no del working tree: un reintento tras un fallo sumaba otro patch (0.1.6 -> 0.1.7) y dejaba el arbol sucio. El rollback restaura el contenido previo de los cuatro ficheros (no HEAD) para no borrar trabajo del usuario y saca solo esos del indice; el resto de la feature sigue staged. lock y lock --check corren despues del bump y antes del commit, con needs si no cuadran. El CHANGELOG deduplica por feature_id. Trade-off documentado: si el worktree tiene una version mas alta sin commitear, el cierre usa la de HEAD; y un segundo cierre exitoso del mismo id sube otro patch aunque no duplique la entrada.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | ENTORNO LISTO
+
+$ uv run pytest -q
+551 passed, 15 skipped in 60.9s
+
+$ uv run pytest agents/tests -q
+525 passed, 15 skipped
+
+$ uv run ruff check tribal/ tests/ agents/
+All checks passed!
+$ uv run ruff format --check tribal/ tests/
+23 files already formatted
+$ uv run mypy tribal/ tests/
+Success: no issues found in 23 source files
+$ uv run python -m agents.prompts_sync
+exit 0
+
+Secuencia en COPIA del repo con hook pre-commit exit 1 (CLI real):
+run1: success=False needs=<corrige lo que tumbo git commit (hook)> | version 0.1.5 | commits 1
+run2: success=False needs=<idem>                 | version 0.1.5 | commits 1
+run3 (sin hook): success=true (version 0.1.6)    | 1 seccion [Unreleased] | 1 entrada FIX-005
+uv lock --check: 0 | commits 2 | status limpio | CHANGELOG+README+pyproject+uv.lock dentro del commit
+
+Rollback verificado en copia: fichero nuevo sin trackear y fichero trackeado modificado
+intactos; pyproject/README/CHANGELOG/uv.lock vuelven a su md5 previo y salen del indice;
+sin commit. Camino feliz: git show --stat HEAD incluye el fichero nuevo y los 10 de la feature.
+
+$ uv run python -m agents run git commit_feature ... --dry-run true
+md5 de pyproject/README/CHANGELOG/uv.lock identicos antes y despues; git status identico.
+```
+
+</details>

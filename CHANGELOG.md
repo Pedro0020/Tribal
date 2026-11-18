@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- fix: commit_feature idempotente y lock al dia (FIX-005)
 - esqueleto del arnés (MeshHarmes) adaptado a Tribal: `project.yml`, backlog con SCOPE-001/DESIGN-001/CORE-001/QA-001 y vault del proyecto (`concepto.md`, `stack-tecnologico.md`)
 - docs: define objetivo y criterio de hecho medible (SCOPE-001)
 - docs: arquitectura del motor y renombra el paquete a tribal (DESIGN-001)

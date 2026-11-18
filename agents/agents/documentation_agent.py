@@ -87,8 +87,9 @@ class DocumentationAgent(BaseAgent):
         duplicaría entradas de un cierre al siguiente.
         """
         if feature_id and feature_title:
+            today = date.today().isoformat()
             entry = (
-                f"## [Unreleased] — {date.today().isoformat()}\n\n"
+                f"## [Unreleased] — {today}\n\n"
                 f"### Añadido\n\n"
                 f"- {feature_title} ({feature_id})\n"
             )
@@ -98,7 +99,7 @@ class DocumentationAgent(BaseAgent):
                     "Entrada de feature generada en modo dry_run (no se escribió en disco).",
                     data=entry,
                 )
-            return self._insert_changelog(entry)
+            return self._insert_feature_entry(feature_id, feature_title, today, entry)
 
         git_agent = GitAgent(context=self.ctx)
         changelog_result = git_agent.run("generate_changelog", since_tag=since_tag)
@@ -116,6 +117,49 @@ class DocumentationAgent(BaseAgent):
                 "Vuelve a llamar con dry_run=False para aplicarla.",
                 data=entry,
             )
+
+        return self._insert_changelog(entry)
+
+    def _insert_feature_entry(self, feature_id: str, feature_title: str,
+                              today: str, entry: str) -> AgentResult:
+        """
+        Añade la línea de una feature al CHANGELOG de forma idempotente: si la
+        feature ya tiene entrada no escribe nada, y si la sección
+        `[Unreleased]` de hoy ya existe añade ahí la línea en vez de abrir una
+        sección nueva.
+        """
+        if not self.ctx.changelog_file.exists():
+            return self._insert_changelog(entry)
+
+        current = self.ctx.changelog_file.read_text(encoding="utf-8")
+        if f"({feature_id})" in current:
+            return AgentResult(
+                True, self.name, "update_changelog",
+                f"CHANGELOG.md ya tiene una entrada para {feature_id} — no se añade otra.",
+            )
+
+        bullet = f"- {feature_title} ({feature_id})"
+        lines = current.splitlines()
+        header = f"## [Unreleased] — {today}"
+        if header in lines:
+            insert_at = None
+            for i in range(lines.index(header) + 1, len(lines)):
+                if lines[i].startswith("## "):
+                    break
+                if lines[i].strip() == "### Añadido":
+                    insert_at = i + 1
+                    break
+            if insert_at is not None:
+                while insert_at < len(lines) and not lines[insert_at].strip():
+                    insert_at += 1
+                lines.insert(insert_at, bullet)
+                new_content = "\n".join(lines) + ("\n" if current.endswith("\n") else "")
+                self.ctx.changelog_file.write_text(new_content, encoding="utf-8")
+                return AgentResult(
+                    True, self.name, "update_changelog",
+                    f"CHANGELOG.md actualizado ({feature_id} en la sección [Unreleased] de hoy).",
+                    data=bullet,
+                )
 
         return self._insert_changelog(entry)
 

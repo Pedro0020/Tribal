@@ -104,8 +104,21 @@ class GitTool:
     def commit(self, message: str) -> ProcessResult:
         return self._git("commit", "-m", message)
 
+    def show_file(self, ref: str) -> str | None:
+        """Contenido de un fichero en una revisión (`HEAD:pyproject.toml`), o None si no existe."""
+        result = self._git("show", ref)
+        return result.stdout if result.ok else None
+
     def add(self, *paths: str) -> ProcessResult:
         return self._git("add", *paths)
+
+    def restore_staged(self, *paths: str) -> ProcessResult:
+        """Saca ficheros del índice sin tocar el working tree."""
+        return self._git("restore", "--staged", "--", *paths)
+
+    def indexed_files(self) -> list[str]:
+        """Rutas que git conoce en el índice (`git ls-files`)."""
+        return [f for f in self._git("ls-files").stdout.splitlines() if f.strip()]
 
     def create_tag(self, tag: str, *, message: str | None = None) -> ProcessResult:
         if message:

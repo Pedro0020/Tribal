@@ -75,6 +75,393 @@
       "started": "2026-11-18",
       "review_rounds": 0,
       "closed": "2026-11-18"
+    },
+    {
+      "id": "FIX-005",
+      "title": "commit_feature idempotente: CHANGELOG y lock",
+      "description": "El cierre de QA-001 lo destapo: un hook de pre-commit tumbo el commit despues de que commit_feature ya hubiera subido la version y escrito la entrada del CHANGELOG. El reintento duplico la seccion [Unreleased] (5 secciones, DESIGN-001 dos veces) y dejo el lock por detras de pyproject.",
+      "acceptance_criteria": [
+        "si git commit falla, commit_feature no deja una seccion [Unreleased] nueva en CHANGELOG ni un bump a medias",
+        "el reintento no duplica entradas",
+        "commit_feature ejecuta uv lock (o verifica uv lock --check) antes de commitear y devuelve success=false con needs si el lock no cuadra",
+        "test: con el commit forzado a fallar dos veces, CHANGELOG conserva N secciones y no N+2",
+        "y con exito hay exactamente una",
+        "uv run python -m agents run git commit_feature ... --dry-run true no escribe nada (md5 del arbol identico antes y despues)",
+        "uv run pytest -q en verde y harness gate success=true"
+      ],
+      "status": "done",
+      "depends_on": [
+        "QA-001"
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 0,
+      "closed": "2026-11-18"
+    },
+    {
+      "id": "FIX-002",
+      "title": "El RAG indexa el paquete real, no un nombre hardcodeado",
+      "description": "agents/tools/rag_tool.py lleva 'app' fijo en su tabla FUENTES: tras renombrar el paquete a tribal/, el indice deja de incluir el codigo del producto en silencio (los subdirectorios inexistentes se saltan). Desacoplar la fuente del nombre del paquete y cubrirlo con test.",
+      "acceptance_criteria": [
+        "rag_tool.py obtiene el paquete de project_slug (o de una unica constante compartida), sin el literal 'app' en FUENTES",
+        "test en agents/tests que exige que tribal/ este entre las fuentes y que cambiar project_slug cambie la fuente",
+        "uv run python -c \"from agents.tools.rag_tool import RagTool",
+        "print([f[0] for f in RagTool.FUENTES])\" lista tribal y no app",
+        "uv run pytest -q en verde y harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "DESIGN-001"
+      ]
+    },
+    {
+      "id": "HARD-000",
+      "title": "Reproducibilidad por semilla y configuracion (Fase 0)",
+      "description": "stack §10 pide semilla + fichero de configuracion para re-ver una partida y comparar variantes. Hoy la semilla viaja por CLI pero los parametros de la simulacion estan dispersos en constantes.",
+      "acceptance_criteria": [
+        "tribal/config.py define SimConfig con seed, individuos, tamano de mapa y tasas, serializable a JSON",
+        "uv run python -m tribal run --headless --config cfg.json --json usa esa configuracion y la refleja en el resumen",
+        "test: misma semilla + misma config dan el mismo resumen",
+        "cambiar un parametro de la config cambia el resultado",
+        "README documenta la configuracion y un ejemplo de fichero",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "CORE-001"
+      ]
+    },
+    {
+      "id": "F0-002",
+      "title": "Puerta F0 a F1: reproduccion y comportamiento emergente",
+      "description": "Puerta de concepto §15: la tribu vive. Reproduccion (nacimientos) y dos comportamientos que no estan guionados: agolparse junto al agua y huir en manada de un depredador.",
+      "acceptance_criteria": [
+        "los individuos tienen edad y una regla de reproduccion que produce nacimientos con herencia minima del genoma",
+        "existe un depredador que persigue y del que se puede huir",
+        "su presencia es parte de la configuracion",
+        "test determinista: una corrida con recursos y parejas produce nacimientos > 0",
+        "test de agolpamiento: en algun tick, al menos la mitad de la tribu esta a distancia <= 2 tiles de una fuente de agua",
+        "test de huida en manada: con depredador cerca, al menos N individuos incrementan su distancia a el en ticks consecutivos",
+        "uv run python -m tribal run --headless --json --ticks 3000 muestra nacimientos, muertes, depredador y agrupamiento",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "CORE-001",
+        "HARD-000"
+      ]
+    },
+    {
+      "id": "F1-001",
+      "title": "Genoma y habilidades heredables",
+      "description": "Concepto §3 y §5: rasgos heredables (fuerza, resistencia, inteligencia, salud, longevidad, divergencia) con mutacion, y el conjunto de habilidades que un individuo sabe hacer.",
+      "acceptance_criteria": [
+        "tribal/core/genoma.py define los rasgos y tribal/core/habilidades.py el conjunto (cazar, recolectar, fabricar, fuego, ensenar)",
+        "la descendencia hereda la media de sus progenitores con mutacion acotada y determinista por semilla",
+        "test: 100 nacimientos con semilla fija quedan dentro de los rangos y la media se mantiene",
+        "dos corridas identicas dan los mismos genomas",
+        "las habilidades se heredan por ensenanza/immitacion y modifican el exito de la accion (test con y sin habilidad)",
+        "uv run python -m tribal run --headless --json incluye media de rasgos y numero de habilidades distintas",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F0-002"
+      ]
+    },
+    {
+      "id": "F1-002",
+      "title": "Arbol de conocimiento con progresion y origen de nodo",
+      "description": "Concepto §8 y §8b: el arbol es andamiaje de plausibilidad. Cada nodo guarda rama, nivel, prerrequisitos y origen (arbol | combinacion | interaccion | llm), que es el dato con el que se mide la emergencia.",
+      "acceptance_criteria": [
+        "tribal/culture/arbol.py define las ramas litica, fuego, lenguaje, roles y simbolico con niveles y prerrequisitos",
+        "el motor rechaza descubrir un nodo sin sus prerrequisitos y registra el origen en el momento de crearlo",
+        "test: sin prerrequisito no hay nodo",
+        "con el se crea con origen arbol",
+        "el origen no se puede reescribir despues",
+        "uv run python -m tribal report culture --json imprime nodos, aristas y pct_fuera_arbol (0.0 en esta fase)",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F1-001"
+      ]
+    },
+    {
+      "id": "F1-003",
+      "title": "Divergentes y conformistas: variacion y transmision",
+      "description": "Concepto §9b: el divergente prueba y el conformista copia. La proporcion reacciona al entorno (frequency-dependence): en crisis suben los intentos divergentes; en calma prospera la tradicion.",
+      "acceptance_criteria": [
+        "la divergencia es un rasgo del genoma y decide quien experimenta y quien imita",
+        "los conformistas copian nodos que ven funcionar (transmision por imitacion) y los divergentes intentan combinaciones",
+        "test: en crisis (sequia) suben los intentos divergentes y aparecen nodos nuevos",
+        "sin crisis no aparecen",
+        "uv run python -m tribal run --headless --json --ticks 5000 reporta n_divergentes, n_conformistas y nodos por origen",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F1-002"
+      ]
+    },
+    {
+      "id": "F1-004",
+      "title": "Puerta F1 a F2: emergencia no trivial sin LLM",
+      "description": "Puerta de concepto §15: sin LLM, la tribu descubre espontaneamente algo mas alla del primer paso forzado, y la proporcion divergente/conformista reacciona a la crisis. Si esto no pasa, el LLM no lo va a arreglar.",
+      "acceptance_criteria": [
+        "test end-to-end con semilla fija: sin LLM se crea al menos un nodo con origen distinto de arbol (interaccion por imitacion) tras N ticks",
+        "test comparativo: una corrida con crisis y otra sin ella difieren en proporcion de intentos divergentes y en nodos nuevos",
+        "uv run python -m tribal report culture --json muestra al menos un nodo de nivel 1 o 2",
+        "uv run pytest -q en verde y harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F1-003"
+      ]
+    },
+    {
+      "id": "HARD-1",
+      "title": "Endurecimiento tras Fase 1: semilla, telemetria y docs",
+      "description": "Tras cerrar F1: reproducibilidad comprobada en varias semillas, telemetria consultable y documentacion al dia.",
+      "acceptance_criteria": [
+        "test parametrizado con 10 semillas: cada par (semilla, config) reproduce su resumen exacto",
+        "uv run python -m tribal report telemetry --json devuelve poblacion, divergentes, conformistas, nodos y aristas por intervalo",
+        "README y vault/01_PROYECTO/arquitectura.md actualizados con lo que existe tras Fase 1 y como ejecutarlo",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F1-004"
+      ]
+    },
+    {
+      "id": "F2-001",
+      "title": "Cliente LLM HTTP con esquema de acciones",
+      "description": "Capa LLM de Fase 2: cliente HTTP contra el modelo local (Ollama, model tribal-llm) con salida estructurada por JSON schema, y un backend falso determinista para los tests. Sin red en la suite.",
+      "acceptance_criteria": [
+        "tribal/llm/esquema.py fija el esqueleto de la respuesta (accion dentro del vocabulario, objetivo, razon, dialogo) y deja libres los textos",
+        "tribal/llm/cliente.py habla HTTP con 127.0.0.1:11434/api/chat con model tribal-llm, format schema y timeout corto",
+        "un backend falso permite tests deterministas",
+        "respuesta invalida, timeout y servicio caido no lanzan excepcion al bucle",
+        "uv run python -m tribal llm selfcheck --json informa disponible true/false sin romper cuando no hay servicio",
+        "uv run pytest -q no hace ninguna llamada de red (test que monkeypatchea el transporte)",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F1-004"
+      ]
+    },
+    {
+      "id": "F2-002",
+      "title": "Cola asincrona de inferencia que no frena el mundo",
+      "description": "Arquitectura §3: el LLM nunca se llama desde el hilo de render. Hilo dedicado, cola acotada, resultados con ventana de validez.",
+      "acceptance_criteria": [
+        "tribal/llm/cola.py usa hilo dedicado y colas acotadas",
+        "maximo N peticiones en vuelo configurable",
+        "test con backend falso lento (200 ms): la simulacion sigue avanzando ticks mientras la peticion esta en vuelo y el coste por tick no supera el presupuesto de frame",
+        "una decision que llega tarde (fuera de la ventana) se descarta y el individuo sigue por instinto",
+        "test",
+        "uv run python -m tribal run --headless --json --llm stub --ticks 1200 reporta peticiones, aplicadas, descartadas y fallos",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F2-001"
+      ]
+    },
+    {
+      "id": "F2-003",
+      "title": "Embeddings en CPU y recuperacion de memoria",
+      "description": "Stack §2 y §7: embeddings en CPU para no competir por VRAM, con recuperacion de recuerdos y cultura relevante (GraphRAG ligero).",
+      "acceptance_criteria": [
+        "tribal/llm/embeddings.py define una interfaz con backend determinista (hashing) para tests y backend real opcional en CPU",
+        "la recuperacion devuelve top-k por similitud y nunca corre en el hilo de render ni en el del LLM",
+        "test top-1: entre recuerdos sinteticos, la consulta devuelve el relevante",
+        "dos ejecuciones identicas dan el mismo orden",
+        "uv run python -m tribal llm selfcheck --json informa backend de embeddings y si usa GPU (debe ser false)",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F2-002"
+      ]
+    },
+    {
+      "id": "F2-004",
+      "title": "Saliencia y pensamiento selectivo",
+      "description": "Concepto §10b: la saliencia es peso narrativo ganado; decide quien piensa y cuanto se le narra. No confundir con divergencia.",
+      "acceptance_criteria": [
+        "la saliencia sube por hitos (primer fuego, salvar a alguien, liderar) y decae con el tiempo",
+        "es independiente de la divergencia",
+        "test: un individuo con mas hitos recibe mas peticiones LLM que uno sin hitos en la misma corrida",
+        "test: nunca hay mas de N individuos pensando a la vez ni mas de N peticiones en vuelo",
+        "uv run python -m tribal run --headless --json --llm stub reporta top de saliencia y pensamientos por individuo",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F2-003"
+      ]
+    },
+    {
+      "id": "F2-005",
+      "title": "Narracion de hitos y dialogo",
+      "description": "Concepto §10: el LLM pone palabras a lo que la simulacion ya produjo. Hitos narrados en el diario y dialogos visibles, sin bloquear.",
+      "acceptance_criteria": [
+        "tribal/culture/diario.py registra tick, tipo de evento y narracion para los hitos (primer fuego, primera caza en grupo, primera palabra, muerte de un anciano)",
+        "el texto del LLM se usa tal cual y se guarda",
+        "si el LLM falla, el hito se registra igual sin narracion (test)",
+        "test con backend falso: cada hito produce una entrada de diario y el dialogo se asocia a su individuo",
+        "uv run python -m tribal report diary --json --last 5 imprime las ultimas cinco entradas",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F2-004"
+      ]
+    },
+    {
+      "id": "F2-006",
+      "title": "Puerta F2 a F3: nodos fuera del arbol y narracion concentrada",
+      "description": "Puerta de concepto §15: el LLM propone nodos fuera del arbol (nivel 1) que pasan la validacion a ritmo no trivial, y la saliencia concentra la narracion en pocos individuos.",
+      "acceptance_criteria": [
+        "test end-to-end con backend falso guionizado y semilla fija: se crean al menos K nodos con origen combinacion o llm que pasan la validacion de plausibilidad",
+        "test: los tres individuos con mas saliencia concentran al menos el 50 por ciento de las lineas de narracion",
+        "uv run python -m tribal report culture --json muestra nodos fuera del arbol con su origen y su autor",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F2-005"
+      ]
+    },
+    {
+      "id": "HARD-2",
+      "title": "Endurecimiento tras Fase 2: semilla, telemetria y docs del LLM",
+      "description": "Tras cerrar F2: reproducibilidad aunque haya LLM (backend falso), telemetria de la cola y documentacion de como arrancar el modelo.",
+      "acceptance_criteria": [
+        "test con 10 semillas y backend falso: resumen reproducible y cola sin fugas de hilos al cerrar",
+        "uv run python -m tribal report telemetry --json incluye peticiones, aplicadas, descartadas, fallos y latencia media",
+        "README y arquitectura documentan arranque de Ollama (ollama serve, tribal-llm), degradacion sin LLM y el backend falso para tests",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F2-006"
+      ]
+    },
+    {
+      "id": "F3-001",
+      "title": "Memoria colectiva como grafo persistido en SQLite",
+      "description": "Stack §5: la cultura es un grafo (nodos + aristas) en dos tablas, con esquema completo de la partida. Sin esto no hay consulta y el KPI no se puede demostrar.",
+      "acceptance_criteria": [
+        "tribal/store/esquema.py crea las tablas de stack §5 (individuos, relaciones, recursos, mundo, nodos, aristas, recuerdos, diario, telemetria)",
+        "uv run python -m tribal run --headless --ticks 600 --db tribu.db escribe la partida y al reabrirla el grafo y la poblacion coinciden",
+        "un unico modulo importa sqlite3",
+        "el resto usa la interfaz de repositorio",
+        "test: cerrar y reabrir conserva nodos, aristas y origen de cada nodo",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F2-006"
+      ]
+    },
+    {
+      "id": "F3-002",
+      "title": "Transmision intergeneracional y nodos apagados",
+      "description": "Concepto §6 y §9: los ancianos concentran conocimiento y su muerte sin ensenar apaga nodos. La cultura sobrevive o se pierde segun quien ensene.",
+      "acceptance_criteria": [
+        "la ensenanza exige proximidad y un nodo de lenguaje previo",
+        "los conformistas tambien imitan",
+        "test: un nodo cuyo unico portador muere sin ensenar queda estado apagado y no se borra",
+        "test: con ensenanza previa el nodo sobrevive a la muerte del portador",
+        "uv run python -m tribal report culture --json cuenta nodos activos y apagados",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F3-001"
+      ]
+    },
+    {
+      "id": "F3-003",
+      "title": "Export del grafo a Obsidian con wikilinks",
+      "description": "Stack §6: volcar nodos y aristas a Markdown con [[wikilinks]] para ver la cultura como constelacion en el vault de la tribu.",
+      "acceptance_criteria": [
+        "uv run python -m tribal export obsidian --db tribu.db --out vault-tribu/ escribe un .md por nodo con frontmatter (origen, rama, estado) y un [[wikilink]] por arista",
+        "el export es idempotente: dos ejecuciones seguidas producen los mismos bytes",
+        "test: numero de .md y de wikilinks coincide con nodos y aristas de la base",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F3-001"
+      ]
+    },
+    {
+      "id": "F3-004",
+      "title": "Telemetria historica consultable",
+      "description": "Stack §5: la tabla telemetria muestrea por intervalo, no por frame, para poder analizar la partida despues.",
+      "acceptance_criteria": [
+        "la simulacion escribe una fila de telemetria cada N ticks con poblacion, divergentes, conformistas, nodos y aristas",
+        "uv run python -m tribal report telemetry --db tribu.db --csv escribe un CSV con cabecera y una fila por muestra",
+        "test: el numero de muestras es el esperado para 6000 ticks e intervalo 60, y no hay una fila por frame",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F3-001"
+      ]
+    },
+    {
+      "id": "F3-005",
+      "title": "Capa de consulta del grafo",
+      "description": "Stack §6: ver el grafo no basta; hay que poder preguntarle (que ruta llevo al fuego, que nodos murieron con el anciano). Camino y explicacion sobre nodos y aristas.",
+      "acceptance_criteria": [
+        "uv run python -m tribal culture ask --db tribu.db --query \"que ruta llevo al fuego\" devuelve un camino de nodos y el origen de cada uno",
+        "uv run python -m tribal culture ask --db tribu.db --query \"que nodos se apagaron\" lista los nodos apagados con su portador",
+        "test sobre grafo sintetico: camino minimo correcto, nodo inexistente devuelve lista vacia sin excepcion",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F3-003",
+        "F3-002"
+      ]
+    },
+    {
+      "id": "F3-006",
+      "title": "Fin de pelicula: el criterio de exito, demostrado",
+      "description": "objetivo.md §3: cuatro hitos y al menos el 50 por ciento de nodos activos fuera del arbol, comprobado con una consulta sobre la partida y un test del repo.",
+      "acceptance_criteria": [
+        "test end-to-end reproducible (semilla fija + backend falso guionizado) que llega a fuego, herramienta compuesta, proto-lenguaje y mito",
+        "test que ejecuta la consulta SQL de objetivo.md §3.2 sobre tribu.db y exige pct_fuera_arbol >= 50.0",
+        "uv run python -m tribal report kpi --db tribu.db devuelve los cuatro hitos, el porcentaje y el veredicto",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F3-005",
+        "F3-002"
+      ]
+    },
+    {
+      "id": "HARD-3",
+      "title": "Endurecimiento final: semilla, telemetria, README y docs",
+      "description": "Cierre del proyecto: reproducibilidad, telemetria y documentacion que permita a otra persona clonar, arrancar y comprobar el criterio de exito sin leer el codigo.",
+      "acceptance_criteria": [
+        "test con 10 semillas y backend falso: una partida completa se reproduce exacta (mismos hitos y mismo KPI)",
+        "uv run python -m tribal report telemetry --db tribu.db --json resume la partida y uv run python -m tribal report kpi --db tribu.db da el veredicto",
+        "README: instalacion, arranque de Ollama, comandos de partida, export a Obsidian, consulta del grafo y como leer el KPI",
+        "arquitectura.md con estado final",
+        "uv run python -m agents run rag index deja el historico del arnes indexado (o aviso claro de que falta el extra rag)",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F3-006"
+      ]
     }
   ]
 }

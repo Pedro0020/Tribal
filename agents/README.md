@@ -284,8 +284,11 @@ de la API pública — está señalado explícitamente en su `AgentResult.warnin
 `agents/agents/git_agent.py` es el ejemplo de referencia: `commit_with_changelog`
 llama a `DocumentationAgent.update_changelog` antes de hacer el commit,
 `commit_feature` encadena `DocumentationAgent.bump_version` +
-`DocumentationAgent.update_changelog` + `git commit` (sin tag; es el cierre
-del arnés tras `harness finish`), y `tag_release` encadena `bump_version` +
+`DocumentationAgent.update_changelog` + `uv lock` + `git commit` (sin tag; es
+el cierre del arnés tras `harness finish`). Es idempotente: si el commit falla
+restaura los ficheros a su contenido previo y pide en `needs` qué corregir, y
+la versión se calcula desde `HEAD`, así que reintentar no duplica ni el bump ni
+la entrada del CHANGELOG. `tag_release` encadena `bump_version` +
 `commit_with_changelog` + `git tag` en un único flujo. El patrón es siempre
 el mismo: import perezoso (dentro del método, no a nivel de módulo, para
 evitar ciclos de import) + instanciar el otro agente con `context=self.ctx`
