@@ -52,7 +52,7 @@ exit 1
 
 def _write_gate(root: Path, body: str) -> None:
     script = root / "init.sh"
-    script.write_text(body)
+    script.write_text(body, encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
 
 
@@ -90,10 +90,12 @@ def test_status_con_json_corrupto_falla(context):
 
 
 def test_status_avisa_de_dos_in_progress(harness):
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     doc["features"][0]["status"] = "in_progress"
     doc["features"][1]["status"] = "in_progress"
-    (harness.ctx.root / "harness" / "featureslist.json").write_text(json.dumps(doc))
+    (harness.ctx.root / "harness" / "featureslist.json").write_text(
+        json.dumps(doc), encoding="utf-8"
+    )
     result = harness.status()
     assert result.success
     assert any("in_progress a la vez" in w for w in result.warnings)
@@ -114,9 +116,11 @@ def test_next_retoma_lo_abierto(harness):
 
 
 def test_next_sin_elegibles_por_dependencias(harness):
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     doc["features"][0]["status"] = "blocked"
-    (harness.ctx.root / "harness" / "featureslist.json").write_text(json.dumps(doc))
+    (harness.ctx.root / "harness" / "featureslist.json").write_text(
+        json.dumps(doc), encoding="utf-8"
+    )
     result = harness.next()
     assert not result.success
     assert "depends_on" in result.message or "dependencias" in result.message
@@ -126,9 +130,9 @@ def test_next_sin_elegibles_por_dependencias(harness):
 def test_start_marca_in_progress_y_escribe_current(harness):
     result = harness.start(id="A-001")
     assert result.success
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     assert doc["features"][0]["status"] == "in_progress"
-    current = (harness.ctx.root / "harness" / "progress" / "current.md").read_text()
+    current = (harness.ctx.root / "harness" / "progress" / "current.md").read_text(encoding="utf-8")
     assert "A-001" in current
     assert "c1" in current and "c2" in current
 
@@ -184,7 +188,7 @@ def test_finish_rechaza_si_la_puerta_falla(harness):
     result = harness.finish(id="A-001", evidence="3 passed")
     assert not result.success
     assert "no se cierra" in result.message.lower()
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     assert doc["features"][0]["status"] == "in_progress"  # NO se tocó
 
 
@@ -194,7 +198,7 @@ def test_finish_rechaza_sin_evidencia(harness):
     result = harness.finish(id="A-001")
     assert not result.success
     assert result.needs
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     assert doc["features"][0]["status"] == "in_progress"
 
 
@@ -203,9 +207,9 @@ def test_finish_cierra_y_escribe_historial(harness):
     harness.start(id="A-001")
     result = harness.finish(id="A-001", evidence="3 passed en 0.4s", changes="src/x.py")
     assert result.success
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     assert doc["features"][0]["status"] == "done"
-    history = (harness.ctx.root / "harness" / "progress" / "history.md").read_text()
+    history = (harness.ctx.root / "harness" / "progress" / "history.md").read_text(encoding="utf-8")
     assert "A-001" in history
     assert "3 passed en 0.4s" in history
     assert "src/x.py" in history
@@ -215,7 +219,7 @@ def test_finish_deja_current_en_idle(harness):
     _write_gate(harness.ctx.root, GATE_OK)
     harness.start(id="A-001")
     harness.finish(id="A-001", evidence="ok")
-    current = (harness.ctx.root / "harness" / "progress" / "current.md").read_text()
+    current = (harness.ctx.root / "harness" / "progress" / "current.md").read_text(encoding="utf-8")
     assert "idle" in current
     assert "A-001" not in current
 
@@ -246,7 +250,7 @@ def test_block_exige_motivo(harness):
 def test_block_guarda_el_motivo(harness):
     result = harness.block(id="A-001", reason="falta decidir el formato")
     assert result.success
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     assert doc["features"][0]["status"] == "blocked"
     assert doc["features"][0]["blocked_reason"] == "falta decidir el formato"
 
@@ -256,7 +260,7 @@ def test_record_escribe_el_informe_del_subagente(harness):
     assert result.success
     path = harness.ctx.root / "harness" / "progress" / "explorer-A-001.md"
     assert path.exists()
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert "explorer · A-001" in text
     assert "x.py" in text
 
@@ -267,11 +271,36 @@ def test_record_sin_contenido_pide_datos(harness):
     assert result.needs
 
 
+def test_record_desde_fichero_conserva_comillas_tildes_y_saltos(harness):
+    informe = (
+        '## Qué cambié\n'
+        'Dijo "no toques esto" y añadió la acción `describe`.\n'
+        "\n"
+        "## Evidencia\n"
+        "pytest: 25 passed, 0 errors → verde\n"
+    )
+    origen = harness.ctx.root / "informe.txt"
+    origen.write_text(informe, encoding="utf-8")
+
+    result = harness.record(agent="explorer", id="A-001", content_file=str(origen))
+
+    assert result.success
+    path = harness.ctx.root / "harness" / "progress" / "explorer-A-001.md"
+    texto = path.read_text(encoding="utf-8")
+    assert informe.strip() in texto, "el fichero no puede perder ni una línea"
+
+
+def test_record_con_fichero_inexistente_falla(harness):
+    result = harness.record(agent="explorer", id="A-001", content_file="no_existe.md")
+    assert not result.success
+    assert any("no_existe.md" in n for n in result.needs)
+
+
 # -- añadir -------------------------------------------------------------------
 def test_add_crea_feature_pendiente(harness):
     result = harness.add(id="C-001", title="Tercera", criteria="uno;dos")
     assert result.success
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     nueva = doc["features"][-1]
     assert nueva["id"] == "C-001"
     assert nueva["status"] == "pending"
@@ -328,7 +357,7 @@ def test_al_agotar_el_bucle_bloquea_y_escala(harness):
 
     assert not ultimo.success
     assert ultimo.needs, "debe escalar al humano, no limitarse a fallar"
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     assert doc["features"][0]["status"] == "blocked"
     assert "3" in doc["features"][0]["blocked_reason"]
 
@@ -336,7 +365,7 @@ def test_al_agotar_el_bucle_bloquea_y_escala(harness):
 def test_el_informe_se_guarda_aunque_se_agote_el_bucle(harness):
     harness.start(id="A-001")
     _rechazar(harness, 3)
-    informe = (harness.ctx.root / "harness" / "progress" / "reviewer-A-001.md").read_text()
+    informe = (harness.ctx.root / "harness" / "progress" / "reviewer-A-001.md").read_text(encoding="utf-8")
     assert "falta el test 2" in informe, "el ultimo informe no debe perderse al bloquear"
 
 
@@ -359,7 +388,7 @@ def test_reabrir_la_feature_reinicia_el_contador(harness):
     _rechazar(harness, 3)                      # queda blocked
     harness.start(id="A-001")                  # el humano la reabre
 
-    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text())
+    doc = json.loads((harness.ctx.root / "harness" / "featureslist.json").read_text(encoding="utf-8"))
     assert doc["features"][0]["status"] == "in_progress"
     assert doc["features"][0]["review_rounds"] == 0
     assert "blocked_reason" not in doc["features"][0]

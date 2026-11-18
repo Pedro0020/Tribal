@@ -217,3 +217,34 @@ def test_normalize_github_shorthand_leaves_existing_local_path_untouched(tmp_pat
     local = tmp_path / "algo"
     local.mkdir()
     assert AgentInstallerTool.normalize_github_shorthand(str(local)) == str(local)
+
+
+# -- nombre del directorio de clone ------------------------------------------
+def test_repo_dir_name_de_una_ruta_local_de_windows():
+    from agents.agents.installer_agent import _repo_dir_name
+    assert _repo_dir_name(r"C:\Users\pedro\workspace\repo_externo") == "repo_externo"
+
+
+def test_repo_dir_name_de_una_url_y_de_scp():
+    from agents.agents.installer_agent import _repo_dir_name
+    assert _repo_dir_name("https://github.com/torvalds/linux.git") == "linux"
+    assert _repo_dir_name("https://github.com/torvalds/linux/") == "linux"
+    assert _repo_dir_name("git@github.com:torvalds/linux.git") == "linux"
+
+
+def test_rmtree_force_borra_aunque_el_fichero_este_readonly(tmp_path):
+    import os
+    import stat
+
+    from agents.agents.installer_agent import _rmtree_force
+
+    target = tmp_path / "clon"
+    objects = target / ".git" / "objects"
+    objects.mkdir(parents=True)
+    fichero = objects / "pack"
+    fichero.write_text("x", encoding="utf-8")
+    os.chmod(fichero, stat.S_IREAD)
+
+    _rmtree_force(target)
+
+    assert not target.exists()

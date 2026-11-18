@@ -13,7 +13,7 @@ Ejecuta la parte mecánica del arnés. No decide nada: los agentes markdown
 | `gate [--quick true]` | Ejecuta `./init.sh` y devuelve el veredicto estructurado |
 | `finish --id <ID> --evidence "<salida real>"` | Cierra la feature y escribe el histórico |
 | `block --id <ID> --reason "<motivo>"` | Marca bloqueada |
-| `record --agent <a> --id <ID> --content "<informe>"` | Guarda `progress/<a>-<ID>.md` |
+| `record --agent <a> --id <ID> --content "<informe>"` o `--content-file <ruta>` | Guarda `progress/<a>-<ID>.md` (el fichero, UTF-8, evita los truncados de PowerShell) |
 | `add --id <ID> --title "<t>" --criteria "a;b;c"` | Añade feature al backlog |
 
 ```bash
@@ -51,7 +51,7 @@ Ver el ciclo completo: `skill harness_workflow`.
 | `run harness start` | `--id`, `--owner` |
 | `run harness finish` | `--id`, `--evidence`, `--changes`, `--decisions`, `--pending` |
 | `run harness block` | `--id`, `--reason` |
-| `run harness record` | `--agent`, `--id`, `--content`, `--verdict` |
+| `run harness record` | `--agent`, `--id`, `--content`, `--content_file`, `--verdict` |
 | `run harness gate` | `--quick` |
 | `run harness add` | `--id`, `--title`, `--description`, `--criteria`, `--depends_on` |
 

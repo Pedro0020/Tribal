@@ -218,6 +218,13 @@ def sync(*, write: bool, context: SharedContext | None = None) -> tuple[list[str
 
 
 def main() -> int:
+    # El resumen lleva ✔, ✘ y →: en la consola cp1252 de Windows reventaba al
+    # imprimir. Es el mismo arreglo que el CLI; se importa aquí y no arriba para
+    # que `import agents.prompts_sync` siga sin arrastrar el orquestador.
+    from agents.cli import _ensure_utf8_output
+
+    _ensure_utf8_output()
+
     parser = argparse.ArgumentParser(prog="python -m agents.prompts_sync")
     parser.add_argument("--write", action="store_true", help="Escribe los bloques (si no, solo comprueba)")
     args = parser.parse_args()

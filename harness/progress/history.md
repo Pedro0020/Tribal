@@ -318,3 +318,50 @@ Success: no issues found in 22 source files
 ```
 
 </details>
+
+## QA-001 — Batería de calidad en verde
+
+- **Cerrada:** 2026-11-18
+- **Verificación:** ./init.sh en verde · 26 passed in 1.54s
+- **Cambios:** agents/agents/installer_agent.py (bug de ruta + borrado tolerante); agents/agents/harness_agent.py (--content-file); agents/cli.py y agents/prompts_sync.py (salida UTF-8); agents/prompts/harness_agent.md; agents/tests/{test_installer_agent,test_refactor_scope,test_git_tag_release,test_git_commit_feature,test_git_commit_with_changelog,test_harness_agent,test_prompts_sync,test_cli_utf8}.py; tribal/__init__.py (version desde metadata); tests/test_version.py; .pre-commit-config.yaml (pre-push); .github/workflows/ci.yml (nuevo)
+- **Decisiones:** Los 16 fallos eran tres cosas distintas: un bug de producto en installer_agent (una ruta local de Windows hacia que workdir / <abs> colapsara sobre el origen y shutil.rmtree borrase el repo del usuario, y .git ReadOnly hace fallar rmtree en Windows), un test que comparaba rutas con separador fijo, y ~12 lecturas/escrituras sin encoding en tests. Los dos primeros se arreglan en el codigo, no en el fixture. La version pasa a leerse de importlib.metadata: habia tres valores (0.1.1 en __init__, 0.1.4 en pyproject y README) y el test exige que coincidan. record gana --content-file porque --content truncaba con comillas/no-ASCII desde PowerShell. CI nuevo corre exactamente lo mismo que la puerta local, sin pre-commit --all-files (reformatearia agents/). DEUDA ABIERTA: commit_feature sube el patch en pyproject pero no ejecuta uv lock; hay que re-lockear antes de commitear o uv sync --frozen fallara en CI.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "message": "ENTORNO LISTO - se puede trabajar." | "ready": true | "errors": 0 | "warnings": 0
+checks 14/14 ok | pytest tests/: 26 passed
+
+$ uv run pytest -q          (suite completa: tests/ + agents/tests, shell limpia sin PYTHONUTF8)
+547 passed, 15 skipped in 58.50s   exit 0
+(baseline al abrir la feature: 16 failed, 523 passed, 15 skipped)
+
+$ uv run ruff check tribal/ tests/ agents/
+All checks passed!
+$ uv run ruff format --check tribal/ tests/
+23 files already formatted
+$ uv run mypy tribal/ tests/
+Success: no issues found in 23 source files
+
+$ uv run pre-commit run check-yaml --all-files
+Passed
+$ uv lock --check
+exit 0
+
+$ uv run python -m agents describe cicd        (consola cp1252 real, sin PYTHONUTF8)
+exit 0   (antes: UnicodeEncodeError '\u2192')
+$ uv run python -m agents.prompts_sync
+exit 0   (antes: UnicodeEncodeError en prompts_sync.py:242)
+
+Producto (installer): _repo_dir_name parte por '/', '\\', ':' y quita .git;
+_rmtree_force con onexc + chmod S_IWRITE para .git ReadOnly de Windows.
+  rmtree plano sobre clon -> WinError 5 ; _rmtree_force -> OK
+  test_installer_agent.py cubre ruta local Windows, URL https y scp git@host:a/b
+
+Harness: record --content-file lee UTF-8 y conserva comillas, tildes, flechas y
+saltos de linea (probado byte a byte). La causa del truncado queda cerrada.
+```
+
+</details>

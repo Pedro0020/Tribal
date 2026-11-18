@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # pygame no tiene pantalla ni tarjeta de sonido en un runner
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Instalar dependencias (lock congelado)
+        run: uv sync --frozen --extra dev
+
+      # Los mismos comandos que `make check`: si verde aquí, verde en local.
+      - name: ruff (lint)
+        run: uv run ruff check tribal/ tests/ agents/
+
+      - name: ruff (formato)
+        run: uv run ruff format --check tribal/ tests/
+
+      - name: mypy (tipos)
+        run: uv run mypy tribal/ tests/
+
+      - name: pytest - suite completa (tests y agents/tests)
+        run: uv run pytest -q
+
+      # La puerta del arnés. `bash init.sh` y no `./init.sh`: el fichero no es
+      # ejecutable en git (modo 100644).
+      - name: Puerta del arnés
+        run: bash init.sh

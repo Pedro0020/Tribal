@@ -11,4 +11,13 @@ que haya aquí dentro más allá de dos cosas:
 La arquitectura de estas piezas está en `vault/01_PROYECTO/arquitectura.md`.
 """
 
-__version__ = "0.1.1"
+from importlib.metadata import PackageNotFoundError, version
+
+#: Fuente única de la versión: los metadatos del paquete instalado
+#: (`pyproject.toml` → `uv sync`). `documentation_agent.bump_version` reescribe
+#: pyproject y, tras `uv sync`, esto lo sigue solo. Antes había un literal aquí
+#: que nadie actualizaba (0.1.1 frente a 0.1.4 en pyproject).
+try:
+    __version__ = version("tribal")
+except PackageNotFoundError:  # sin instalar (repo recién clonado)
+    __version__ = "0.0.0"

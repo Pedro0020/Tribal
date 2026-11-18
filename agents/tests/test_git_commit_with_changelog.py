@@ -6,7 +6,7 @@ from agents.agents.git_agent import GitAgent
 
 
 def test_commit_with_changelog_includes_changelog_in_same_commit(context):
-    (context.root / "mi_paquete" / "nuevo.py").write_text("x = 1\n")
+    (context.root / "mi_paquete" / "nuevo.py").write_text("x = 1\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=context.root, check=True)
 
     agent = GitAgent(context=context)

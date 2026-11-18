@@ -9,6 +9,10 @@ registrado sin contrato sin que nadie lo notara.
 
 from __future__ import annotations
 
+import io
+import sys
+
+from agents import prompts_sync
 from agents.core.registry import agent_registry
 from agents.prompts_sync import BEGIN, END, _splice, render_block, sync, sync_assistants
 
@@ -81,7 +85,7 @@ def test_check_no_escribe_nada(context):
 
     sync(write=False, context=context)
 
-    assert (prompts / "git_agent.md").read_text() == "# Prompt — GitAgent\n\nprosa\n"
+    assert (prompts / "git_agent.md").read_text(encoding="utf-8") == "# Prompt — GitAgent\n\nprosa\n"
 
 
 def test_write_si_escribe_el_bloque(context):
@@ -91,7 +95,7 @@ def test_write_si_escribe_el_bloque(context):
 
     sync(write=True, context=context)
 
-    texto = (prompts / "git_agent.md").read_text()
+    texto = (prompts / "git_agent.md").read_text(encoding="utf-8")
     assert "prosa" in texto
     assert BEGIN in texto and "run git " in texto
 
@@ -121,7 +125,7 @@ def test_espeja_los_subagentes_a_claude(context):
     pendientes = sync_assistants(write=True, context=context)
     assert "lider" in pendientes
 
-    generado = (context.root / ".claude" / "agents" / "lider.md").read_text()
+    generado = (context.root / ".claude" / "agents" / "lider.md").read_text(encoding="utf-8")
     assert generado.startswith("---")
     assert "name: lider" in generado
     assert "description: Diriges el ciclo de trabajo del proyecto" in generado
@@ -131,7 +135,7 @@ def test_espeja_los_subagentes_a_claude(context):
 def test_el_explorer_se_espeja_con_herramientas_de_solo_lectura(context):
     _sembrar_opencode(context, "explorer")
     sync_assistants(write=True, context=context)
-    generado = (context.root / ".claude" / "agents" / "explorer.md").read_text()
+    generado = (context.root / ".claude" / "agents" / "explorer.md").read_text(encoding="utf-8")
     assert "tools:" in generado
     assert "Write" not in generado.split("---")[1], "el explorer no debe poder escribir"
 
@@ -147,14 +151,30 @@ def test_detecta_que_el_espejo_se_quedo_viejo(context):
     sync_assistants(write=True, context=context)
 
     fuente = context.root / ".opencode" / "agents" / "lider.md"
-    fuente.write_text(fuente.read_text() + "\n## Regla nueva\n\nno te la saltes\n", encoding="utf-8")
+    fuente.write_text(fuente.read_text(encoding="utf-8") + "\n## Regla nueva\n\nno te la saltes\n", encoding="utf-8")
 
     assert sync_assistants(write=False, context=context) == ["lider"]
     sync_assistants(write=True, context=context)
-    assert "Regla nueva" in (context.root / ".claude" / "agents" / "lider.md").read_text()
+    assert "Regla nueva" in (context.root / ".claude" / "agents" / "lider.md").read_text(encoding="utf-8")
 
 
 def test_check_no_escribe_el_espejo(context):
     _sembrar_opencode(context)
     sync_assistants(write=False, context=context)
     assert not (context.root / ".claude" / "agents" / "lider.md").exists()
+
+
+# -- el resumen en la consola de Windows --------------------------------------
+def test_main_no_revienta_con_stdout_cp1252(monkeypatch):
+    """El resumen lleva ✔ y →: cp1252 no los representa y main() moría al imprimir."""
+    monkeypatch.setattr(prompts_sync, "sync", lambda *, write: ([], []))
+    monkeypatch.setattr(prompts_sync, "sync_assistants", lambda *, write: [])
+    monkeypatch.setattr(sys, "argv", ["prompts_sync"])
+
+    buffer = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(buffer, encoding="cp1252"))
+
+    assert prompts_sync.main() == 0
+
+    sys.stdout.flush()
+    assert "✔ Prompts y subagentes sincronizados" in buffer.getvalue().decode("utf-8")

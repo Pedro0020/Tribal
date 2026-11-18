@@ -13,6 +13,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from typing import Any
@@ -127,7 +128,27 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _ensure_utf8_output() -> None:
+    """Fuerza UTF-8 en stdout/stderr si la consola no lo es ya.
+
+    En Windows `python -m agents describe cicd` moría con UnicodeEncodeError
+    (cp1252) al imprimir `→`: los mensajes del arnés llevan flechas, tildes y
+    `✔`. Reconfigurar es inocuo cuando ya es UTF-8 o cuando el stream es un
+    pipe; si el stream no se puede reconfigurar se deja tal cual.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("_", "-")
+        if encoding in ("utf-8", "utf8"):
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _ensure_utf8_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     json_mode = args.json

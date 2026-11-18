@@ -5,20 +5,23 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+        # Solo el paquete y sus tests: `make format`/`make lint` no cubren
+        # agents/, y el hook reformateaba 11 ficheros del arnés en cada commit.
+        files: ^(tribal|tests)/
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.8.3
     hooks:
       - id: bandit
         args: [-r, -f, txt, -x, .venv,tests,agents/tests]
-        stages: [push]
+        stages: [pre-push]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.15.0
     hooks:
       - id: mypy
         files: ^(tribal|tests)/
-        stages: [push]
+        stages: [pre-push]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

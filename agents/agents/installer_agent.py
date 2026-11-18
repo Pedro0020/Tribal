@@ -20,7 +20,11 @@ sin implementar, nunca un éxito falso. Quién detecta que falta un agente es
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import stat
+from pathlib import Path
 
 from agents.core.base_agent import AgentResult, BaseAgent
 from agents.core.registry import agent_registry, register_agent
@@ -34,6 +38,33 @@ _AVISO_ESQUELETO = (
     "El agente generado NO hace nada: sus acciones devuelven success=False con lo que "
     "les falta en needs. Impleméntalas antes de prometerle nada al usuario."
 )
+
+
+def _repo_dir_name(url: str) -> str:
+    """Nombre de carpeta para el clone: la última pieza de la ruta, sin `.git`.
+
+    Parte por `/`, `\\` y `:` a la vez porque la entrada puede ser una ruta local
+    de Windows (`C:\\x\\repo`), una ruta POSIX, una URL (`https://host/a/b.git`)
+    o scp (`git@host:a/b.git`). Con `rsplit('/')` una ruta de Windows devuelve la
+    ruta entera, y `workdir / <ruta absoluta>` colapsa al origen: el `rmtree`
+    posterior borraría el repo del usuario.
+    """
+    piezas = re.split(r"[/\\:]", url.rstrip("/\\"))
+    return piezas[-1].removesuffix(".git")
+
+
+def _rmtree_force(path: Path) -> None:
+    """Borra el árbol aunque Windows tenga ficheros en ReadOnly.
+
+    `git clone` marca `.git/objects/**` como ReadOnly y `shutil.rmtree` falla con
+    WinError 5 al reinstalar sobre un clone previo. Se reintenta tras `chmod`.
+    """
+
+    def _reintentar(func, target, _exc) -> None:
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+
+    shutil.rmtree(path, onexc=_reintentar)
 
 
 @register_agent
@@ -108,11 +139,11 @@ class InstallerAgent(BaseAgent):
     def install_from_git(self, *, repo_url: str, subpath: str | None = None, force: bool = False) -> AgentResult:
         resolved_url = AgentInstallerTool.normalize_github_shorthand(repo_url)
         workdir = self.ctx.agent_workspace("installer")
-        repo_dir_name = resolved_url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+        repo_dir_name = _repo_dir_name(resolved_url)
         clone_dir = workdir / repo_dir_name
 
         if clone_dir.exists():
-            shutil.rmtree(clone_dir)
+            _rmtree_force(clone_dir)
         try:
             AgentInstallerTool.clone_git_repo(resolved_url, clone_dir)
         except MissingDependencyError as exc:

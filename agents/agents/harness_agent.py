@@ -552,9 +552,31 @@ class HarnessAgent(BaseAgent):
         )
 
     def record(
-        self, *, agent: str = "", id: str = "", content: str = "", verdict: str = "ok"
+        self,
+        *,
+        agent: str = "",
+        id: str = "",
+        content: str = "",
+        content_file: str = "",
+        verdict: str = "ok",
     ) -> AgentResult:
-        """Guarda el informe de un subagente en harness/progress/<agente>-<ID>.md."""
+        """Guarda el informe de un subagente en harness/progress/<agente>-<ID>.md.
+
+        `--content` vale para informes cortos, pero desde PowerShell/CMD las
+        comillas dobles y el no-ASCII se truncan por el camino: `--content-file
+        <ruta>` lee el informe entero de un fichero UTF-8. Si llegan los dos,
+        manda el fichero.
+        """
+        if content_file:
+            try:
+                content = Path(content_file).read_text(encoding="utf-8")
+            except OSError as exc:
+                return self._fail(
+                    "record",
+                    f"No puedo leer '{content_file}': {exc}",
+                    needs=[f"Revisa la ruta de --content-file: '{content_file}'."],
+                )
+
         if not agent or not id or not content:
             missing = []
             if not agent:

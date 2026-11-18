@@ -6,9 +6,12 @@ from agents.agents.git_agent import GitAgent
 
 
 def _write_versioned_files(root):
-    (root / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.1.0"\n')
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
     (root / "README.md").write_text(
-        "![Version](https://img.shields.io/badge/Version-0.1.0-green)\n\n**Versión:** 0.1.0\n"
+        "![Version](https://img.shields.io/badge/Version-0.1.0-green)\n\n**Versión:** 0.1.0\n",
+        encoding="utf-8",
     )
 
 
@@ -16,7 +19,7 @@ def test_commit_feature_dry_run_no_escribe_nada_y_propone(context):
     _write_versioned_files(context.root)
     subprocess.run(["git", "add", "-A"], cwd=context.root, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "chore: setup"], cwd=context.root, check=True)
-    (context.root / "mi_paquete" / "modulo.py").write_text("print('feature')\n")
+    (context.root / "mi_paquete" / "modulo.py").write_text("print('feature')\n", encoding="utf-8")
 
     agent = GitAgent(context=context)
     result = agent.commit_feature(id="FEAT-001", title="Primera pieza funcional", dry_run=True)
@@ -25,7 +28,7 @@ def test_commit_feature_dry_run_no_escribe_nada_y_propone(context):
     assert result.data["next_version"] == "0.1.1"
     assert result.data["suggested_message"] == "feat(FEAT-001): Primera pieza funcional"
     assert any("mi_paquete" in f for f in result.data["changed_files"]), result.data["changed_files"]
-    assert 'version = "0.1.0"' in (context.root / "pyproject.toml").read_text(), "dry_run no debe escribir"
+    assert 'version = "0.1.0"' in (context.root / "pyproject.toml").read_text(encoding="utf-8"), "dry_run no debe escribir"
     assert not (context.root / "CHANGELOG.md").exists(), "dry_run no debe crear el changelog"
 
     log = subprocess.run(["git", "log", "--oneline"], cwd=context.root, capture_output=True, text=True, check=True).stdout
@@ -36,17 +39,17 @@ def test_commit_feature_cierra_con_bump_y_commit_sin_tag(context):
     _write_versioned_files(context.root)
     subprocess.run(["git", "add", "-A"], cwd=context.root, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "chore: setup"], cwd=context.root, check=True)
-    (context.root / "mi_paquete" / "modulo.py").write_text("print('feature')\n")
+    (context.root / "mi_paquete" / "modulo.py").write_text("print('feature')\n", encoding="utf-8")
 
     agent = GitAgent(context=context)
     result = agent.commit_feature(id="FEAT-001", title="Primera pieza funcional")
 
     assert result.success
-    assert 'version = "0.1.1"' in (context.root / "pyproject.toml").read_text()
-    readme = (context.root / "README.md").read_text()
+    assert 'version = "0.1.1"' in (context.root / "pyproject.toml").read_text(encoding="utf-8")
+    readme = (context.root / "README.md").read_text(encoding="utf-8")
     assert "Version-0.1.1-green" in readme and "**Versión:** 0.1.1" in readme
 
-    changelog = (context.root / "CHANGELOG.md").read_text()
+    changelog = (context.root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "Primera pieza funcional (FEAT-001)" in changelog and "## [Unreleased]" in changelog
 
     log = subprocess.run(["git", "log", "--oneline"], cwd=context.root, capture_output=True, text=True, check=True).stdout
@@ -62,10 +65,12 @@ def test_commit_feature_cierra_con_bump_y_commit_sin_tag(context):
 
 
 def test_commit_feature_sin_version_en_pyproject_avisa_y_commitea(context):
-    (context.root / "pyproject.toml").write_text('[project]\nname = "x"\n')  # sin "version = ..."
+    (context.root / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n', encoding="utf-8"
+    )  # sin "version = ..."
     subprocess.run(["git", "add", "-A"], cwd=context.root, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "chore: setup"], cwd=context.root, check=True)
-    (context.root / "mi_paquete" / "modulo.py").write_text("print('feature')\n")
+    (context.root / "mi_paquete" / "modulo.py").write_text("print('feature')\n", encoding="utf-8")
 
     agent = GitAgent(context=context)
     result = agent.commit_feature(id="FEAT-001", title="Primera pieza funcional")
