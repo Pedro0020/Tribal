@@ -1,0 +1,45 @@
+{
+  "character": {
+    "id": "4045ba59-d04a-4029-9f3e-6ae95bdf6c60",
+    "name": "Idle",
+    "prompt": "paleolithic woman gatherer, simple hide tunic, woven basket on her back, brown hair tied back, barefoot",
+    "size": {
+      "width": 48,
+      "height": 48
+    },
+    "directions": 8,
+    "view": "low top-down"
+  },
+  "spritesheet": {
+    "path": "Recolectora-Idle.png",
+    "cell_size": {
+      "width": 48,
+      "height": 48
+    },
+    "sheet_size": {
+      "width": 384,
+      "height": 48
+    },
+    "columns": 8,
+    "pivot": "cell-center",
+    "rows": [
+      {
+        "row": 0,
+        "type": "rotations",
+        "frame_count": 8,
+        "directions": [
+          "south",
+          "south-east",
+          "east",
+          "north-east",
+          "north",
+          "north-west",
+          "west",
+          "south-west"
+        ]
+      }
+    ]
+  },
+  "export_version": "1.0",
+  "export_date": "2026-11-19T09:30:11.891800+00:00"
+}

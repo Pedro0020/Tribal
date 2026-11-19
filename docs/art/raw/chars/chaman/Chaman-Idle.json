@@ -1,0 +1,45 @@
+{
+  "character": {
+    "id": "74b1413b-754f-4187-9178-2c5c9c7ed8ca",
+    "name": "Idle",
+    "prompt": "paleolithic shaman, antler headdress, painted face, fur cloak, holding a tall staff with feathers",
+    "size": {
+      "width": 48,
+      "height": 48
+    },
+    "directions": 8,
+    "view": "low top-down"
+  },
+  "spritesheet": {
+    "path": "Chaman-Idle.png",
+    "cell_size": {
+      "width": 48,
+      "height": 48
+    },
+    "sheet_size": {
+      "width": 384,
+      "height": 48
+    },
+    "columns": 8,
+    "pivot": "cell-center",
+    "rows": [
+      {
+        "row": 0,
+        "type": "rotations",
+        "frame_count": 8,
+        "directions": [
+          "south",
+          "south-east",
+          "east",
+          "north-east",
+          "north",
+          "north-west",
+          "west",
+          "south-west"
+        ]
+      }
+    ]
+  },
+  "export_version": "1.0",
+  "export_date": "2026-11-19T09:30:13.564647+00:00"
+}

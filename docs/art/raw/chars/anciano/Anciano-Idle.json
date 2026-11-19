@@ -1,0 +1,45 @@
+{
+  "character": {
+    "id": "8ffdf035-baee-40fe-8746-3c56c7ccdc94",
+    "name": "Idle",
+    "prompt": "elderly paleolithic man, long grey beard, bald top, leaning on a wooden walking stick, bone necklace, hide cloak",
+    "size": {
+      "width": 48,
+      "height": 48
+    },
+    "directions": 8,
+    "view": "low top-down"
+  },
+  "spritesheet": {
+    "path": "Anciano-Idle.png",
+    "cell_size": {
+      "width": 48,
+      "height": 48
+    },
+    "sheet_size": {
+      "width": 384,
+      "height": 48
+    },
+    "columns": 8,
+    "pivot": "cell-center",
+    "rows": [
+      {
+        "row": 0,
+        "type": "rotations",
+        "frame_count": 8,
+        "directions": [
+          "south",
+          "south-east",
+          "east",
+          "north-east",
+          "north",
+          "north-west",
+          "west",
+          "south-west"
+        ]
+      }
+    ]
+  },
+  "export_version": "1.0",
+  "export_date": "2026-11-19T09:30:14.118138+00:00"
+}

@@ -1,0 +1,45 @@
+{
+  "character": {
+    "id": "22bff43b-065c-4dfa-a849-271a1e7d9bfc",
+    "name": "Idle",
+    "prompt": "paleolithic hunter, lean adult man, bare chest with ochre red paint stripes, fur loincloth, holding a long wooden spear, short dark hair, no beard",
+    "size": {
+      "width": 48,
+      "height": 48
+    },
+    "directions": 8,
+    "view": "low top-down"
+  },
+  "spritesheet": {
+    "path": "Cazador-Idle.png",
+    "cell_size": {
+      "width": 48,
+      "height": 48
+    },
+    "sheet_size": {
+      "width": 384,
+      "height": 48
+    },
+    "columns": 8,
+    "pivot": "cell-center",
+    "rows": [
+      {
+        "row": 0,
+        "type": "rotations",
+        "frame_count": 8,
+        "directions": [
+          "south",
+          "south-east",
+          "east",
+          "north-east",
+          "north",
+          "north-west",
+          "west",
+          "south-west"
+        ]
+      }
+    ]
+  },
+  "export_version": "1.0",
+  "export_date": "2026-11-19T09:30:12.831122+00:00"
+}

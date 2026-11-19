@@ -1,0 +1,33 @@
+{
+  "name": "Paleolitico 20",
+  "source": "extraida de keyart-campamento.png (PixelLab) y ajustada a los colores de tribal/ui/render.py",
+  "tile_px": 16,
+  "colors": [
+    { "hex": "#181010", "name": "ink",         "uso": "contorno y huecos" },
+    { "hex": "#302020", "name": "shadow",      "uso": "sombra de tierra y pelo" },
+    { "hex": "#583830", "name": "bark",        "uso": "troncos, cuero oscuro" },
+    { "hex": "#907040", "name": "hide",        "uso": "piel curtida, ramas secas" },
+    { "hex": "#b07038", "name": "tan",         "uso": "tierra batida, cuerpos" },
+    { "hex": "#c88040", "name": "sand",        "uso": "sabana seca, arena" },
+    { "hex": "#e0c39a", "name": "bone",        "uso": "piel, hueso, roca clara" },
+    { "hex": "#f2e6c9", "name": "bone-light",  "uso": "brillo de piel y hueso" },
+    { "hex": "#284028", "name": "forest",      "uso": "copa de arbol, sombra verde" },
+    { "hex": "#486028", "name": "grass-dark",  "uso": "hierba en sombra" },
+    { "hex": "#708c3c", "name": "grass-light", "uso": "hierba iluminada" },
+    { "hex": "#9aae3e", "name": "leaf",        "uso": "hoja joven, matorral" },
+    { "hex": "#305058", "name": "water-dark",  "uso": "agua profunda" },
+    { "hex": "#386878", "name": "water",       "uso": "agua" },
+    { "hex": "#70a0b0", "name": "water-light", "uso": "orilla y reflejos" },
+    { "hex": "#5e5a52", "name": "stone-dark",  "uso": "roca en sombra, pedernal" },
+    { "hex": "#8d8a80", "name": "stone",       "uso": "roca, ceniza, pelo cano" },
+    { "hex": "#a8402c", "name": "red-earth",   "uso": "ocre rojo, bayas, sangre" },
+    { "hex": "#e09040", "name": "ember",       "uso": "brasa, fuego" },
+    { "hex": "#f4c95d", "name": "fire-light",  "uso": "llama y chispa" }
+  ],
+  "reglas": [
+    "Todo pixel opaco del kit usa uno de estos 20 colores.",
+    "Sin antialias: bordes duros, transparencia total o nada.",
+    "Luz consistente desde arriba-izquierda; sombra hacia abajo-derecha.",
+    "El contorno es siempre ink (#181010), nunca un color mas oscuro del material."
+  ]
+}
