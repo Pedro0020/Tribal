@@ -1065,3 +1065,47 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 55 so
 ```
 
 </details>
+
+## F2-CONTRATO — F2: contrato candidatas -> elige -> valida para la decision
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 322 passed in 159.18s (0:02:39)
+- **Cambios:** tribal/llm/candidatas.py (nuevo: 2-4 acciones viables filtradas por reglas y borde sin terreno); tribal/llm/decision.py (prompt few-shot, enum restringido, temp 0.3, validacion dura con motivo); tribal/llm/eval.py (20 escenarios y acierto); tribal/llm/{esquema,cliente,cola}.py; tribal/sim.py (uso del contrato y corregidas en el resumen); tribal/instinto.py; tribal/cli.py (llm eval); tests nuevos y test_llm_cola.py; README; arquitectura.md §2.3
+- **Decisiones:** El contrato es 'candidatas -> elige -> valida': las reglas proponen 2-4 acciones fisicamente viables (sin agua no hay beber, sin amenaza no hay huir), el LLM elige con few-shot y temp 0.3, y el motor solo corrige si la eleccion no esta entre las candidatas o viola una restriccion dura; una eleccion valida no se segundea. La invariante 2-4 se garantiza anadiendo moverse/descansar; el unico borde (sin terreno pisable) devuelve 1 y no pide decision, documentado. llm eval con backend simulado mide el contrato y el filtrado (>70 por ciento), no la calidad del modelo: el acierto real del modelo se mide con --backend http, fuera de CI. Deuda: docstring de sim._intencion_llm desactualizado, corregidas se cuenta al aceptar (no en registrar_aplicada) y _encolar_dilema calcula candidatas de todos cada tick (barato a 12, a vigilar con mas poblacion).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 322 passed
+
+$ candidatas() (2-4 con al menos dos acciones viables)
+(100,0) sin recursos -> ['moverse','descansar']  ; _hay_dilema False
+(45,60) sin recursos -> ['descansar','moverse']  ; _hay_dilema True
+mundo todo agua      -> ['descansar']            ; _hay_dilema False (borde documentado)
+20 estados aleatorios: 2-4 salvo todo-agua; toda candidata es viable y moverse lleva destino pisable
+
+$ contrato
+2 few-shot (o 1 inyectado por el cliente) ; temperature 0.3 en el payload real
+enum del schema restringido a las candidatas ; ESQUEMA_RESPUESTA abierto de F2-001 intacto
+valida: comer con [beber, comer] NO se corrige ; fuera de candidatas -> corrige ;
+huir sin amenaza -> corrige ; transporte caido -> sin decision
+correccion tardia no cuenta (0), en ventana si (1) ; corregidas en resumen()["llm"]
+
+$ llm eval --backend simulado --json -> 20 escenarios, acierto 1.0 (test exige >0.70)
+  el backend "competente" es una regla: mide el contrato y el filtrado, no el modelo
+$ llm eval --backend http sin servicio -> sin_decision, exit 0
+
+$ no regresion F2-002: cola, ventana de validez, cierre sin hilos, 1200 ticks con backend de 200 ms
+  y determinismo del stub entre procesos; 60 fps (benchmark 1.18 ms/tick con 12)
+$ --llm off identico a HEAD (seed 42, 600 ticks, hash 481326460)
+
+$ uv run pytest -q
+878 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 55 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 55 source files
+```
+
+</details>

@@ -73,7 +73,7 @@ TOLERANCIA_PASEO = 0.5
 
 def elegir(individuo: Individuo, mundo: Mundo) -> Accion:
     """Acción que corresponde a este individuo en este tick."""
-    amenaza = _depredador_cercano(individuo, mundo)
+    amenaza = depredador_cercano(individuo, mundo)
     if amenaza is not None and not nec.agotado(individuo.necesidades):
         return Accion("huir", amenaza=(amenaza.x, amenaza.y))
 
@@ -324,7 +324,7 @@ def _al_alcance(individuo: Individuo, recurso: Recurso | None) -> bool:
     return recurso is not None and recursos.en_alcance(individuo, recurso)
 
 
-def _depredador_cercano(individuo: Individuo, mundo: Mundo) -> Depredador | None:
+def depredador_cercano(individuo: Individuo, mundo: Mundo) -> Depredador | None:
     """El depredador más próximo, si está dentro del radio de huida."""
     if not mundo.depredadores:
         return None

@@ -34,6 +34,7 @@ from tribal.llm.cliente import (
     backend_stub,
 )
 from tribal.llm.cola import MAX_EN_VUELO_POR_DEFECTO, ColaLLM
+from tribal.llm.eval import ESCENARIOS_POR_DEFECTO, backend_competente, escenarios, evaluar
 from tribal.sim import MS_FRAME, run_muestreado
 from tribal.sim import run as run_sim
 
@@ -241,6 +242,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
     selfcheck.add_argument("--json", action="store_true", help="Informe como un único objeto JSON.")
 
+    evaluar_llm = llm_sub.add_parser(
+        "eval",
+        help="Acierto del contrato candidatas → elige → valida en escenarios simples.",
+        description=(
+            "Corre escenarios con una acción claramente correcta y publica el "
+            "acierto. `--backend simulado` (default) usa un backend competente y "
+            "prueba el contrato, no el modelo; `--backend http` mide el modelo "
+            "real contra Ollama y no revienta si el servicio no está."
+        ),
+    )
+    evaluar_llm.add_argument(
+        "--backend",
+        choices=("simulado", "http"),
+        default="simulado",
+        help="`simulado` (contrato, CI) o `http` (Ollama real).",
+    )
+    evaluar_llm.add_argument(
+        "--escenarios",
+        type=int,
+        default=ESCENARIOS_POR_DEFECTO,
+        help=f"Cuántos escenarios correr (default {ESCENARIOS_POR_DEFECTO}).",
+    )
+    evaluar_llm.add_argument(
+        "--endpoint",
+        default=ENDPOINT_POR_DEFECTO,
+        help=f"Endpoint de Ollama para `--backend http` (default {ENDPOINT_POR_DEFECTO}).",
+    )
+    evaluar_llm.add_argument(
+        "--modelo",
+        default=MODELO_POR_DEFECTO,
+        help=f"Identificador del modelo (default {MODELO_POR_DEFECTO}).",
+    )
+    evaluar_llm.add_argument(
+        "--timeout",
+        type=float,
+        default=TIMEOUT_POR_DEFECTO,
+        help=f"Timeout en segundos (default {TIMEOUT_POR_DEFECTO}).",
+    )
+    evaluar_llm.add_argument("--json", action="store_true", help="Informe como objeto JSON.")
+
     return parser
 
 
@@ -262,6 +303,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _report_telemetry(args)
         return _report(args)
     if args.command == "llm":
+        if args.llm == "eval":
+            return _llm_eval(args)
         return _llm_selfcheck(args)
     return 1
 
@@ -444,6 +487,36 @@ def _llm_selfcheck(args: argparse.Namespace) -> int:
         latencia = "" if servicio.latencia_ms is None else f" ({servicio.latencia_ms} ms)"
         error = "" if servicio.error is None else f": {servicio.error}"
         print(f"{cliente.modelo} en {cliente.endpoint}: {estado}{latencia}{error}")
+    return 0
+
+
+def _llm_eval(args: argparse.Namespace) -> int:
+    """`llm eval`: acierto del contrato, no de la calidad del modelo."""
+    if args.escenarios <= 0:
+        print("error: --escenarios debe ser mayor que 0", file=sys.stderr)
+        return 2
+    if args.backend == "http":
+        cliente = ClienteLLM(endpoint=args.endpoint, modelo=args.modelo, timeout=args.timeout)
+    else:
+        cliente = ClienteLLM(transporte=backend_competente())
+
+    casos = escenarios()
+    if args.escenarios > len(casos):
+        print(
+            f"warning: la batería tiene {len(casos)} escenarios; se ejecutan {len(casos)}",
+            file=sys.stderr,
+        )
+    informe = evaluar(cliente, casos[: args.escenarios])
+    informe["backend"] = args.backend
+
+    if args.json:
+        print(json.dumps(informe, ensure_ascii=True))
+    else:
+        print(
+            f"backend {informe['backend']}  escenarios {informe['escenarios']}  "
+            f"aciertos {informe['aciertos']}  acierto {informe['acierto'] * 100:.1f}%  "
+            f"corregidas {informe['corregidas']}  sin_decision {informe['sin_decision']}"
+        )
     return 0
 
 

@@ -725,8 +725,11 @@
         "Un test demuestra que elegir entre candidatas supera el 70% de acierto en escenarios simples",
         "uv run pytest -q pasa"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-19",
+      "review_rounds": 1,
+      "closed": "2026-11-19"
     },
     {
       "id": "HARNESS-MODELOS",

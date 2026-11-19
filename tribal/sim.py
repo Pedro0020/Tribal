@@ -32,6 +32,7 @@ from tribal.culture import beneficios as modulo_beneficios
 from tribal.culture import tradiciones
 from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.grafo import Grafo
+from tribal.llm import candidatas as modulo_candidatas
 from tribal.llm.cola import ColaLLM, Peticion
 
 #: Presupuesto de frame a 60 fps.
@@ -47,8 +48,9 @@ ENERGIA_CRIA = 50.0
 MUTACION = modulo_genoma.MUTACION
 #: Radio (en tiles) dentro del cual se considera que alguien está junto al agua.
 RADIO_AGUA = 2.0
-#: Verbos que `acciones.aplicar` resuelve con solo el nombre: sin destino,
-#: amenaza ni objetivo. Es lo único que el LLM puede forzar hoy.
+#: Verbos que `acciones.aplicar` resuelve con solo el nombre: sin destino ni
+#: objetivo. `huir` no está aquí porque necesita la amenaza, que resuelve
+#: `_intencion_llm` con el depredador del momento.
 ACCIONES_SIN_PARAMETROS = frozenset(
     {"beber", "comer", "descansar", "hablar", "tallar", "frotar_madera", "pintar"}
 )
@@ -317,22 +319,17 @@ class Simulacion:
         if self.cola is None:
             return
         for individuo in self.mundo.individuos:
-            candidatas = _candidatas_llm(individuo.necesidades)
-            if not candidatas:
+            opciones = modulo_candidatas.candidatas(individuo, self.mundo)
+            if not _hay_dilema(individuo, self.mundo, opciones):
                 continue
+            nombres = tuple(opcion.nombre for opcion in opciones)
             self._peticion_id += 1
             peticion = Peticion(
                 id=self._peticion_id,
                 tick=self.mundo.tick,
                 individuo_id=individuo.id,
-                contexto={
-                    "tick": self.mundo.tick,
-                    "individuo": individuo.id,
-                    "energia": round(individuo.necesidades.energia, 1),
-                    "sed": round(individuo.necesidades.sed, 1),
-                    "salud": round(individuo.necesidades.salud, 1),
-                },
-                candidatas=candidatas,
+                contexto=modulo_candidatas.estado_para(individuo, self.mundo),
+                candidatas=nombres,
                 valida_hasta=self.mundo.tick + self.cola.ventana,
             )
             self.cola.encolar(peticion)
@@ -350,7 +347,18 @@ class Simulacion:
             return None
         nombre, hasta = individuo.intencion_llm
         individuo.intencion_llm = None
-        if self.mundo.tick > hasta or nombre not in ACCIONES_SIN_PARAMETROS:
+        if self.mundo.tick > hasta:
+            return None
+        if nombre == "huir":
+            amenaza = instinto.depredador_cercano(individuo, self.mundo)
+            if amenaza is None:  # la elección ya no vale: manda el instinto
+                return None
+            return Accion("huir", amenaza=(amenaza.x, amenaza.y))
+        if nombre == "moverse":
+            # El nombre viaja en la petición; el destino lo resuelve el instinto
+            # con el mundo de este tick, igual que un paseo normal.
+            return instinto.deambular(individuo, self.mundo)
+        if nombre not in ACCIONES_SIN_PARAMETROS:
             return None
         return Accion(cast(NombreAccion, nombre))
 
@@ -771,6 +779,7 @@ class Simulacion:
                 "aplicadas": estadisticas["aplicadas"],
                 "descartadas": estadisticas["descartadas"],
                 "fallos": estadisticas["fallos"],
+                "corregidas": estadisticas["corregidas"],
                 "en_vuelo": estadisticas["en_vuelo"],
             }
         return datos
@@ -869,17 +878,26 @@ def _tramo(individuo: Individuo) -> str:
     return modulo_genoma.temperamento(individuo.genoma)
 
 
-def _candidatas_llm(nec: Necesidades) -> tuple[str, ...]:
-    """Las dos acciones que se le ofrecen al modelo, o vacío si no hay dilema.
+def _hay_dilema(
+    individuo: Individuo,
+    mundo: Mundo,
+    opciones: list[Accion] | None = None,
+) -> bool:
+    """True si el estado merece inferencia y deja al menos dos candidatas.
 
-    Solo verbos sin parámetros (`beber`, `comer`, `descansar`): el motor aplica
-    la elección tal cual, sin pedirle al modelo un destino.
+    El filtro de qué se ofrece vive en `tribal.llm.candidatas`; si el mundo no
+    deja dos acciones viables, no se pide decisión: el instinto cubre el tick.
+    `opciones` evita recalcular la lista cuando el llamante ya la tiene.
     """
-    if necesidades.sed_critica(nec) and necesidades.energia_baja(nec):
-        return ("beber", "comer")
-    if necesidades.salud_critica(nec):
-        return ("descansar", "comer")
-    return ()
+    nec = individuo.necesidades
+    if not (
+        (necesidades.sed_critica(nec) and necesidades.energia_baja(nec))
+        or necesidades.salud_critica(nec)
+    ):
+        return False
+    if opciones is None:
+        opciones = modulo_candidatas.candidatas(individuo, mundo)
+    return len(opciones) >= 2
 
 
 def _media_divergencia_inicial(mundo: Mundo) -> float:

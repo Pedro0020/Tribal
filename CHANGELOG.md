@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: contrato de decision entre candidatas viables (F2-CONTRATO)
 - feat: cola asincrona de inferencia sin frenar el bucle (F2-002)
 - feat: cliente LLM con esquema de acciones y backend falso (F2-001)
 - feat: telemetria por intervalo y reproducibilidad a 10 semillas (HARD-1)

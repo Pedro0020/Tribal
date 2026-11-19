@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from tribal.llm.cliente import ClienteLLM
+from tribal.llm.decision import decidir_con_candidatas
 from tribal.llm.esquema import Decision
 
 #: Ticks que sigue siendo válida una decisión: 180 ticks ≈ 3 s a 60 fps (§3).
@@ -58,6 +59,7 @@ class Respuesta:
     decision: Decision | None
     error: str | None
     tick: int
+    corregida: bool = False
 
 
 class ColaLLM:
@@ -89,6 +91,7 @@ class ColaLLM:
         self._aplicadas = 0
         self._descartadas = 0
         self._fallos = 0
+        self._corregidas = 0
         #: En modo síncrono no hay hilo: las respuestas esperan aquí.
         self._sincronas: list[Respuesta] = []
 
@@ -143,6 +146,9 @@ class ColaLLM:
                     continue
                 if respuesta.decision is None:
                     self._fallos += 1
+                elif respuesta.corregida:
+                    # Solo cuentan las correcciones que no se descartan por tardías.
+                    self._corregidas += 1
             respuestas.append(respuesta)
         return respuestas
 
@@ -160,6 +166,7 @@ class ColaLLM:
                 "aplicadas": self._aplicadas,
                 "descartadas": self._descartadas,
                 "fallos": self._fallos,
+                "corregidas": self._corregidas,
                 "en_vuelo": self._en_vuelo,
             }
 
@@ -269,11 +276,12 @@ class ColaLLM:
                 self._en_vuelo = max(0, self._en_vuelo - 1)
 
     def _resolver(self, peticion: Peticion) -> Respuesta:
-        resultado = self.cliente.decidir(peticion.contexto, peticion.candidatas)
+        eleccion = decidir_con_candidatas(self.cliente, peticion.contexto, peticion.candidatas)
         return Respuesta(
             id=peticion.id,
             individuo_id=peticion.individuo_id,
-            decision=resultado.decision,
-            error=None if resultado.estado == "ok" else (resultado.motivo or resultado.estado),
+            decision=eleccion.decision,
+            error=None if eleccion.decision is not None else (eleccion.motivo or "sin decision"),
             tick=peticion.tick,
+            corregida=eleccion.corregida,
         )

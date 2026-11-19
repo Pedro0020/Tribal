@@ -73,6 +73,21 @@ modelo que puede tardar un segundo.
 - `esquema.py`: el JSON schema de la respuesta. Fija el esqueleto (`accion`
   dentro del vocabulario de §7, `objetivo`, `razon`, `dialogo`) y deja libres
   los campos de texto, según stack §8 («constriñe coherencia, no dirección»).
+- `candidatas.py`: el filtro duro. Devuelve **2–4 acciones** viables para el
+  estado (`beber` solo con agua al alcance, `comer` solo con comida, `huir` solo
+  con depredador encima) y `estado_para()` con los hechos que viajan al prompt y
+  que usa la validación. Si el filtro deja una sola, añade `moverse` a un tile
+  pisable y, si no lo hay, esa única candidata: el borde está documentado y
+  `_hay_dilema` no encola decisión cuando no hay dos acciones viables.
+- `decision.py`: construye el cuerpo de `/api/chat` con el `enum` restringido a
+  las candidatas, el prompt few-shot de `esquema.py` y temperatura 0.3; después
+  **valida y solo corrige lo inválido** (fuera de candidatas o restricción
+  dura), sustituyéndolo por la mejor candidata por reglas. Un transporte caído
+  no es una elección: se devuelve sin decisión y manda el instinto.
+- `eval.py`: `llm eval` corre 20 escenarios simples con una acción claramente
+  correcta. En CI usa un backend simulado competente (prueba el contrato y el
+  filtrado, no la calidad del modelo); `--backend http` mide el modelo real y
+  no revienta si el servicio no está.
 - `seleccion.py`: quién piensa este tick. Solo se encola si hay **dilema real**
   (conflicto de necesidades, evento propio relevante, oportunidad de innovar) y
   hay hueco en la cola; a igualdad de dilema, gana más saliencia.
@@ -89,6 +104,14 @@ rechazada o un JSON inválido se convierten en `degradado`/`error`, de modo que
 el bucle sigue por instinto. `disponible()` consulta `/api/tags` para
 `llm selfcheck`. La suite inyecta `backend_falso` y bloquea
 `urllib.request.urlopen`, así que `pytest` no abre red.
+
+**Contrato completo en F2-CONTRATO.** `candidatas.py` filtra las opciones
+viables y `decision.py` restringe el `enum` a ellas, elige con few-shot y
+temperatura 0.3, y valida la respuesta: solo corrige si la acción no está entre
+las candidatas o viola una restricción dura, y el `resumen()` cuenta esas
+correcciones en `llm.corregidas`. `llm eval` mide el acierto del contrato en 20
+escenarios simples con un backend simulado competente (CI) y deja
+`--backend http` para medir el modelo real.
 
 ### 2.4 Memoria colectiva — `tribal/culture/`
 

@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.22-green)
+![Version](https://img.shields.io/badge/Version-0.1.23-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -101,8 +101,9 @@ propios contadores `llm` dependen del reloj real: la corrida es reproducible en
 el modelo, no en el `resumen()` completo. `--llm http` habla con Ollama.
 
 `resumen()["llm"]` publica `{peticiones, aplicadas, descartadas, fallos,
-en_vuelo}`; `fallos` son errores del transporte y `descartadas` lo que llegó
-fuera de ventana o quedó pendiente al cerrar. Al acabar la partida la cola se
+corregidas, en_vuelo}`; `fallos` son errores del transporte, `corregidas` las
+elecciones que el motor tuvo que sustituir por inválidas y `descartadas` lo que
+llegó fuera de ventana o quedó pendiente al cerrar. Al acabar la partida la cola se
 cierra: deja de aceptar, descarta lo que no había empezado y espera al hilo como
 mucho `en_vuelo * (timeout + 1)` —con Ollama caído y 4 en vuelo, ese es el tope
 del cierre—, así que `en_vuelo` queda a 0 y no hay hilos vivos. Si el LLM no
@@ -110,11 +111,37 @@ responde —Ollama caído, timeout de 3 s, JSON inválido— no hay excepción: 
 fallo se cuenta en `fallos` y la tribu sigue por instinto indefinidamente. **No
 hay backoff**: el presupuesto de peticiones en vuelo es el único freno.
 
-El contrato sale de [`viabilidad-modelo.md`](vault/01_PROYECTO/viabilidad-modelo.md):
-el modelo **no genera la acción desde cero**, elige una de las **2–4 candidatas**
-que le pasa el motor, con few-shot y temperatura ~0.3. El campo `format` lleva
-un JSON schema con `accion` (enum del vocabulario real de `core.acciones`),
-`objetivo`, `razon` y `dialogo`; los textos quedan libres.
+El contrato sale de [`viabilidad-modelo.md`](vault/01_PROYECTO/viabilidad-modelo.md)
+y está implementado en `tribal/llm/candidatas.py` + `decision.py`: el modelo
+**no genera la acción desde cero**, elige una de las **2–4 candidatas** que
+filtran las reglas para ese estado, con few-shot y temperatura 0.3. `candidatas()`
+solo ofrece lo físicamente posible —sin agua al alcance no hay `beber`, sin
+comida no hay `comer`, sin depredador encima no hay `huir`—; si el filtro deja
+una sola opción añade `moverse` a un tile pisable y, si no hay mundo transitable,
+deja esa única candidata con el borde documentado: en ese caso no se pide
+decisión y manda el instinto. La invariante es 2–4 **siempre que existan al
+menos dos acciones viables**. El campo `format` lleva un JSON schema con `accion`
+restringida al `enum` de esas candidatas, más `objetivo`, `razon` y `dialogo`;
+los textos quedan libres.
+
+Después de la respuesta, el motor **valida y solo corrige lo inválido**: una
+acción fuera de las candidatas o una restricción dura (`huir` sin amenaza,
+`beber` sin agua, `comer` sin comida) se sustituye por la mejor candidata por
+reglas y se cuenta en `corregidas`; una elección válida no se segundea. Un
+fallo de transporte no es una elección que corregir: se cuenta en `fallos` y el
+individuo sigue por instinto.
+
+```bash
+uv run python -m tribal llm eval --json                    # CI: backend simulado
+uv run python -m tribal llm eval --backend http --json     # modelo real
+```
+
+`llm eval` corre 20 escenarios simples con una acción claramente correcta y
+publica `aciertos`, `acierto`, `corregidas` y `sin_decision`. En CI usa un
+**backend simulado competente** (elige la candidata de mayor utilidad): eso
+prueba el contrato y el filtrado, no la calidad de `tribal-llm`; el acierto del
+modelo real se mide aparte con `--backend http`, y sin servicio el comando no
+revienta: las decisiones quedan `sin_decision` y la tribu sigue por instinto.
 
 ```bash
 ollama serve                                  # servicio local en 127.0.0.1:11434

@@ -82,6 +82,11 @@ class ClienteLLM:
             EJEMPLOS if ejemplos is None else tuple(ejemplos)
         )
 
+    @property
+    def ejemplos(self) -> Sequence[Mapping[str, Any]]:
+        """Few-shot del prompt; un cliente con `ejemplos=` los cambia."""
+        return self._ejemplos
+
     def disponible(self) -> Servicio:
         """GET `/api/tags`: ¿está Ollama levantado? Nunca lanza."""
         inicio = time.perf_counter()
@@ -104,16 +109,32 @@ class ClienteLLM:
         if not candidatas:
             return Resultado("error", motivo="sin acciones candidatas")
 
+        cuerpo: dict[str, Any] = {
+            "model": self.modelo,
+            "messages": construir_prompt(contexto, candidatas, self._ejemplos),
+            "format": ESQUEMA_RESPUESTA,
+            "stream": False,
+            "options": {"temperature": TEMPERATURA, "num_predict": MAX_TOKENS},
+        }
+        resultado = self.intercambiar(cuerpo)
+        if resultado.estado != "ok" or resultado.decision is None:
+            return resultado
+        if resultado.decision.accion not in candidatas:
+            return Resultado(
+                "error", motivo=f"accion fuera de candidatas: {resultado.decision.accion}"
+            )
+        return resultado
+
+    def intercambiar(self, cuerpo: Mapping[str, Any]) -> Resultado:
+        """POST `/api/chat` con un cuerpo ya construido; nunca lanza.
+
+        El esquema y el prompt los decide quien llama (`decision.py`), que
+        restringe el `enum` a las candidatas de este estado. Aquí solo se
+        desenvuelve el sobre y se valida el JSON contra el vocabulario.
+        """
         try:
-            cuerpo: dict[str, Any] = {
-                "model": self.modelo,
-                "messages": construir_prompt(contexto, candidatas, self._ejemplos),
-                "format": ESQUEMA_RESPUESTA,
-                "stream": False,
-                "options": {"temperature": TEMPERATURA, "num_predict": MAX_TOKENS},
-            }
             estado, bruto = self._transporte(
-                "POST", f"{self.endpoint}/api/chat", cuerpo, self.timeout
+                "POST", f"{self.endpoint}/api/chat", dict(cuerpo), self.timeout
             )
         except Exception as exc:  # conexión rechazada, timeout, transporte roto
             return Resultado("degradado", motivo=f"transporte: {exc}")
@@ -124,8 +145,6 @@ class ClienteLLM:
         valido = _contenido(bruto)
         if isinstance(valido, ErrorValidacion):
             return Resultado("error", motivo=valido.motivo)
-        if valido.accion not in candidatas:
-            return Resultado("error", motivo=f"accion fuera de candidatas: {valido.accion}")
         return Resultado("ok", decision=valido)
 
 

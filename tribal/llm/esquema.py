@@ -37,6 +37,20 @@ ESQUEMA_RESPUESTA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+
+def esquema_para(candidatas: Sequence[str]) -> dict[str, Any]:
+    """Mismo esqueleto que `ESQUEMA_RESPUESTA`, con el `enum` de las candidatas.
+
+    El modelo no puede inventar una acción fuera de las que las reglas
+    consideran viables en este estado (contrato F2-CONTRATO).
+    """
+    esquema = dict(ESQUEMA_RESPUESTA)
+    propiedades = dict(esquema["properties"])
+    propiedades["accion"] = {"type": "string", "enum": list(candidatas)}
+    esquema["properties"] = propiedades
+    return esquema
+
+
 SISTEMA = (
     "Eres un homínido de una tribu paleolítica. No inventes una acción: elige "
     "exactamente una de las acciones candidatas. Devuelve solo un objeto JSON "

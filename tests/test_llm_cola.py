@@ -14,7 +14,7 @@ from collections.abc import Callable
 import pytest
 
 from tribal.cli import main
-from tribal.llm.cliente import ClienteLLM, Transporte, backend_stub
+from tribal.llm.cliente import ClienteLLM, Transporte, backend_falso, backend_stub
 from tribal.llm.cola import NOMBRE_HILO, ColaLLM, Peticion
 from tribal.sim import MS_FRAME, crear
 
@@ -148,6 +148,46 @@ def test_cierre_rapido_con_peticiones_en_vuelo() -> None:
     assert cola.estadisticas["en_vuelo"] == 0
 
 
+def _peticion_estrecha(id_: int, tick: int = 0, ventana: int = 0) -> Peticion:
+    return Peticion(
+        id=id_,
+        tick=tick,
+        individuo_id=1,
+        contexto={},
+        candidatas=("comer", "descansar"),
+        valida_hasta=tick + ventana,
+    )
+
+
+def test_correccion_tardia_no_cuenta_como_corregida() -> None:
+    cola = ColaLLM(
+        ClienteLLM(transporte=backend_falso([_cuerpo("beber")])),
+        ventana=0,
+        sincrona=True,
+    )
+    assert cola.encolar(_peticion_estrecha(1)) is True
+
+    assert cola.drenar(tick_actual=1) == []
+    assert cola.estadisticas["corregidas"] == 0
+    assert cola.estadisticas["descartadas"] == 1
+
+
+def test_correccion_aceptada_cuenta_como_corregida() -> None:
+    cola = ColaLLM(
+        ClienteLLM(transporte=backend_falso([_cuerpo("beber")])),
+        ventana=0,
+        sincrona=True,
+    )
+    assert cola.encolar(_peticion_estrecha(1)) is True
+
+    respuestas = cola.drenar(tick_actual=0)
+    assert len(respuestas) == 1
+    assert respuestas[0].corregida is True
+    assert respuestas[0].decision is not None
+    assert respuestas[0].decision.accion == "comer"
+    assert cola.estadisticas["corregidas"] == 1
+
+
 def test_http_con_servicio_muerto_cierra_limpio(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -205,7 +245,14 @@ def test_cli_json_con_stub_reporta_la_capa_llm(capsys: pytest.CaptureFixture[str
     assert main(["run", "--headless", "--json", "--llm", "stub", "--ticks", "1200"]) == 0
     resumen = json.loads(capsys.readouterr().out)
     llm = resumen["llm"]
-    assert set(llm) == {"peticiones", "aplicadas", "descartadas", "fallos", "en_vuelo"}
+    assert set(llm) == {
+        "peticiones",
+        "aplicadas",
+        "descartadas",
+        "fallos",
+        "corregidas",
+        "en_vuelo",
+    }
     assert llm["peticiones"] > 0
     assert llm["en_vuelo"] == 0
     assert llm["aplicadas"] + llm["descartadas"] + llm["fallos"] <= llm["peticiones"]
