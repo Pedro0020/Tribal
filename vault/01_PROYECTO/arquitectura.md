@@ -195,6 +195,24 @@ son posibles pero gratuitas de evitar. `export.py` es el **único** dueño de la
 salida a Markdown: vuelca `nodos`+`aristas` a `.md` con `[[wikilinks]]` para el
 vault de la tribu. Ni `culture` ni `ui` exportan por su cuenta.
 
+**Implementación (F3-001).** `esquema.py` guarda el DDL como texto y no importa
+`sqlite3`; `repositorio.py` abre la conexión, aplica `PRAGMA journal_mode=WAL`
+y `foreign_keys=ON` y expone `guardar`, `cargar`, `instantanea` y `cerrar`. El
+volcado es completo y transaccional —sustituye el estado anterior, no acumula
+deltas— y ocurre cada `config.ticks_guardado` ticks (300 por defecto) y al
+cerrar. `nodos` lleva `origen`, `autor` y `tick` en columnas propias porque son
+datos de nacimiento (§8b) y el KPI se reconstruye desde ellos; `tipo` es la rama
+y `popularidad` son las veces usado. `genoma`, `habilidades`, `personalidad`,
+`contenido`, `requisitos`, `clima` y `config` son JSON. `run --db` conecta el
+motor a la base y `report db` la lee sin simular ni ejecutar DDL (`crear=False`
+valida las tablas), con código 2 si el fichero no es una partida válida.
+
+Límite deliberado: **no se reanuda la partida**. `cargar()` reconstruye el
+grafo y la población para leer y verificar; el mundo (tiles, recursos, azar) no
+se rehidrata y seguir jugando es SAVE-001. `relaciones` y `recuerdos` existen
+con su esquema, pero aún se escriben vacías: el motor no guarda vínculos y el
+índice de recuerdos solo expone vectores, no los textos.
+
 ### 2.6 Observación — `tribal/ui/`
 
 `render.py` dibuja el mapa top-down con sprites; `telemetria.py` muestrea por
@@ -371,6 +389,10 @@ puerta abierta.
 *Disparador para reabrir:* consultas de camino/explicación sobre el grafo que
 en SQL se vuelvan ilegibles o lentas con el tamaño real de una partida, o la
 necesidad de servir el grafo a más de un consumidor.
+
+*Implementado en F3-001:* `tribal/store/` escribe y relee la partida con el
+esquema de stack §5; el resto del producto solo ve `Repositorio`. Si algún día
+se reabre esta decisión, la interfaz es el único punto que cambia.
 
 ### 5.4 Rust en vez de Python
 

@@ -264,6 +264,9 @@ SITIOS_CON_DIVERGENCIA = {
     # para publicarlo, no para decidir nada: ningún efecto del motor depende de
     # esta función.
     ("tribal/gate_f1.py", "medir_brazo"),
+    # Persistencia (F3-001): serializa el genoma para guardarlo en SQLite. Lee el
+    # rasgo para escribirlo, no para decidir: el repositorio no muta el mundo.
+    ("tribal/store/repositorio.py", "_fila_individuo"),
 }
 
 

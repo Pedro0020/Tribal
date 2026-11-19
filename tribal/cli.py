@@ -40,6 +40,7 @@ from tribal.llm.embeddings import embedder_por_defecto
 from tribal.llm.eval import ESCENARIOS_POR_DEFECTO, backend_competente, escenarios, evaluar
 from tribal.sim import MS_FRAME, run_muestreado
 from tribal.sim import run as run_sim
+from tribal.store.repositorio import BaseInvalida, Repositorio
 
 #: Ticks por defecto de `report culture`: con 600 la tribu ya comió y el árbol
 #: tiene nodos. La corrida es headless, corta y determinista — ver `_report`.
@@ -86,6 +87,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--headless", action="store_true", help="Sin ventana.")
     run.add_argument("--json", action="store_true", help="Resumen como un único objeto JSON.")
+    run.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="Escribe la partida en esa base SQLite (se vuelca al cerrar y cada "
+        "`ticks_guardado` ticks).",
+    )
     run.add_argument("--benchmark", action="store_true", help="Falla si no cabe en 16.67 ms/tick.")
     run.add_argument(
         "--llm",
@@ -249,6 +257,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sin hilo: la frase se resuelve en el tick. Determinista; para tests.",
     )
     diario.add_argument("--json", action="store_true", help="Diario como un único objeto JSON.")
+
+    base_datos = informes.add_parser(
+        "db",
+        help="Partida persistida: población, nodos por origen, aristas, diario y telemetría.",
+        description=(
+            "Abre una base escrita por `run --db` y cuenta lo que hay dentro: "
+            "individuos vivos, nodos por origen, aristas, diario, telemetría y "
+            "recursos. No simula ni modifica nada; sale con 2 si el fichero no "
+            "es una partida SQLite válida."
+        ),
+    )
+    base_datos.add_argument("--db", type=Path, required=True, help="Base SQLite de la partida.")
+    base_datos.add_argument(
+        "--json", action="store_true", help="Informe como un único objeto JSON."
+    )
 
     gate = informes.add_parser(
         "gate-f1",
@@ -429,6 +452,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _report_telemetry(args)
         if args.report == "diary":
             return _report_diary(args)
+        if args.report == "db":
+            return _report_db(args)
         return _report(args)
     if args.command == "llm":
         if args.llm == "eval":
@@ -479,9 +504,19 @@ def _run(args: argparse.Namespace) -> int:
         )
 
     config = replace(base, seed=seed, individuos=individuos, crisis=base.crisis or args.crisis)
-    simulacion = run_sim(
-        args.ticks, seed, args.headless, individuos=individuos, config=config, cola=cola
-    )
+    try:
+        simulacion = run_sim(
+            args.ticks,
+            seed,
+            args.headless,
+            individuos=individuos,
+            config=config,
+            cola=cola,
+            db=args.db,
+        )
+    except BaseInvalida as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if cola is not None and not cola.cerrar():
         print(
             "warning: la capa LLM no cerró limpia: el hilo tribal-llm sigue vivo",
@@ -661,6 +696,33 @@ def _report_diary(args: argparse.Namespace) -> int:
     return 0
 
 
+def _report_db(args: argparse.Namespace) -> int:
+    """`report db`: recuentos de una partida escrita con `run --db`.
+
+    No simula: abre la base en modo solo lectura lógica (`crear=False`, que
+    valida las tablas sin ejecutar DDL) y publica lo que hay guardado. Un
+    fichero que no es SQLite, o una base sin las tablas de la tribu, sale con 2.
+    """
+    if not args.db.exists():
+        print(f"error: no existe la base {args.db}", file=sys.stderr)
+        return 2
+    try:
+        repositorio = Repositorio(args.db, crear=False)
+    except BaseInvalida as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        informe: dict[str, Any] = {"db": str(args.db), **repositorio.instantanea()}
+    finally:
+        repositorio.cerrar()
+
+    if args.json:
+        print(json.dumps(informe, ensure_ascii=True))
+    else:
+        print(_texto_db(informe))
+    return 0
+
+
 def _report_gate_f1(args: argparse.Namespace) -> int:
     """`report gate-f1`: los dos brazos sobre las mismas semillas y su veredicto.
 
@@ -829,6 +891,21 @@ def _texto_diario(informe: dict[str, Any]) -> str:
         texto = entrada["texto"] or "(sin narracion)"
         lineas.append(f"  {entrada['tick']:>5}  {entrada['tipo']:<18} ind {quien:<3} {texto}")
     return "\n".join(lineas)
+
+
+def _texto_db(informe: dict[str, Any]) -> str:
+    origenes = "  ".join(
+        f"{origen} {cuenta}" for origen, cuenta in informe["nodos_por_origen"].items()
+    )
+    return "\n".join(
+        [
+            f"seed {informe['seed']}  tick {informe['tick']}  "
+            f"poblacion {informe['poblacion']}  estacion {informe['estacion'] or 'sin estacion'}",
+            f"nodos {informe['nodos']}  aristas {informe['aristas']}  {origenes}",
+            f"diario {informe['diario']}  telemetria {informe['telemetria']}  "
+            f"recursos {informe['recursos']}  recuerdos {informe['recuerdos']}",
+        ]
+    )
 
 
 def _benchmark(ms_tick_medio: float) -> int:

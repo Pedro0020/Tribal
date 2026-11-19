@@ -73,6 +73,11 @@ desktop.ini
 *.log
 logs/
 
+# --- Partidas SQLite (`run --db`) ---
+*.db
+*.db-wal
+*.db-shm
+
 # --- Secretos / credenciales ---
 .env
 .env.*

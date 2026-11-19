@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: memoria colectiva persistida en SQLite (F3-001)
 - feat: telemetria LLM, selfcheck con modelo y Modelfile (HARD-2)
 - feat: puerta F2 con nodos fuera del arbol y narracion concentrada (F2-006)
 - feat: diario de hitos con narracion y dialogo (F2-005)

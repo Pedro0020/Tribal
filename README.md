@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.28-green)
+![Version](https://img.shields.io/badge/Version-0.1.29-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -374,7 +374,8 @@ benchmark: 0.56 ms/tick, cabe en 16.67 ms
 Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
 `--config` (fichero JSON), `--ticks` (`0` = sin límite en ventana; obligatorio
 > 0 con `--headless`), `--crisis` (sequía: menos capacidad de carga de agua y
-bayas, más sed y más intentos divergentes), `--headless`, `--json` y `--benchmark`.
+bayas, más sed y más intentos divergentes), `--headless`, `--json`, `--db`
+(escribe la partida en SQLite) y `--benchmark`.
 
 ## Árbol de conocimiento (Fase 1)
 
@@ -525,8 +526,52 @@ En JSON es un objeto con `seed`, `ticks`, `intervalo`, `crisis`, `llm` y `muestr
 {"seed": 42, "ticks": 600, "intervalo": 60, "crisis": false, "llm": "off", "muestras": [{"tick": 60, "poblacion": 12, "divergentes": 3, "conformistas": 7, "neutros": 2, "nodos": 15, "aristas": 12, "media_energia": 75.56, "media_sed": 20.6}]}
 ```
 
-Todavía no lee una partida persistida: cuando exista `tribu.db` (Fase 3),
-`report telemetry --db` leerá la tabla `telemetria` en vez de simular.
+`report telemetry` sigue simulando; la telemetría de una partida ya escrita se
+cuenta con `report db` (siguiente apartado), que lee la tabla `telemetria`.
+
+## Persistencia: la partida en SQLite (F3-001)
+
+`run --db tribu.db` escribe la partida en una base SQLite (stdlib, sin
+dependencias). El volcado es en lote —cada `ticks_guardado` ticks (300 por
+defecto) y al cerrar—, no una fila por frame, y es una foto completa del estado:
+sustituye lo anterior dentro de una transacción. `tribal/store/` es el **único**
+módulo que importa `sqlite3`; el resto del producto trabaja contra
+`Repositorio` (`guardar`, `cargar`, `instantanea`, `cerrar`).
+
+El esquema es el de stack §5 (`tribal/store/esquema.py`): `individuos`,
+`relaciones`, `recursos`, `mundo`, `nodos`, `aristas`, `recuerdos`, `diario` y
+`telemetria`. `genoma`, `habilidades`, `personalidad`, `contenido`,
+`requisitos`, `clima` y `config` van como JSON; `nodos` guarda además `origen`,
+`autor` y `tick` en columnas propias porque son datos de nacimiento y de ellos
+sale el KPI. La base se abre con `journal_mode=WAL`.
+
+```bash
+uv run python -m tribal run --headless --ticks 600 --db tribu.db
+uv run python -m tribal report db --db tribu.db          # legible
+uv run python -m tribal report db --db tribu.db --json   # recuentos
+```
+
+Salida real de `report db` sobre la partida de 600 ticks:
+
+```
+seed 42  tick 600  poblacion 16  estacion sin estacion
+nodos 30  aristas 27  arbol 23  combinacion 0  interaccion 7  llm 0
+diario 5  telemetria 2  recursos 89  recuerdos 0
+```
+
+`report db` no simula ni escribe: abre la base y cuenta. Sale con **2** si el
+fichero no existe, no es SQLite o no tiene las tablas de la partida.
+
+**Límite deliberado:** reabrir devuelve el grafo —con el `origen`, el `autor` y
+el `tick` de cada nodo— y la población para consultarlos, no para seguir
+jugando. Reanudar el mundo es SAVE-001; `cargar()` deja
+`Estado(mundo, grafo, poblacion, tick, seed, config)`. `relaciones` y
+`recuerdos` se crean vacías: el motor todavía no guarda vínculos y el índice de
+recuerdos no expone los textos.
+
+Dos partidas con semilla distinta producen bases distintas; la misma semilla y
+la misma configuración, el mismo estado. `ticks_guardado` se ajusta en el
+`--config` y viaja en el resumen dentro de `config`.
 
 ## Configuración y semilla
 
@@ -570,8 +615,8 @@ clave y el valor, sin traza— una clave desconocida, `individuos` fuera de
 8–15, un mapa menor que 9×9 tiles, una tasa o un `cooldown_reproduccion` ≤ 0,
 un `depredadores` negativo, un `depredador_activo`, `crisis` o `migracion` que
 no sean booleanos, un `sequia_ticks` o un `ticks_por_estacion` negativos, un
-`umbral_agotamiento` fuera de (0, 1] o un valor de tipo equivocado
-(`"ancho": 60.7`, `"seed": "hola"`, `"individuos": true`).
+`ticks_guardado` ≤ 0, un `umbral_agotamiento` fuera de (0, 1] o un valor de
+tipo equivocado (`"ancho": 60.7`, `"seed": "hola"`, `"individuos": true`).
 
 Precedencia: **CLI > fichero > defaults**. `--seed` y `--individuos` pasados a
 mano mandan sobre el fichero (y el resumen refleja los valores efectivos):

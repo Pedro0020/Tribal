@@ -1336,3 +1336,53 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 74 so
 ```
 
 </details>
+
+## F3-001 — Memoria colectiva como grafo persistido en SQLite
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 410 passed in 220.08s (0:03:40)
+- **Cambios:** tribal/store/esquema.py (nuevo: DDL de las 9 tablas, WAL, sin importar sqlite3); tribal/store/repositorio.py (nuevo: unico importador de sqlite3; guardar/cargar/instantanea/cerrar); tribal/store/__init__.py; tribal/sim.py (db opcional, volcado cada ticks_guardado y al cerrar); tribal/config.py (ticks_guardado); tribal/cli.py (run --db y report db); tests/test_store.py (nuevo); README (persistencia y esquema); arquitectura.md §2.5/§5.3; .gitignore (*.db*)
+- **Decisiones:** La persistencia es un espejo verificable, no una resumible: aqui se guarda y se reabre para leer (nodos, aristas, origen, poblacion, diario, telemetria); reanudar la partida con el estado del RNG es SAVE-001 y se deja fuera a proposito. El DDL vive como texto en esquema.py para que el unico import de sqlite3 sea el repositorio, y un test lo fija. Se escribe en lote (cada 300 ticks y al cerrar) y el COMMIT va en finally: una excepcion en el tick 37 deja una BD reabrible en el 36. relaciones y recuerdos se crean vacias; report telemetry aun no lee la tabla (documentado).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 410 passed
+
+$ uv run python -m tribal run --headless --ticks 600 --db tribu.db --json
+poblacion 16 | nodos 30 | aristas 27 | diario 5 | telemetria 2
+$ uv run python -m tribal report db --db tribu.db --json
+{individuos 16, nodos 30, aristas 27, nodos_por_origen {arbol 23, interaccion 7},
+ diario 5, telemetria 2, recursos 89}  -> coincide campo a campo con el run
+
+$ esquema (BD abierta e inspeccionada)
+9 tablas de stack §5 + sqlite_sequence ; journal_mode=wal ; integrity_check=ok
+columnas cotejadas con stack §5; extras justificadas (origen/autor/tick/nivel/requisitos,
+seed/ancho/alto/config, diario.*)
+
+$ reapertura
+30 nodos con Nodo completo y (origen, autor, tick) intactos; 27 aristas; veces_usado;
+config; los 16 individuos campo a campo; 0 diferencias
+
+$ un unico importador de sqlite3
+grep -rn "import sqlite3" tribal/ -> solo tribal/store/repositorio.py ; test que lo fija
+mutacion: importar en cli.py -> FALLA
+
+$ escritura en lote y cierre
+3 guardar() en 600 ticks (300, 600, cierre); excepcion en tick 37 -> BD reabrible con tick 36
+exit 2 con basura, SQLite vacia o ruta inexistente ; report db no ejecuta DDL
+*.db* ignorado por git; 0 BDs en el repo tras la suite
+
+Mutaciones verificadas por el reviewer (hash restaurado):
+  origen="" -> FALLA | aristas[:1] -> FALLA | individuos[:5] -> FALLA | import sqlite3 en cli -> FALLA
+
+$ uv run pytest -q
+966 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 78 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 78 source files
+```
+
+</details>

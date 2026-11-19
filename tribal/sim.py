@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, cast
 
 from tribal.agents import instinto, necesidades, saliencia
@@ -39,6 +40,7 @@ from tribal.culture.propuestas import PropuestaInvalida
 from tribal.llm import candidatas as modulo_candidatas
 from tribal.llm.cola import ColaLLM, Peticion, PeticionNarracion, PeticionNodo, PropuestaNodo
 from tribal.llm.embeddings import IndiceRecuerdos, embedder_por_defecto
+from tribal.store.repositorio import Repositorio
 
 #: Presupuesto de frame a 60 fps.
 MS_FRAME = 16.67
@@ -126,11 +128,19 @@ class Simulacion:
     """Estado de una partida: mundo + contadores que no viven en el mundo."""
 
     def __init__(
-        self, mundo: Mundo, config: SimConfig | None = None, cola: ColaLLM | None = None
+        self,
+        mundo: Mundo,
+        config: SimConfig | None = None,
+        cola: ColaLLM | None = None,
+        db: Path | None = None,
     ) -> None:
         self.mundo = mundo
         #: Capa LLM activa, si la hay. Sin ella el tick es el de siempre.
         self.cola = cola
+        #: Espejo en SQLite (`run --db`). `None` = partida solo en RAM.
+        self._repositorio = Repositorio(db) if db is not None else None
+        #: Muestras de telemetría que se escriben con la partida (una por volcado).
+        self._telemetria: list[dict[str, Any]] = []
         #: Memoria recuperable por similitud. Solo existe si hay capa LLM: sin
         #: LLM nadie consulta recuerdos y no se paga el coste de indexarlos.
         self.recuerdos = IndiceRecuerdos(embedder_por_defecto()) if cola is not None else None
@@ -399,6 +409,34 @@ class Simulacion:
         self._drenar()
 
         self._ms_acumulados += (time.perf_counter() - inicio) * 1000.0
+
+        if self._repositorio is not None and self.mundo.tick % self.config.ticks_guardado == 0:
+            self._guardar()
+
+    def _guardar(self) -> None:
+        """Vuelca la partida entera a SQLite; no-op sin `--db`.
+
+        La telemetría se acumula aquí, una muestra por volcado. Un volcado del
+        mismo tick se salta, así que el cierre tras el último `step` no duplica
+        la fila.
+        """
+        if self._repositorio is None:
+            return
+        if not self._telemetria or self._telemetria[-1]["tick"] != self.mundo.tick:
+            self._telemetria.append(self.muestra())
+        self._repositorio.guardar(
+            self.mundo, self.grafo, self.diario, self._telemetria, config=self.config
+        )
+
+    def cerrar(self) -> None:
+        """Vuelca el estado final y cierra la base. Sin `--db` no hace nada."""
+        if self._repositorio is None:
+            return
+        try:
+            self._guardar()
+        finally:
+            self._repositorio.cerrar()
+            self._repositorio = None
 
     def _encolar_dilema(self) -> None:
         """Hasta `max_pensando` peticiones por tick, por saliencia (concepto §10b).
@@ -1238,13 +1276,14 @@ def crear(
     individuos: int = 12,
     config: SimConfig | None = None,
     cola: ColaLLM | None = None,
+    db: Path | None = None,
 ) -> Simulacion:
     """Partida nueva. `seed` e `individuos` mandan sobre lo que diga `config`."""
     if config is None:
         config = SimConfig(seed=seed, individuos=individuos)
     else:
         config = replace(config, seed=seed, individuos=individuos)
-    return Simulacion(modulo_mundo.crear(seed, individuos, config=config), config, cola)
+    return Simulacion(modulo_mundo.crear(seed, individuos, config=config), config, cola, db)
 
 
 def run(
@@ -1254,14 +1293,16 @@ def run(
     individuos: int = 12,
     config: SimConfig | None = None,
     cola: ColaLLM | None = None,
+    db: Path | None = None,
 ) -> Simulacion:
     """Corre la partida `ticks` ticks (`0` = sin límite) y devuelve la simulación.
 
     En modo ventana el límite lo pone el usuario con ESC o cerrando la ventana;
     `ticks` sigue sirviendo como tope opcional. Si hay cola LLM, se cierra aquí:
-    al volver no queda hilo vivo y `resumen()` publica `en_vuelo` a 0.
+    al volver no queda hilo vivo y `resumen()` publica `en_vuelo` a 0. Con `db`
+    la partida se vuelca al cerrar (y cada `config.ticks_guardado` ticks).
     """
-    simulacion = crear(seed, individuos, config, cola)
+    simulacion = crear(seed, individuos, config, cola, db)
     try:
         if headless:
             for _ in range(ticks):
@@ -1275,6 +1316,7 @@ def run(
     finally:
         if cola is not None:
             cola.cerrar()
+        simulacion.cerrar()
 
 
 def run_muestreado(

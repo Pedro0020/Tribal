@@ -33,6 +33,7 @@ CLAVES = {
     "umbral_agotamiento",
     "ticks_migracion",
     "max_pensando",
+    "ticks_guardado",
 }
 
 
@@ -70,6 +71,7 @@ def test_los_defaults_son_los_documentados() -> None:
         "umbral_agotamiento": 0.25,
         "ticks_migracion": 3000,
         "max_pensando": 4,
+        "ticks_guardado": 300,
     }
     assert set(config.a_json()) == CLAVES
 

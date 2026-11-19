@@ -65,6 +65,9 @@ SITIOS_CON_TEMPERAMENTO = {
     # ve nada. Cambia lo que sabe, no lo que rinde lo que come.
     ("tribal/agents/instinto.py", "radio_percepcion"),
     ("tribal/agents/instinto.py", "_buscar_comida"),
+    # Persistencia (F3-001): etiqueta el temperamento en la columna
+    # `personalidad` del guardado. Medición para consultar, no conducta.
+    ("tribal/store/repositorio.py", "_fila_individuo"),
 }
 
 
