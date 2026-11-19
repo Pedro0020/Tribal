@@ -67,6 +67,7 @@ CLAVES = {
     "pct_fuera_arbol",
     "nodos_por_origen",
     "nivel_max",
+    "memoria",
     "config",
 }
 
@@ -79,6 +80,7 @@ def test_run_headless_json_imprime_un_objeto(capsys: pytest.CaptureFixture[str])
     assert datos["ticks"] == 120
     assert datos["poblacion_inicial"] == 12
     assert datos["nacimientos"] == 0
+    assert datos["memoria"] == {"recuerdos": 0, "recuperaciones": 0}
     assert datos["config"]["seed"] == 42
 
 

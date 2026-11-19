@@ -88,6 +88,18 @@ modelo que puede tardar un segundo.
   correcta. En CI usa un backend simulado competente (prueba el contrato y el
   filtrado, no la calidad del modelo); `--backend http` mide el modelo real y
   no revienta si el servicio no está.
+- `embeddings.py`: `Embedder` (dim, `usa_gpu`, `emb`) con dos backends.
+  `EmbedderHashing` es el determinista: bag-of-words con blake2b por token (no
+  `hash()`, que cambia entre procesos), 256 dimensiones y L2 normalizado.
+  `EmbedderOllama` es el real opcional (`POST /api/embed`, urllib, transporte
+  inyectable); se declara en CPU (`usa_gpu=False`) porque la VRAM es del LLM y
+  un fallo de servicio devuelve vector nulo sin lanzar. `IndiceRecuerdos`
+  guarda vectores y `buscar(consulta, k)` devuelve top-k por coseno con orden
+  estable (score y luego id); una guarda impide llamarlo desde `ui.render` o
+  desde el hilo `tribal-llm`. `Simulacion` indexa los hitos de cultura —nodos
+  del árbol, combinaciones y tradiciones de `origen=interaccion`— y añade los
+  relevantes al contexto de cada petición; `resumen()` publica
+  `memoria: {recuerdos, recuperaciones}`.
 - `seleccion.py`: quién piensa este tick. Solo se encola si hay **dilema real**
   (conflicto de necesidades, evento propio relevante, oportunidad de innovar) y
   hay hueco en la cola; a igualdad de dilema, gana más saliencia.
@@ -200,9 +212,13 @@ Detalle de la parte que importa (pasos 4 y 7):
   backoff**—: la simulación sigue por instinto indefinidamente. Fase 0 y Fase 1
   corren así *por diseño*, sin LLM: la puerta de Fase 1 exige que la tribu ya viva
   sin él.
-- **Embeddings** van en su propio hilo, en CPU (stack §2), y solo se consultan
-  al construir el contexto de una petición. Nunca en el hilo de render ni en el
-  del LLM.
+- **Embeddings** van en CPU (stack §2) y solo se consultan al construir el
+  contexto de una petición. La recuperación es síncrona en el hilo del bucle
+  —unas decenas de productos escalares sobre 256 floats—, pero **nunca** en el
+  hilo de render ni en el del LLM: una guarda en `IndiceRecuerdos.buscar` lo
+  comprueba por pila de llamadas y por nombre de hilo. El backend determinista
+  (hashing) no abre red; el de Ollama, si se usa, pide `usa_gpu=false` y
+  degrada a vector nulo cuando el servicio no está.
 
 ---
 

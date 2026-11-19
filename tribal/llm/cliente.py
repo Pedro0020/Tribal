@@ -15,9 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-import urllib.error
-import urllib.request
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -29,6 +27,7 @@ from tribal.llm.esquema import (
     construir_prompt,
     validar,
 )
+from tribal.llm.http import Transporte, transporte_http
 
 ENDPOINT_POR_DEFECTO = "http://127.0.0.1:11434"
 MODELO_POR_DEFECTO = "tribal-llm"
@@ -37,9 +36,6 @@ TIMEOUT_POR_DEFECTO = 3.0
 TEMPERATURA = 0.3
 #: Tokens por decisión, sobre JSON incluido. Una elección + razón + diálogo.
 MAX_TOKENS = 64
-
-#: (método, url, cuerpo, timeout) -> (estado HTTP, cuerpo bruto).
-Transporte = Callable[[str, str, dict[str, Any] | None, float], tuple[int, bytes]]
 
 Estado = Literal["ok", "degradado", "error"]
 
@@ -77,7 +73,7 @@ class ClienteLLM:
         self.endpoint = endpoint.rstrip("/")
         self.modelo = modelo
         self.timeout = timeout
-        self._transporte = transporte or _transporte_http
+        self._transporte = transporte or transporte_http
         self._ejemplos: Sequence[Mapping[str, Any]] = (
             EJEMPLOS if ejemplos is None else tuple(ejemplos)
         )
@@ -232,23 +228,6 @@ def backend_falso(respuestas: Iterable[Any]) -> Transporte:
         return 200, _bytes(respuesta)
 
     return transporte
-
-
-def _transporte_http(
-    metodo: str,
-    url: str,
-    cuerpo: dict[str, Any] | None,
-    timeout: float,
-) -> tuple[int, bytes]:
-    """Transporte real con la stdlib: sin dependencias nuevas."""
-    datos = None if cuerpo is None else json.dumps(cuerpo).encode("utf-8")
-    peticion = urllib.request.Request(url, data=datos, method=metodo)
-    peticion.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(peticion, timeout=timeout) as respuesta:
-            return int(respuesta.status), respuesta.read()
-    except urllib.error.HTTPError as exc:
-        return int(exc.code), exc.read()
 
 
 def _bytes(respuesta: Any) -> bytes:

@@ -34,6 +34,7 @@ from tribal.llm.cliente import (
     backend_stub,
 )
 from tribal.llm.cola import MAX_EN_VUELO_POR_DEFECTO, ColaLLM
+from tribal.llm.embeddings import embedder_por_defecto
 from tribal.llm.eval import ESCENARIOS_POR_DEFECTO, backend_competente, escenarios, evaluar
 from tribal.sim import MS_FRAME, run_muestreado
 from tribal.sim import run as run_sim
@@ -473,12 +474,19 @@ def _llm_selfcheck(args: argparse.Namespace) -> int:
     """`llm selfcheck`: informa del servicio sin convertir su ausencia en fallo."""
     cliente = ClienteLLM(endpoint=args.endpoint, modelo=args.modelo, timeout=args.timeout)
     servicio = cliente.disponible()
+    embeddings = embedder_por_defecto()
     informe = {
         "disponible": servicio.disponible,
         "endpoint": cliente.endpoint,
         "modelo": cliente.modelo,
         "latencia_ms": servicio.latencia_ms,
         "error": servicio.error,
+        #: Backend determinista en CPU: misma dimensión en cualquier máquina.
+        "embeddings": {
+            "backend": "hashing",
+            "usa_gpu": embeddings.usa_gpu,
+            "dim": embeddings.dim,
+        },
     }
     if args.json:
         print(json.dumps(informe, ensure_ascii=True))

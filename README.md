@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.23-green)
+![Version](https://img.shields.io/badge/Version-0.1.24-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -151,12 +151,31 @@ ollama create tribal-llm -f tribal.Modelfile  # id que usa el cliente
 uv run python -m tribal llm selfcheck --json
 ```
 
-`selfcheck` publica `disponible`, `endpoint`, `modelo`, `latencia_ms` y `error`.
+`selfcheck` publica `disponible`, `endpoint`, `modelo`, `latencia_ms`, `error` y
+`embeddings: {backend, usa_gpu, dim}`.
 Que no haya servicio **no es un fallo del comando**: la tribu sigue por instinto.
 Un timeout (3 s), una conexión rechazada o un JSON inválido se devuelven como
 `degradado`/`error`; `decidir()` nunca lanza. Los tests inyectan
 `backend_falso(...)` y `tests/conftest.py` bloquea `urllib.request.urlopen`, así
 que `uv run pytest -q` no abre red.
+
+### Memoria y embeddings (CPU)
+
+`tribal/llm/embeddings.py` indexa los hitos de cultura —nodos del árbol,
+combinaciones y tradiciones de `origen=interaccion`— para que una petición al
+LLM lleve los recuerdos relevantes, no todos. `IndiceRecuerdos.buscar()` devuelve
+top-k por coseno con orden estable (score y luego id) y **nunca corre en el hilo
+de render ni en el del LLM**: se consulta al construir el contexto, en el hilo del
+bucle. La guarda lo comprueba por nombre de hilo y por pila de llamadas.
+
+El backend por defecto es `EmbedderHashing`: bag-of-words con hash estable
+(blake2b, no `hash()`) en 256 dimensiones y L2 normalizado, así que mismo texto →
+mismo vector **en cualquier proceso**. `EmbedderOllama` es el backend real
+opcional (`POST /api/embed`, sin dependencias); se pide en CPU porque la VRAM es
+del LLM (stack §2 y §7) —`usa_gpu=false` es la intención declarada, el
+dispositivo lo decide Ollama— y si el servicio no está devuelve un vector nulo en
+vez de lanzar. Sin capa LLM el índice no se crea y el resumen publica
+`memoria: {recuerdos, recuperaciones}` a cero.
 
 ## Ejecutar (Fase 0)
 

@@ -34,6 +34,7 @@ from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.grafo import Grafo
 from tribal.llm import candidatas as modulo_candidatas
 from tribal.llm.cola import ColaLLM, Peticion
+from tribal.llm.embeddings import IndiceRecuerdos, embedder_por_defecto
 
 #: Presupuesto de frame a 60 fps.
 MS_FRAME = 16.67
@@ -111,6 +112,10 @@ class Simulacion:
         self.mundo = mundo
         #: Capa LLM activa, si la hay. Sin ella el tick es el de siempre.
         self.cola = cola
+        #: Memoria recuperable por similitud. Solo existe si hay capa LLM: sin
+        #: LLM nadie consulta recuerdos y no se paga el coste de indexarlos.
+        self.recuerdos = IndiceRecuerdos(embedder_por_defecto()) if cola is not None else None
+        self._recuperaciones = 0
         self._peticion_id = 0
         self.config = config or SimConfig(
             seed=mundo.seed,
@@ -300,8 +305,13 @@ class Simulacion:
             if aplicada and self._practicar(individuo, accion.nombre, descubrir=not descubierto):
                 descubierto = True
 
-        if tradiciones.evaluar(self.grafo, self.mundo.tick) is not None:
+        tradicion = tradiciones.evaluar(self.grafo, self.mundo.tick)
+        if tradicion is not None:
             self.tradiciones += 1
+            self._registrar_recuerdo(
+                tradicion.id,
+                f"tradicion {tradicion.rama} {tradicion.id} {tradicion.titulo}",
+            )
         self._reproducir()
         self.agrupamiento_max = max(self.agrupamiento_max, self._junto_al_agua())
 
@@ -324,16 +334,42 @@ class Simulacion:
                 continue
             nombres = tuple(opcion.nombre for opcion in opciones)
             self._peticion_id += 1
+            contexto = modulo_candidatas.estado_para(individuo, self.mundo)
+            #: GraphRAG ligero: los recuerdos relevantes viajan como datos del
+            #: contexto, nunca dentro del hilo del LLM ni del render.
+            contexto["memoria"] = [
+                {"id": recuerdo_id, "score": round(score, 4)}
+                for recuerdo_id, score in self._recuperar_memoria(individuo, nombres)
+            ]
             peticion = Peticion(
                 id=self._peticion_id,
                 tick=self.mundo.tick,
                 individuo_id=individuo.id,
-                contexto=modulo_candidatas.estado_para(individuo, self.mundo),
+                contexto=contexto,
                 candidatas=nombres,
                 valida_hasta=self.mundo.tick + self.cola.ventana,
             )
             self.cola.encolar(peticion)
             return
+
+    def _recuperar_memoria(
+        self, individuo: Individuo, acciones: tuple[str, ...]
+    ) -> list[tuple[str | int, float]]:
+        """Top-3 de recuerdos parecidos a la situación; vacío sin capa LLM.
+
+        La consulta son las acciones candidatas y la estación: lo que un nodo
+        de cultura comparte con el momento que se está decidiendo.
+        """
+        if self.recuerdos is None:
+            return []
+        consulta = f"{self.mundo.estacion or ''} {' '.join(acciones)}"
+        self._recuperaciones += 1
+        return self.recuerdos.buscar(consulta, k=3)
+
+    def _registrar_recuerdo(self, id: str, texto: str) -> None:
+        """Indexa un hito de cultura (árbol, combinación o tradición); no-op sin LLM."""
+        if self.recuerdos is not None:
+            self.recuerdos.agregar(id, texto)
 
     def _intencion_llm(self, individuo: Individuo) -> Accion | None:
         """Intención forzada si sigue dentro de su ventana; se consume al usarse.
@@ -588,6 +624,9 @@ class Simulacion:
             self.combinaciones_logradas += 1
             self._descubridores.add(individuo.id)
             self._descubrimientos_tramo[_tramo(individuo)] += 1
+            self._registrar_recuerdo(
+                candidata.id, f"combinacion {candidata.rama} {candidata.id} {candidata.titulo}"
+            )
         return True
 
     def _practicar(self, individuo: Individuo, accion: str, *, descubrir: bool) -> bool:
@@ -618,7 +657,13 @@ class Simulacion:
             )
         if not descubrir:
             return False
-        return self.grafo.avanzar(rama, autor=individuo.id, tick=self.mundo.tick) is not None
+        nodo = self.grafo.avanzar(rama, autor=individuo.id, tick=self.mundo.tick)
+        if nodo is None:
+            return False
+        self._registrar_recuerdo(
+            nodo.id, f"{nodo.rama} {nodo.id} {nodo.titulo} practicando {accion}"
+        )
+        return True
 
     @property
     def poblacion(self) -> int:
@@ -770,6 +815,12 @@ class Simulacion:
             "parches": self._parches(),
             "migraciones": self.migraciones,
             **self.grafo.a_json(),
+            #: Memoria recuperable: cuántos hitos hay indexados y cuántas
+            #: consultas hizo el tick al construir contextos de LLM.
+            "memoria": {
+                "recuerdos": 0 if self.recuerdos is None else len(self.recuerdos),
+                "recuperaciones": self._recuperaciones,
+            },
             "config": self.config.a_json(),
         }
         if self.cola is not None:

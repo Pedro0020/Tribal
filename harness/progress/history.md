@@ -1109,3 +1109,49 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 55 so
 ```
 
 </details>
+
+## F2-003 — Embeddings en CPU y recuperacion de memoria
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 335 passed in 160.11s (0:02:40)
+- **Cambios:** tribal/llm/embeddings.py (nuevo: Embedder, hashing determinista, Ollama CPU, IndiceRecuerdos con coseno y guarda de hilo); tribal/llm/http.py (transporte compartido); tribal/sim.py (indice de hitos, combinaciones y tradiciones; top-3 al contexto; memoria en el resumen); tribal/cli.py (selfcheck con embeddings); tests/test_embeddings.py (nuevo, 13 casos) y test_cli_run.py; README; arquitectura.md §2.3/§3
+- **Decisiones:** El backend de tests es hashing con blake2b, no `hash()`: el segundo cambia con PYTHONHASHSEED y rompe la reproducibilidad entre procesos. La recuperacion devuelve top-k con coseno, orden (-score, id) y `zip(strict=True)`: dimensiones distintas son un error, no un recorte silencioso. La guarda de contexto es real (hilo tribal-llm y pila de tribal.ui.render, tambien a 2 niveles) y se probo mutandola. La integracion tiene test que captura la Peticion y exige memoria con ids reales y scores ordenados, de modo que renombrar la clave o desactivar el indexado ahora rompe la suite (M1 y M5 caen). Se indexan hitos, combinaciones y tradiciones; no se exige recuerdos == nodos porque no todo nodo tiene texto indexable. Coste medido: 1.43 ms/tick medio con 24-28 hitos.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 335 passed
+
+$ embeddings
+EmbedderHashing: blake2b, 256 dims, L2 (norma 1.0); vacio -> vector nulo; dim<1 -> ValueError
+mismo vector y mismo orden con PYTHONHASHSEED 0/1/2/12345 (4 subprocess)
+top-1 exacto en 10 consultas; empates ordenados por id; k > recuerdos no rompe
+EmbedderOllama con servicio caido -> vector nulo + ultimo_error, sin excepcion
+usa_gpu false en los tres backends
+
+$ guarda de hilo
+llamada desde `tribal-llm` o desde la pila de `tribal.ui.render` -> RuntimeError
+(probado tambien a 2 niveles); app.bucle no anida step/render (sin falso positivo)
+
+$ selfcheck
+"embeddings": {"backend": "hashing", "usa_gpu": false, "dim": 256}
+
+$ integracion (600 ticks, seed 7)
+recuerdos 22 == nodos 22 (incluye 4 tradiciones) ; recuperaciones 337
+seed 42: 24==24, 287 peticiones, 0 sin memoria, 0 ids fuera del indice, scores descendentes
+seeds 1/2/3/5/7: recuerdos == nodos ; --llm off -> memoria {0,0} e identico entre runs
+coste: tick 1.43 ms medio, p95 1.90, max 2.83 (presupuesto 16.67)
+
+Mutaciones detectadas: M1 contexto["memoria"] renombrado | M5 _registrar_recuerdo no-op |
+tradiciones sin indexar | zip strict=False | hash() | quitar guarda | desempate por insercion
+
+$ uv run pytest -q
+891 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 55 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 66 source files
+```
+
+</details>

@@ -311,10 +311,13 @@
         "uv run python -m tribal llm selfcheck --json informa backend de embeddings y si usa GPU (debe ser false)",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F2-002"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 1,
+      "closed": "2026-11-19"
     },
     {
       "id": "F2-004",
