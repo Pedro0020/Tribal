@@ -5,8 +5,9 @@ argparse de la stdlib. `hello` se mantiene como humo del renombrado; `run`
 arranca la simulación en ventana o en modo headless, `report culture` resume
 el árbol de conocimiento de una corrida headless corta, `report diary` publica
 los últimos hitos narrados, `report gate-f1` / `report gate-f2` publican los
-barridos de las puertas F1→F2 y F2→F3 con su veredicto, y `export obsidian`
-vuelca el grafo de una partida a Markdown para la bóveda de la tribu.
+barridos de las puertas F1→F2 y F2→F3 con su veredicto, `report kpi` publica el
+criterio de hecho de `objetivo.md` §3 y `export obsidian` vuelca el grafo de una
+partida a Markdown para la bóveda de la tribu.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from typing import Any
 from tribal import __version__
 from tribal.config import MAX_INDIVIDUOS, MIN_INDIVIDUOS, SimConfig
 from tribal.culture.consulta import consultar
+from tribal.culture.kpi import KPI
+from tribal.culture.kpi import evaluar as evaluar_kpi
 from tribal.gate_f1 import (
     MAX_INDIVIDUOS_BARRIDO,
     SEMILLAS_PUERTA,
@@ -332,6 +335,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="Informe como un único objeto JSON."
     )
 
+    kpi = informes.add_parser(
+        "kpi",
+        help="Criterio de hecho de objetivo.md §3: cuatro hitos y 50 % fuera del árbol.",
+        description=(
+            "Ejecuta la comprobación de `objetivo.md` §3 sobre una partida guardada, "
+            "sin simular ni escribir: los cuatro hitos de §3.1 (fuego, herramienta "
+            "compuesta, proto-lenguaje y mito) y el porcentaje de nodos activos de "
+            "origen `combinacion` o `interaccion` de §3.2, con el veredicto global. "
+            "Sale con 2 si el fichero no es una partida SQLite válida."
+        ),
+    )
+    kpi.add_argument("--db", type=Path, required=True, help="Base SQLite de la partida.")
+    kpi.add_argument("--json", action="store_true", help="Informe como un único objeto JSON.")
+
     gate = informes.add_parser(
         "gate-f1",
         help="Barrido de la puerta F1→F2: proporción divergente en calma y en crisis.",
@@ -536,6 +553,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _report_diary(args)
         if args.report == "db":
             return _report_db(args)
+        if args.report == "kpi":
+            return _report_kpi(args)
         return _report(args)
     if args.command == "export":
         return _export_obsidian(args)
@@ -953,6 +972,29 @@ def _report_db(args: argparse.Namespace) -> int:
         print(json.dumps(informe, ensure_ascii=True))
     else:
         print(_texto_db(informe))
+    return 0
+
+
+def _report_kpi(args: argparse.Namespace) -> int:
+    """`report kpi`: el criterio de hecho de `objetivo.md` §3 sobre la partida.
+
+    No simula: abre el grafo guardado con `Repositorio` y publica los cuatro
+    hitos, el porcentaje fuera del árbol con su numerador/denominador y el
+    veredicto. Un fichero que no es una partida válida sale con 2.
+    """
+    if not args.db.exists():
+        print(f"error: no existe la base {args.db}", file=sys.stderr)
+        return 2
+    try:
+        kpi: KPI = evaluar_kpi(args.db)
+    except BaseInvalida as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps({"db": str(args.db), **kpi.a_json()}, ensure_ascii=True))
+    else:
+        print(kpi.texto(args.db))
     return 0
 
 

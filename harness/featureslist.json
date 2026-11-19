@@ -500,11 +500,13 @@
         "uv run python -m tribal report kpi --db tribu.db devuelve los cuatro hitos, el porcentaje y el veredicto",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "depends_on": [
         "F3-005",
         "F3-002"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 0
     },
     {
       "id": "HARD-3",

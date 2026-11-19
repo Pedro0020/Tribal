@@ -801,6 +801,79 @@ límite conocido es el tamaño de la muestra: la concentración se mide sobre
 14-17 líneas narradas por partida; el test fija las semillas 1 y 3 y la tabla
 publica las cinco.
 
+### 9.5 El criterio de hecho, medido: `report kpi` (F3-006)
+
+`objetivo.md` §3 pedía que el cierre de Fase 3 fuese una consulta, no una
+sensación. `tribal/culture/kpi.py` reúne esa comprobación en `evaluar(db) -> KPI`
+y `report kpi` la publica sin simular ni escribir:
+
+```bash
+uv run python -m tribal report kpi --db tribu.db [--json]
+```
+
+**Hitos (§3.1).** Se miran nodos `activo`: `fuego` (rama `fuego`),
+`herramienta_compuesta` (rama `litica` con ≥ 2 aristas entrantes),
+`proto_lenguaje` (rama `lenguaje`, `nivel > 0`) y `mito`. El esquema no guarda un
+`tipo` distinto de la rama, así que el mito es el nodo `mito` del árbol
+(`simbolico`), el que exige `proto_palabras` + `ritual`.
+
+**KPI (§3.2).** Es el SQL literal de `objetivo.md`, sin reinterpretarlo:
+
+```sql
+SELECT ROUND(100.0 * SUM(CASE WHEN origen IN ('combinacion','interaccion')
+                         THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_fuera_arbol
+FROM nodos
+WHERE estado = 'activo';
+```
+
+`llm` queda fuera del numerador: el KPI mide emergencia desde el árbol (niveles
+1 y 2 de §8b), no que el modelo invente un nodo. El denominador incluye todos
+los activos, también los de nivel 0. `tests/test_kpi.py` ejecuta la consulta
+literal sobre la misma base, la compara con `evaluar` y comprueba que incluir
+`llm` en el numerador rompe la coherencia (con nodos `llm` presentes el número
+cambia, así que una mutación del código haría caer el test).
+
+**Veredicto.** `4 hitos && pct >= 50.0`. El comando sale con 0 aunque sea
+`False`: es un informe, no una puerta; la puerta de Fase 3 es su test.
+
+**Tabla real** (12 individuos, crisis, backend guionizado determinista, semilla
+fija; el mismo escenario del test e2e):
+
+| seed | ticks | fuego | compuesta | proto | mito | fuera | activos | % fuera | veredicto |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 3000 | sí | sí | sí | sí | 11 | 42 | 26.2 | False |
+| 2 | 3000 | sí | sí | sí | sí | 11 | 43 | 25.6 | False |
+| 3 | 3000 | sí | sí | sí | sí | 8 | 40 | 20.0 | False |
+| 1 | 5000 | sí | sí | sí | sí | 11 | 47 | 23.4 | False |
+| 2 | 5000 | sí | sí | sí | sí | 11 | 47 | 23.4 | False |
+| 3 | 5000 | sí | sí | sí | sí | 7 | 45 | 15.6 | False |
+
+**Diagnóstico: el 50 % no se alcanza con el motor actual.** Los cuatro hitos se
+cumplen, pero el porcentaje está estructuralmente acotado:
+
+1. La partida descubre los **23 nodos del árbol** en los primeros ~500 ticks y
+   los mantiene activos: el denominador nunca baja de 23.
+2. `interaccion` son tradiciones (`tradiciones.py`), y solo nacen para el nodo
+   que en ese momento es la **punta** de cada rama (`Grafo.ultimo_activo`). Por
+   partida salen 5–7, no 23.
+3. `combinacion` son las **5** del catálogo; el catálogo no crece.
+4. Cada nodo `llm` suma 1 al denominador y 0 al numerador: un backend más
+   prolífico **baja** el KPI, no lo sube. La hipótesis contraria (subir el ritmo
+   de propuestas) solo mejoraría `pct_fuera_arbol_llm`, que no es la métrica de
+   `objetivo.md`.
+5. A partir de ~6000 ticks (semilla 1, crisis) la tribu se extingue, todos los
+   nodos quedan `apagado` y no queda KPI que medir: 8000–12000 ticks dan
+   `activos=0`, `pct=0.0` y ningún hito. La ventana en la que el criterio se
+   puede observar es 3000–5000 ticks.
+
+Para cruzar el 50 % hace falta una decisión de diseño, no un retoque del
+informe: o contar `llm` en el numerador (cambia `objetivo.md` §3.2), o frenar el
+descubrimiento del árbol para que cada nodo sea imitado mientras es la punta
+(cambia el motor), o redefinir el KPI. No se ha hecho ninguna de las tres: el
+test `test_la_partida_cumple_el_umbral_de_objetivo` queda como `xfail` estricto
+con el número real, de modo que el día que el motor lo alcance el test pase a
+fallar y obligue a quitar la marca y cerrar el criterio.
+
 ---
 
 ## 10. Referencias

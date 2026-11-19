@@ -710,6 +710,46 @@ una rama que no existen) devuelve la lista vacía con `motivo: no encontrado`
 y **sale con 0**: preguntar no es un error. Una base que no existe o no es una
 partida válida sale con **2**.
 
+## Criterio de hecho: `report kpi` (F3-006)
+
+`objetivo.md` §3 no se cierra con una impresión: se cierra con una consulta. Una
+partida está hecha cuando su grafo guardado tiene **un nodo activo de cada uno
+de los cuatro hitos** de §3.1 —fuego, herramienta compuesta (nódulo lítico con
+≥ 2 aristas entrantes), proto-lenguaje (lenguaje con nivel > 0) y mito— y el
+**50 %** de los nodos activos nació fuera del árbol (§3.2). `tribal/culture/kpi.py`
+lee esa partida con `Repositorio` y `report kpi` publica el veredicto:
+
+```bash
+uv run python -m tribal report kpi --db tribu.db
+uv run python -m tribal report kpi --db tribu.db --json
+```
+
+Salida real sobre `tribu.db` (semilla 1, 3000 ticks, crisis, backend
+guionizado):
+
+```
+db tribu.db
+  fuego                  si
+  herramienta_compuesta  si
+  proto_lenguaje         si
+  mito                   si
+  pct_fuera_arbol         26.2 % (11/42, umbral 50.0 %)
+  veredicto              False
+```
+
+El porcentaje es exactamente el SQL de `objetivo.md` §3.2: numerador
+`combinacion` + `interaccion`, denominador **todos** los nodos activos. `llm`
+queda fuera del numerador a propósito (un nodo inventado por el modelo no es un
+nivel de emergencia del árbol), y `tests/test_kpi.py` compara la consulta literal
+con `evaluar` y demuestra que incluir `llm` rompería esa coherencia.
+
+**El veredicto es `False` con el motor actual** y no es un fallo del comando: los
+cuatro hitos se alcanzan, pero el porcentaje queda en 20–26 % porque la partida
+activa los 23 nodos del árbol y solo genera 5 combinaciones de catálogo y 6–7
+tradiciones (`interaccion`). El diagnóstico completo y la tabla por semilla
+están en `vault/01_PROYECTO/arquitectura.md` §9.5 y en
+`harness/progress/implementer-F3-006.md`.
+
 ## Configuración y semilla
 
 Una partida se reproduce con **semilla + configuración**: la semilla fija el
