@@ -387,10 +387,13 @@
         "README y arquitectura documentan arranque de Ollama (ollama serve, tribal-llm), degradacion sin LLM y el backend falso para tests",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F2-006"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 0,
+      "closed": "2026-11-19"
     },
     {
       "id": "F3-001",

@@ -136,6 +136,8 @@ class ColaLLM:
         self._descartadas = 0
         self._fallos = 0
         self._corregidas = 0
+        self._latencia_ms_total = 0.0
+        self._resueltas = 0
         #: En modo síncrono no hay hilo: las respuestas esperan aquí.
         self._sincronas: list[Respuesta] = []
         self._textos_sincronos: list[TextoNarrado] = []
@@ -283,6 +285,18 @@ class ColaLLM:
         """El bucle aplicó la decisión; solo la cola lleva la cuenta."""
         with self._cerrojo:
             self._aplicadas += 1
+
+    @property
+    def latencia_ms_media(self) -> float:
+        """Media de las inferencias de decisión resueltas, en milisegundos.
+
+        Con `backend_stub` mide el tiempo real del stub (prácticamente 0): solo
+        un backend HTTP da una latencia representativa del modelo.
+        """
+        with self._cerrojo:
+            if not self._resueltas:
+                return 0.0
+            return round(self._latencia_ms_total / self._resueltas, 1)
 
     @property
     def estadisticas(self) -> dict[str, int]:
@@ -435,7 +449,11 @@ class ColaLLM:
                 self._en_vuelo = max(0, self._en_vuelo - 1)
 
     def _resolver(self, peticion: Peticion) -> Respuesta:
+        inicio = time.perf_counter()
         eleccion = decidir_con_candidatas(self.cliente, peticion.contexto, peticion.candidatas)
+        with self._cerrojo:
+            self._latencia_ms_total += (time.perf_counter() - inicio) * 1000
+            self._resueltas += 1
         return Respuesta(
             id=peticion.id,
             individuo_id=peticion.individuo_id,

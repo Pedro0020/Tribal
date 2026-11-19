@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.27-green)
+![Version](https://img.shields.io/badge/Version-0.1.28-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -250,21 +250,48 @@ prueba el contrato y el filtrado, no la calidad de `tribal-llm`; el acierto del
 modelo real se mide aparte con `--backend http`, y sin servicio el comando no
 revienta: las decisiones quedan `sin_decision` y la tribu sigue por instinto.
 
+### Arranque de Ollama y el modelo `tribal-llm`
+
+Ollama va **como proceso aparte** en `127.0.0.1:11434` (en Windows suele
+quedar como app de bandeja). El modelo vive en el almacén de Ollama, no en el
+repo; `tribal.Modelfile` (raíz del repo) es la receta reproducible:
+
 ```bash
 ollama serve                                  # servicio local en 127.0.0.1:11434
-ollama pull qwen2.5:3b-instruct-q8_0          # base del Modelfile
-# tribal.Modelfile hereda de esa base y fija num_ctx 8192
-ollama create tribal-llm -f tribal.Modelfile  # id que usa el cliente
+ollama pull qwen2.5:3b-instruct-q8_0          # base del Modelfile (~3,4 GB)
+ollama create tribal-llm -f tribal.Modelfile  # alias que usa el cliente
 uv run python -m tribal llm selfcheck --json
 ```
 
-`selfcheck` publica `disponible`, `endpoint`, `modelo`, `latencia_ms`, `error` y
-`embeddings: {backend, usa_gpu, dim}`.
-Que no haya servicio **no es un fallo del comando**: la tribu sigue por instinto.
-Un timeout (3 s), una conexión rechazada o un JSON inválido se devuelven como
-`degradado`/`error`; `decidir()` nunca lanza. Los tests inyectan
-`backend_falso(...)` y `tests/conftest.py` bloquea `urllib.request.urlopen`, así
-que `uv run pytest -q` no abre red.
+`tribal.Modelfile` hereda de `qwen2.5:3b-instruct-q8_0` y fija `num_ctx 8192`,
+`temperature 0.7`, `top_p 0.9` y `repeat_penalty 1.1` (stack §2). Las
+peticiones de decisión llevan además `temperature 0.3` en `options`; el
+Modelfile solo fija el contexto y el punto de partida del alias.
+
+`selfcheck` publica `disponible`, `endpoint`, `modelo`, **`modelo_presente`**
+(`true` si `tribal-llm` aparece en `/api/tags`, `false` si el servicio responde
+sin él, `null` si no se pudo preguntar), `latencia_ms`, `error` y
+`embeddings: {backend, usa_gpu, dim}`. Que no haya servicio **no es un fallo
+del comando**: la tribu sigue por instinto.
+
+Sin LLM no se pierde nada del motor: un timeout (3 s), una conexión rechazada
+o un JSON inválido se devuelven como `degradado`/`error`, el cliente
+**nunca lanza** y la petición se descarta. **No hay backoff**: el presupuesto
+de peticiones en vuelo es el único freno, así que con Ollama caído se sigue
+encolando dentro de ese tope y cada respuesta que no llega cuenta en `fallos`.
+
+En los tests no se abre red: `--llm stub` usa un backend falso que elige la
+candidata por hash del prompt (determinista entre procesos, sin GPU) y
+`backend_falso(...)` inyecta respuestas guionizadas; `tests/conftest.py`
+bloquea `urllib.request.urlopen` para toda la suite. `--llm-sincrono` resuelve
+en el tick y es el modo reproducible; con `http` se rechaza porque congelaría
+el bucle hasta el timeout.
+
+Coste esperado en la RTX 2060 (6 GB): **66 tok/s**, **3,6 GB** de VRAM con
+contexto 8192 y ~**0,5–1,5 s** por decisión de 3B; `keep_alive` de 5 min deja
+la GPU al 0 % entre peticiones pero retiene la VRAM. Por eso `latencia_ms_media`
+de `report telemetry` solo es representativa con `--llm http`: con `stub` mide
+el tiempo real del backend falso (≈0 ms).
 
 ### Memoria y embeddings (CPU)
 
@@ -450,12 +477,25 @@ nodos 30  aristas 27  pct_fuera_arbol 23.3  nivel_max 2
 `--intervalo` ticks (60 por defecto): una fila por intervalo, no por frame.
 Cada muestra trae `tick`, `poblacion`, `divergentes`, `conformistas`, `neutros`,
 `nodos`, `aristas`, `media_energia` y `media_sed`. Acepta `--seed`, `--ticks`,
-`--intervalo`, `--config` y `--crisis`.
+`--intervalo`, `--config`, `--crisis`, `--llm` y `--llm-sincrono`. Con
+`--llm stub|http` cada muestra añade su bloque `llm`:
+
+```json
+"llm": {"peticiones": 70, "aplicadas": 67, "descartadas": 0, "fallos": 0, "latencia_ms_media": 0.1}
+```
+
+`peticiones` son las aceptadas por la cola, `aplicadas` las que el motor usó,
+`descartadas` las que llegaron fuera de ventana o quedaron pendientes al
+cerrar y `fallos` los transportes que no devolvieron decisión.
+`latencia_ms_media` es la media real de las inferencias resueltas: solo es
+representativa con `--llm http`; con `stub` mide el tiempo del backend falso
+(≈0 ms).
 
 ```bash
 uv run python -m tribal report telemetry                        # tabla legible
 uv run python -m tribal report telemetry --json                 # 10 muestras de 600 ticks
 uv run python -m tribal report telemetry --seed 7 --ticks 300 --intervalo 30 --crisis
+uv run python -m tribal report telemetry --llm stub --llm-sincrono --ticks 300 --intervalo 100
 ```
 
 Es determinista: mismos `--seed`, `--ticks`, `--intervalo` y `--config`
@@ -478,11 +518,11 @@ seed 42  ticks 600  intervalo 60  crisis False
    600   16    3     8     5     30       27    75.23  34.51
 ```
 
-En JSON es un objeto con `seed`, `ticks`, `intervalo`, `crisis` y `muestras`
+En JSON es un objeto con `seed`, `ticks`, `intervalo`, `crisis`, `llm` y `muestras`
 (recortado a la primera muestra):
 
 ```json
-{"seed": 42, "ticks": 600, "intervalo": 60, "crisis": false, "muestras": [{"tick": 60, "poblacion": 12, "divergentes": 3, "conformistas": 7, "neutros": 2, "nodos": 15, "aristas": 12, "media_energia": 75.56, "media_sed": 20.6}]}
+{"seed": 42, "ticks": 600, "intervalo": 60, "crisis": false, "llm": "off", "muestras": [{"tick": 60, "poblacion": 12, "divergentes": 3, "conformistas": 7, "neutros": 2, "nodos": 15, "aristas": 12, "media_energia": 75.56, "media_sed": 20.6}]}
 ```
 
 Todavía no lee una partida persistida: cuando exista `tribu.db` (Fase 3),

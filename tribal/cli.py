@@ -149,8 +149,9 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Corre una partida headless y toma una muestra cada --intervalo ticks "
             "(población, divergentes, conformistas, neutros, nodos, aristas y medias "
-            "de energía y sed). Determinista: mismo seed, ticks e intervalo, mismas "
-            "muestras. Todavía no lee una partida persistida."
+            "de energía y sed). Con --llm añade a cada muestra peticiones, aplicadas, "
+            "descartadas, fallos y latencia media del LLM. Determinista: mismo seed, "
+            "ticks e intervalo, mismas muestras. Todavía no lee una partida persistida."
         ),
     )
     telemetria.add_argument(
@@ -181,6 +182,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--crisis",
         action="store_true",
         help="Simula la crisis (sequía) durante la toma de muestras.",
+    )
+    telemetria.add_argument(
+        "--llm",
+        choices=("off", "stub", "http"),
+        default="off",
+        help="Capa LLM cuyos contadores se muestrean: `off` (default), `stub` o `http`.",
+    )
+    telemetria.add_argument(
+        "--llm-sincrono",
+        action="store_true",
+        help="Sin hilo: la petición se resuelve en el tick. Determinista; para tests.",
     )
     telemetria.add_argument(
         "--json", action="store_true", help="Muestras como un único objeto JSON."
@@ -551,6 +563,18 @@ def _report_telemetry(args: argparse.Namespace) -> int:
     if args.intervalo <= 0:
         print("error: --intervalo debe ser mayor que 0", file=sys.stderr)
         return 2
+    if args.llm_sincrono and args.llm == "http":
+        print(
+            "error: --llm-sincrono solo vale con --llm stub: resolver http en el tick "
+            "congelaría el bucle hasta el timeout",
+            file=sys.stderr,
+        )
+        return 2
+
+    cola = None
+    if args.llm != "off":
+        cliente = ClienteLLM(transporte=backend_stub()) if args.llm == "stub" else ClienteLLM()
+        cola = ColaLLM(cliente, sincrona=args.llm_sincrono)
 
     config = replace(base, seed=seed, crisis=base.crisis or args.crisis)
     _, muestras = run_muestreado(
@@ -559,12 +583,14 @@ def _report_telemetry(args: argparse.Namespace) -> int:
         args.intervalo,
         individuos=config.individuos,
         config=config,
+        cola=cola,
     )
     informe: dict[str, Any] = {
         "seed": seed,
         "ticks": args.ticks,
         "intervalo": args.intervalo,
         "crisis": config.crisis,
+        "llm": args.llm,
         "muestras": muestras,
     }
     if args.json:
@@ -698,6 +724,7 @@ def _llm_selfcheck(args: argparse.Namespace) -> int:
         "disponible": servicio.disponible,
         "endpoint": cliente.endpoint,
         "modelo": cliente.modelo,
+        "modelo_presente": servicio.modelo_presente,
         "latencia_ms": servicio.latencia_ms,
         "error": servicio.error,
         #: Backend determinista en CPU: misma dimensión en cualquier máquina.
@@ -711,9 +738,14 @@ def _llm_selfcheck(args: argparse.Namespace) -> int:
         print(json.dumps(informe, ensure_ascii=True))
     else:
         estado = "disponible" if servicio.disponible else "no disponible"
+        modelo = (
+            ""
+            if servicio.modelo_presente is None
+            else (" (modelo presente)" if servicio.modelo_presente else " (modelo ausente)")
+        )
         latencia = "" if servicio.latencia_ms is None else f" ({servicio.latencia_ms} ms)"
         error = "" if servicio.error is None else f": {servicio.error}"
-        print(f"{cliente.modelo} en {cliente.endpoint}: {estado}{latencia}{error}")
+        print(f"{cliente.modelo} en {cliente.endpoint}: {estado}{modelo}{latencia}{error}")
     return 0
 
 
@@ -762,17 +794,27 @@ def _texto_cultura(informe: dict[str, Any]) -> str:
 
 
 def _texto_telemetria(informe: dict[str, Any]) -> str:
+    con_llm = any("llm" in muestra for muestra in informe["muestras"])
+    cabecera_llm = "  pet  apl  des  fal  lat" if con_llm else ""
     lineas = [
         f"seed {informe['seed']}  ticks {informe['ticks']}  "
-        f"intervalo {informe['intervalo']}  crisis {informe['crisis']}",
-        "  tick  pob  div  conf  neut  nodos  aristas  energia  sed",
+        f"intervalo {informe['intervalo']}  crisis {informe['crisis']}  llm {informe['llm']}",
+        f"  tick  pob  div  conf  neut  nodos  aristas  energia  sed{cabecera_llm}",
     ]
-    lineas.extend(
-        f"  {muestra['tick']:>4}  {muestra['poblacion']:>3}  {muestra['divergentes']:>3}  "
-        f"{muestra['conformistas']:>4}  {muestra['neutros']:>4}  {muestra['nodos']:>5}  "
-        f"{muestra['aristas']:>7}  {muestra['media_energia']:>7}  {muestra['media_sed']:>4}"
-        for muestra in informe["muestras"]
-    )
+    for muestra in informe["muestras"]:
+        linea = (
+            f"  {muestra['tick']:>4}  {muestra['poblacion']:>3}  "
+            f"{muestra['divergentes']:>3}  {muestra['conformistas']:>4}  "
+            f"{muestra['neutros']:>4}  {muestra['nodos']:>5}  "
+            f"{muestra['aristas']:>7}  {muestra['media_energia']:>7}  {muestra['media_sed']:>4}"
+        )
+        if "llm" in muestra:
+            llm = muestra["llm"]
+            linea += (
+                f"  {llm['peticiones']:>3}  {llm['aplicadas']:>3}  {llm['descartadas']:>3}  "
+                f"{llm['fallos']:>3}  {llm['latencia_ms_media']:>3}"
+            )
+        lineas.append(linea)
     return "\n".join(lineas)
 
 

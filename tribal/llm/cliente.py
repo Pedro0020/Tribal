@@ -88,6 +88,9 @@ class Servicio:
     disponible: bool
     latencia_ms: float | None = None
     error: str | None = None
+    #: `None` si no se pudo preguntar; `False` si el servicio responde pero el
+    #: modelo no aparece en `/api/tags`.
+    modelo_presente: bool | None = None
 
 
 class ClienteLLM:
@@ -116,16 +119,16 @@ class ClienteLLM:
         return self._ejemplos
 
     def disponible(self) -> Servicio:
-        """GET `/api/tags`: ¿está Ollama levantado? Nunca lanza."""
+        """GET `/api/tags`: ¿está Ollama levantado y el modelo instalado? Nunca lanza."""
         inicio = time.perf_counter()
         try:
-            estado, _ = self._transporte("GET", f"{self.endpoint}/api/tags", None, self.timeout)
+            estado, bruto = self._transporte("GET", f"{self.endpoint}/api/tags", None, self.timeout)
         except Exception as exc:  # servicio caído, DNS, timeout: no es excepción del bucle
             return Servicio(False, error=f"servicio caído: {exc}")
         latencia = round((time.perf_counter() - inicio) * 1000, 1)
         if estado != 200:
             return Servicio(False, latencia, f"http {estado}")
-        return Servicio(True, latencia)
+        return Servicio(True, latencia, modelo_presente=_modelo_en_tags(bruto, self.modelo))
 
     def decidir(
         self,
@@ -233,6 +236,27 @@ class ClienteLLM:
         if isinstance(valido, ErrorValidacion):
             return Resultado("error", motivo=valido.motivo)
         return Resultado("ok", decision=valido)
+
+
+def _modelo_en_tags(bruto: bytes, modelo: str) -> bool:
+    """¿Aparece `modelo` en la lista de `/api/tags`? Un cuerpo roto es `False`."""
+    try:
+        datos = json.loads(bruto)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(datos, Mapping):
+        return False
+    modelos = datos.get("models")
+    if not isinstance(modelos, list):
+        return False
+    buscado = modelo.split(":", 1)[0]
+    for item in modelos:
+        if not isinstance(item, Mapping):
+            continue
+        nombre = item.get("name") or item.get("model")
+        if isinstance(nombre, str) and nombre.split(":", 1)[0] == buscado:
+            return True
+    return False
 
 
 def backend_stub() -> Transporte:

@@ -1026,7 +1026,7 @@ class Simulacion:
         media_sed = (
             sum(individuo.necesidades.sed for individuo in vivos) / len(vivos) if vivos else 0.0
         )
-        return {
+        muestra: dict[str, Any] = {
             "tick": self.mundo.tick,
             "poblacion": len(vivos),
             "divergentes": temperamentos.count("divergente"),
@@ -1037,6 +1037,16 @@ class Simulacion:
             "media_energia": round(media_energia, 2),
             "media_sed": round(media_sed, 2),
         }
+        if self.cola is not None:
+            estadisticas = self.cola.estadisticas
+            muestra["llm"] = {
+                "peticiones": estadisticas["enviadas"],
+                "aplicadas": estadisticas["aplicadas"],
+                "descartadas": estadisticas["descartadas"],
+                "fallos": estadisticas["fallos"],
+                "latencia_ms_media": self.cola.latencia_ms_media,
+            }
+        return muestra
 
     def resumen(self) -> dict[str, Any]:
         """Dict serializable y determinista: no incluye tiempos de reloj de pared."""
@@ -1273,25 +1283,31 @@ def run_muestreado(
     intervalo: int,
     individuos: int = 12,
     config: SimConfig | None = None,
+    cola: ColaLLM | None = None,
 ) -> tuple[Simulacion, list[dict[str, Any]]]:
     """Corre la partida y toma una muestra cada `intervalo` ticks.
 
     El último tramo puede ser más corto si `ticks` no es múltiplo de
     `intervalo`; así la última muestra es siempre el estado final y coincide
-    con el `resumen()` de la misma corrida.
+    con el `resumen()` de la misma corrida. Si hay cola LLM, se cierra al
+    terminar: `report telemetry` no deja hilo vivo.
     """
     if intervalo <= 0:
         raise ValueError("intervalo debe ser mayor que 0")
-    simulacion = crear(seed, individuos, config)
+    simulacion = crear(seed, individuos, config, cola)
     muestras: list[dict[str, Any]] = []
-    restantes = ticks
-    while restantes > 0:
-        paso = min(intervalo, restantes)
-        for _ in range(paso):
-            simulacion.step()
-        restantes -= paso
-        muestras.append(simulacion.muestra())
-    return simulacion, muestras
+    try:
+        restantes = ticks
+        while restantes > 0:
+            paso = min(intervalo, restantes)
+            for _ in range(paso):
+                simulacion.step()
+            restantes -= paso
+            muestras.append(simulacion.muestra())
+        return simulacion, muestras
+    finally:
+        if cola is not None:
+            cola.cerrar()
 
 
 def _tramo(individuo: Individuo) -> str:

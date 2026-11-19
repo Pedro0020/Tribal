@@ -77,8 +77,9 @@ modelo que puede tardar un segundo.
 - `cola.py`: dos `queue.Queue` (peticiones y resultados) + contador de en vuelo.
 - `cliente.py`: el hilo de cliente. Consume peticiones, hace
   `POST http://127.0.0.1:11434/api/chat` contra Ollama con `model: tribal-llm`
-  (el alias del Modelfile, que es el que arranca con `num_ctx 8192`), el campo
-  `format` (JSON schema) y timeout corto, y deposita el resultado.
+  (el alias del `tribal.Modelfile`, que está en la raíz del repo y arranca con
+  `num_ctx 8192`), el campo `format` (JSON schema) y timeout corto, y deposita
+  el resultado.
 - `esquema.py`: el JSON schema de la respuesta. Fija el esqueleto (`accion`
   dentro del vocabulario de §7, `objetivo`, `razon`, `dialogo`) y deja libres
   los campos de texto, según stack §8 («constriñe coherencia, no dirección»).
@@ -132,7 +133,9 @@ temperatura 0.3 y `num_predict` acotado. `ClienteLLM.decidir()` devuelve
 `ok | degradado | error` y **nunca lanza**: un timeout (3 s), una conexión
 rechazada o un JSON inválido se convierten en `degradado`/`error`, de modo que
 el bucle sigue por instinto. `disponible()` consulta `/api/tags` para
-`llm selfcheck`. La suite inyecta `backend_falso` y bloquea
+`llm selfcheck` y publica `modelo_presente` (`true` si `tribal-llm` está
+instalado, `false` si el servicio responde sin él, `null` si no responde); un
+servicio caído no rompe el comando. La suite inyecta `backend_falso` y bloquea
 `urllib.request.urlopen`, así que `pytest` no abre red.
 
 **Contrato completo en F2-CONTRATO.** `candidatas.py` filtra las opciones
@@ -254,7 +257,11 @@ Detalle de la parte que importa (pasos 4 y 7):
   cola lo cuenta en `fallos` y sigue encolando con el mismo presupuesto —**no hay
   backoff**—: la simulación sigue por instinto indefinidamente. Fase 0 y Fase 1
   corren así *por diseño*, sin LLM: la puerta de Fase 1 exige que la tribu ya viva
-  sin él.
+  sin él. `report telemetry --llm` publica por muestra `peticiones`, `aplicadas`,
+  `descartadas`, `fallos` y `latencia_ms_media` (media real de las inferencias;
+  con `stub` es el tiempo del backend falso, ≈0). El modo reproducible es
+  `--llm stub --llm-sincrono`: mismo backend falso por hash del prompt y sin
+  hilo; la suite además cierra la cola y comprueba que no queda `tribal-llm`.
 - **Embeddings** van en CPU (stack §2) y solo se consultan al construir el
   contexto de una petición. La recuperación es síncrona en el hilo del bucle
   —unas decenas de productos escalares sobre 256 floats—, pero **nunca** en el
@@ -506,8 +513,8 @@ uv run python -m tribal report gate-f1 --seeds 1-10 --ticks 8000
 
 - Capa LLM (`tribal/llm/`): cola asíncrona, selección por saliencia y
   aplicación diferida. Empieza en Fase 2 (`F2-002`); `cliente.py` y
-  `esquema.py` ya existen. El id del modelo es `tribal-llm` (Modelfile
-  `FROM qwen2.5:3b-instruct-q8_0` con `num_ctx 8192`), fuera del repo.
+  `esquema.py` ya existen. El id del modelo es `tribal-llm` (`tribal.Modelfile`
+  en la raíz del repo: `FROM qwen2.5:3b-instruct-q8_0` con `num_ctx 8192`).
 - Persistencia SQLite (`tribal/store/`), export a Obsidian y telemetría leída
   de una partida guardada. Fase 3 (`F3-001`, `F3-003`, `F3-004`).
 - Diario narrado, memoria colectiva persistida y consulta del grafo. Fase 2–3.

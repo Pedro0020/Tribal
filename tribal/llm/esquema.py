@@ -143,6 +143,10 @@ def validar(datos: object) -> Decision | ErrorValidacion:
     if not isinstance(datos, Mapping):
         return ErrorValidacion("la respuesta no es un objeto JSON")
 
+    extra = set(datos) - {"accion", *CAMPOS_TEXTO}
+    if extra:
+        return ErrorValidacion(f"campos no permitidos: {', '.join(sorted(map(str, extra)))}")
+
     accion = datos.get("accion")
     if not isinstance(accion, str):
         return ErrorValidacion("falta 'accion' o no es texto")

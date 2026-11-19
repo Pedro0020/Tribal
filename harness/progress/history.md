@@ -1292,3 +1292,47 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 73 so
 ```
 
 </details>
+
+## HARD-2 — Endurecimiento tras Fase 2: semilla, telemetria y docs del LLM
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 403 passed in 259.57s (0:04:19)
+- **Cambios:** tribal/llm/cola.py (latencia real media por inferencia); tribal/sim.py (bloque llm en la telemetria y cierre de la cola en run_muestreado); tribal/llm/cliente.py (modelo_presente desde /api/tags, tolerante a cuerpos rotos); tribal/llm/esquema.py (rechazo de campos extra); tribal/cli.py (telemetria con --llm y selfcheck.modelo_presente); tribal.Modelfile (nuevo); tests/test_endurecimiento.py (nuevo, 25 casos); README; arquitectura.md §2.3/§3
+- **Decisiones:** La reproducibilidad con LLM se mide donde se puede: stub sincrono y dos procesos comparando bytes; en asincrono los contadores dependen del planificador y el README lo dice. La latencia media se mide de verdad (transporte de 40 ms -> 40.6) y el cierre automatico de run_muestreado quedo anclado con un test que cae si se quita el finally. selfcheck distingue servicio disponible de modelo presente: antes decia true con tribal-llm ausente y luego fallaba al decidir. tribal.Modelfile entra al repo para que `ollama create tribal-llm -f tribal.Modelfile` sea reproducible y coincida con stack §2. Se rechazan campos extra en validar para que el validador y el schema digan lo mismo.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 403 passed
+
+$ reproducibilidad con LLM (10 semillas, backend falso)
+pytest tests/test_endurecimiento.py -q -> 25 passed
+  por semilla 1..10: dos subprocess con --llm stub --llm-sincrono byte-identicos y peticiones > 0
+  cola asincrona real: al cerrar en_vuelo == 0 y sin hilo `tribal-llm` en threading.enumerate()
+  mutaciones: quitar cola.cerrar() del finally -> FALLA (assert 4 == 0)
+
+$ report telemetry --json --llm stub --ticks 600 --intervalo 60
+10 muestras, cada una con {peticiones, aplicadas, descartadas, fallos, latencia_ms_media}
+tick 600 -> 112/51/0/0/0.1 ; sin LLM -> llm "off" y sin bloque
+latencia real comprobada: transporte que duerme 40 ms -> latencia_ms_media 40.6
+mutacion latencia=0.0 -> FALLA
+
+$ llm selfcheck --json
+modelo_presente true/false/null a partir de /api/tags ; servicio caido -> disponible false, exit 0
+/api/tags roto (JSON corrupto, models [], models no lista, objeto vacio) -> disponible true,
+modelo_presente false, sin excepcion
+
+$ tribal.Modelfile anadido: FROM qwen2.5:3b-instruct-q8_0, num_ctx 8192, temp 0.7,
+top_p 0.9, repeat_penalty 1.1 (identico a stack §2; `ollama show --modelfile` lo confirma)
+$ validar() rechaza campos extra (mutacion -> FALLA) y el schema lo declara
+
+$ uv run pytest -q
+959 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 74 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 74 source files
+```
+
+</details>

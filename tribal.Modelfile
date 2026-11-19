@@ -1,0 +1,9 @@
+# Modelo local del proyecto (stack §2). Crear con:
+#   ollama create tribal-llm -f tribal.Modelfile
+# El cliente pide temperatura 0.3 en cada petición de decisión; estos parámetros
+# son el punto de partida del alias y el contexto que fija stack.
+FROM qwen2.5:3b-instruct-q8_0
+PARAMETER num_ctx 8192
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
