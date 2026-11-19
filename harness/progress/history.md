@@ -1517,3 +1517,41 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 82 fi
 ```
 
 </details>
+
+## F3-005 — Capa de consulta del grafo
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 447 passed in 230.19s (0:03:50)
+- **Cambios:** tribal/culture/consulta.py (nuevo: intenciones ruta/apagados, BFS no dirigido determinista, respuesta con nodo/origen/autor/tick/arista); tribal/cli.py (culture ask --db --query [--json]); tests/test_consulta.py (nuevo, 12 casos); README (consultar el grafo); arquitectura.md §2.4/§6
+- **Decisiones:** La consulta responde con datos del grafo, no con prosa inventada: cada paso lleva nodo, origen, autor, tick y la arista usada, y el reviewer comprobo el camino con un BFS independiente. El BFS es no dirigido porque en la cultura un requisito se navega en ambos sentidos (verificado con una arista inversa y anclado con test); el desempate ordena vecinos por id para que dos caminos de igual longitud den siempre el mismo. El vocabulario se amplia a 'hasta/llegar/llego' y 'murieron/fallecieron/desaparecieron' porque el ejemplo literal del objetivo usa 'murieron'; ahora esta en codigo y en tests, no solo en la documentacion. Una pregunta sin respuesta no es un error del comando: exit 0 con motivo. Limite: ultimo_portador no se persiste, asi que al releer la BD se muestra el autor original como portador.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 447 passed
+
+$ uv run python -m tribal culture ask --db tribu.db --query "que ruta llevo al fuego"
+camino observar_rayo -> conservar_brasas -> friccion -> cocinar -> ahuyentar_depredadores
+5 pasos con nodo + origen + autor + tick + arista ; BFS independiente del reviewer da el mismo camino
+"hasta el fuego", "llegar al fuego", "llego hasta el fuego", mayusculas/acentos -> exit 0
+nodo inexistente -> lista vacia con motivo, exit 0 ; base invalida o directorio -> exit 2
+
+$ uv run python -m tribal culture ask --db tribu.db --query "que nodos murieron con el anciano"
+intencion apagados ; los 3 nodos apagados de la BD con autor, tick_apagado y motivo
+coincide fila a fila con estado='apagado' ; "fallecieron"/"desaparecio"/"murio" tambien
+
+$ test sintetico (12 casos): camino minimo, arista inversa (lasca->guijarro se recorre al reves),
+desempate estable, inexistente sin excepcion, vocabulario, CLI, base basura
+Mutaciones verificadas: BFS dirigido -> FALLA ; sin vecinos.sort -> FALLA ;
+quitar hasta/murieron -> 2 FAILED. Restaurado con hash identico.
+
+$ uv run pytest -q
+1003 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 84 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 84 files
+```
+
+</details>

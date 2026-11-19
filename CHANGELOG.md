@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: capa de consulta del grafo de cultura (F3-005)
 - feat: telemetria historica consultable y CSV (F3-004)
 - feat: export del grafo a Obsidian con wikilinks (F3-003)
 - feat: transmision intergeneracional y nodos apagados (F3-002)

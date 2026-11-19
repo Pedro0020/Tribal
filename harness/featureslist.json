@@ -481,11 +481,14 @@
         "test sobre grafo sintetico: camino minimo correcto, nodo inexistente devuelve lista vacia sin excepcion",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F3-003",
         "F3-002"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 1,
+      "closed": "2026-11-19"
     },
     {
       "id": "F3-006",

@@ -188,6 +188,22 @@ sin sacarlo de `nodos`. `Grafo.contar` y `report culture --json` publican
 `tick_apagado` y `motivo_apagado` (con `ALTER TABLE` al abrir una base anterior
 a F3-002), así que cerrar y reabrir la partida conserva la defunción del nodo.
 
+**Consulta (F3-005).** `consulta.py` responde preguntas sobre el grafo
+guardado: `consultar(grafo, texto)` reconoce la intención por palabras clave
+—`ruta`/`camino`/`lleva`/`llega`/`llegar`/`conecta`/`hasta` para un camino,
+`apag*`/`perdid*`/`murieron`/`fallecieron`/`desaparecieron` para las técnicas
+perdidas— y devuelve datos del grafo, nunca texto
+inventado. Para una ruta busca el destino por título o id (coincidencia entera
+primero, parecido después) o, si la pregunta nombra una rama, su nodo activo
+más avanzado; el camino es un BFS no dirigido desde la raíz de esa rama (su
+nivel 0, o el nodo más antiguo), con `origen`, `autor`, `tick` y la arista
+usada en cada paso. Para los apagados devuelve `tick_apagado`, `motivo`, el
+`autor` (portador original) y el último portador conocido si está en RAM; la
+base no guarda ese último dato, así que al releer sale `desconocido`. Una
+pregunta sin respuesta devuelve la lista vacía con `motivo` y no es un error
+del comando (exit 0); solo una base inválida sale con 2. `culture ask --db
+tribu.db --query "..."` publica la respuesta en texto o `--json`.
+
 `diario.py` (F2-005) es la memoria narrativa de concepto §10: `Entrada(tick,
 tipo, texto, individuo_id, narrada)` y `Diario.registrar/ultimas/a_json`. El
 motor lo llena desde `Simulacion._hito` —nodos `observar_rayo` (primer fuego),
@@ -492,8 +508,9 @@ entender la emergencia (p. ej. el grafo en vivo pasa a ser la vista primaria).
 | 9 | **Frame budget** | 60 fps con 15 individuos y UI | Motor determinista y barato; LLM fuera del hilo de render; telemetría por intervalo, no por frame |
 | 10 | **RAG ciego tras el renombrado** | `agents/tools/rag_tool.py` tiene `app` fijo en su tabla de fuentes | Feature aparte ya identificada: hasta arreglarlo, el código de `tribal/` no entra en el índice; no rompe la puerta ni los tests |
 | 11 | **Export que ensucia el vault** | Un orden distinto, un BOM o nombres que colisionan rompen los wikilinks entre exports | Slug = id saneado con sufijo `-2` en colisión, orden determinista y UTF-8/LF: dos exports son byte a byte iguales; los `.md` viejos no se borran |
+| 12 | **Respuesta inventada al consultar** | Una capa de consulta con LLM podría narrar un camino que no existe y volver el grafo inútil para entender la emergencia | `culture ask` es determinista y solo cita `nodos` + `aristas`: BFS sobre el grafo guardado y, en cada paso, `origen`, `autor`, `tick` y la arista usada; sin LLM en el camino |
 
-Riesgos 1–6 vienen de concepto §14; 7–10 son técnicos de esta arquitectura.
+Riesgos 1–6 vienen de concepto §14; 7–12 son técnicos de esta arquitectura.
 
 ---
 

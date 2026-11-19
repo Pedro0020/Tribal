@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.32-green)
+![Version](https://img.shields.io/badge/Version-0.1.33-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -657,6 +657,58 @@ con **2** si la base no existe o no es una partida válida.
 
 En Obsidian, **Abrir carpeta como bóveda** sobre `vault-tribu/`: `index.md` es
 la nota de entrada y las relaciones ya son enlaces navegables.
+
+## Consultar el grafo (F3-005)
+
+Ver la constelación no basta: `culture ask` le pregunta al grafo guardado, sin
+simular ni escribir. Reconoce dos intenciones por palabras clave:
+
+- **ruta** (`ruta`, `camino`, `lleva`/`llevo`, `llega`/`llegar`/`llego`,
+  `conecta`, `hasta`): busca el
+  nodo por título o id, o la rama si la pregunta la nombra (`litica`, `fuego`,
+  `lenguaje`, `roles`, `simbolico`), y devuelve el camino más corto de aristas
+  tratadas como no dirigidas, desde la raíz de esa rama hasta el destino. Cada
+  paso lleva su `origen` (de nacimiento), `autor`, `tick` y la arista usada.
+- **apagados** (`apag*`, `perdid*`, `murieron`/`murio`,
+  `fallecieron`/`fallecio`, `desaparecieron`/`desaparecio`): lista los nodos
+  `apagado` con
+  el tick y el motivo de la pérdida, su autor (el portador original) y el
+  último portador conocido; si la base no guarda ese dato, `desconocido`.
+
+```bash
+uv run python -m tribal culture ask --db tribu.db --query "que ruta llevo al fuego"
+uv run python -m tribal culture ask --db tribu.db --query "que nodos se apagaron"
+uv run python -m tribal culture ask --db tribu.db --query "que ruta llevo al fuego" --json
+```
+
+Salida real sobre una partida de 5000 ticks (semilla 2, crisis):
+
+```
+pregunta: que ruta llevo al fuego
+intencion: ruta
+destino: ahuyentar_depredadores - Ahuyentar depredadores
+camino (5 pasos):
+  1. observar_rayo - Observar el rayo  [rama fuego | origen arbol | autor 5 | tick 9]
+  2. conservar_brasas - Conservar brasas  <- observar_rayo  [rama fuego | origen arbol | autor 5 | tick 12]
+  3. friccion - Fricción  <- conservar_brasas  [rama fuego | origen arbol | autor 5 | tick 15]
+  4. cocinar - Cocinar  <- friccion  [rama fuego | origen arbol | autor 5 | tick 18]
+  5. ahuyentar_depredadores - Ahuyentar depredadores  <- cocinar  [rama fuego | origen arbol | autor 5 | tick 21]
+```
+
+```
+pregunta: que nodos se apagaron
+intencion: apagados
+apagados (3):
+  - raedera - Raedera  [rama litica | autor 10 | tick_apagado 2892 | motivo sin portadores | ultimo portador desconocido]
+  - caceria_dirigida - Cacería dirigida  [rama roles | autor 10 | tick_apagado 4880 | motivo sin portadores | ultimo portador desconocido]
+  - turnos_de_vigilia - Turnos de vigilia  [rama roles | autor 12 | tick_apagado 4880 | motivo sin portadores | ultimo portador desconocido]
+```
+
+No inventa citas: cada paso sale de `nodos` + `aristas` y muestra el nodo, su
+origen y la arista por la que se llegó. Una pregunta sin respuesta (un nodo o
+una rama que no existen) devuelve la lista vacía con `motivo: no encontrado`
+y **sale con 0**: preguntar no es un error. Una base que no existe o no es una
+partida válida sale con **2**.
 
 ## Configuración y semilla
 

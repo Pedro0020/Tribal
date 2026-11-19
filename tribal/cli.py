@@ -23,6 +23,7 @@ from typing import Any
 
 from tribal import __version__
 from tribal.config import MAX_INDIVIDUOS, MIN_INDIVIDUOS, SimConfig
+from tribal.culture.consulta import consultar
 from tribal.gate_f1 import (
     MAX_INDIVIDUOS_BARRIDO,
     SEMILLAS_PUERTA,
@@ -134,6 +135,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=MAX_EN_VUELO_POR_DEFECTO,
         help=f"Peticiones aceptadas sin respuesta (default {MAX_EN_VUELO_POR_DEFECTO}).",
     )
+
+    culture = sub.add_parser(
+        "culture",
+        help="Consulta el grafo de cultura de una partida guardada.",
+    )
+    culture_sub = culture.add_subparsers(dest="culture", required=True)
+    ask = culture_sub.add_parser(
+        "ask",
+        help="Pregunta al grafo: ruta hasta un nodo/rama o nodos apagados.",
+        description=(
+            "Responde a una pregunta sobre la partida guardada, sin simular: "
+            "`que ruta llevo al fuego` devuelve el camino mínimo de nodos con su "
+            "origen, autor y tick; `que nodos se apagaron` lista las técnicas "
+            "perdidas con su portador. Una pregunta sin respuesta no es un error "
+            "(exit 0); una base inválida sí (exit 2)."
+        ),
+    )
+    ask.add_argument("--db", type=Path, required=True, help="Base SQLite de la partida.")
+    ask.add_argument("--query", required=True, help="La pregunta en lenguaje natural.")
+    ask.add_argument("--json", action="store_true", help="Respuesta como un único objeto JSON.")
 
     report = sub.add_parser("report", help="Informes de la tribu, sin abrir ventana.")
     informes = report.add_subparsers(dest="report", required=True)
@@ -502,6 +523,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "run":
         return _run(args)
+    if args.command == "culture":
+        return _culture_ask(args)
     if args.command == "report":
         if args.report == "gate-f1":
             return _report_gate_f1(args)
@@ -609,6 +632,36 @@ def _run(args: argparse.Namespace) -> int:
 
     if args.benchmark:
         return _benchmark(simulacion.ms_tick_medio)
+    return 0
+
+
+def _culture_ask(args: argparse.Namespace) -> int:
+    """`culture ask`: pregunta al grafo guardado, sin simular ni escribir.
+
+    La respuesta vacía es legítima —una pregunta sin respuesta no es un fallo
+    del comando— y sale con 0. Solo una base inexistente o inválida sale con 2.
+    """
+    if not args.db.is_file():
+        if args.db.exists():
+            print(f"error: {args.db} no es un fichero", file=sys.stderr)
+        else:
+            print(f"error: no existe la base {args.db}", file=sys.stderr)
+        return 2
+    try:
+        repositorio = Repositorio(args.db, crear=False)
+    except BaseInvalida as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        grafo = repositorio.cargar().grafo
+    finally:
+        repositorio.cerrar()
+
+    respuesta = consultar(grafo, args.query)
+    if args.json:
+        print(json.dumps(respuesta.a_json(), ensure_ascii=True))
+    else:
+        print(respuesta.texto())
     return 0
 
 
