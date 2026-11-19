@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: telemetria por intervalo y reproducibilidad a 10 semillas (HARD-1)
 - feat: harness edit para corregir features sin tocar el JSON (HARNESS-EDIT)
 - feat: puerta F1 medida en la descendencia (F1-006)
 

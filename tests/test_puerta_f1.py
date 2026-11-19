@@ -58,6 +58,9 @@ SITIOS_CON_TEMPERAMENTO = {
     # Telemetría de la ronda 6: contar temperamentos para publicar descubrimientos,
     # imitaciones y longevidad. No decide nada del motor.
     ("tribal/sim.py", "_tramo"),
+    # Telemetría por intervalo (`report telemetry`): cuenta los temperamentos
+    # vivos de cada muestra. Medición, no conducta.
+    ("tribal/sim.py", "muestra"),
     # Conducta: qué radio de comida ve cada temperamento y a dónde va cuando no
     # ve nada. Cambia lo que sabe, no lo que rinde lo que come.
     ("tribal/agents/instinto.py", "radio_percepcion"),

@@ -26,12 +26,14 @@ from tribal.gate_f1 import (
     medir_barrido,
     parsear_semillas,
 )
-from tribal.sim import MS_FRAME
+from tribal.sim import MS_FRAME, run_muestreado
 from tribal.sim import run as run_sim
 
 #: Ticks por defecto de `report culture`: con 600 la tribu ya comió y el árbol
 #: tiene nodos. La corrida es headless, corta y determinista — ver `_report`.
 TICKS_INFORME = 600
+#: Cada cuántos ticks muestrea `report telemetry`: 10 filas para 600 ticks.
+INTERVALO_TELEMETRIA = 60
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -109,6 +111,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     culture.add_argument("--json", action="store_true", help="Informe como un único objeto JSON.")
 
+    telemetria = informes.add_parser(
+        "telemetry",
+        help="Telemetría por intervalo: población, temperamentos, grafo y medias.",
+        description=(
+            "Corre una partida headless y toma una muestra cada --intervalo ticks "
+            "(población, divergentes, conformistas, neutros, nodos, aristas y medias "
+            "de energía y sed). Determinista: mismo seed, ticks e intervalo, mismas "
+            "muestras. Todavía no lee una partida persistida."
+        ),
+    )
+    telemetria.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Semilla del mundo; manda sobre la del --config (default 42).",
+    )
+    telemetria.add_argument(
+        "--ticks",
+        type=int,
+        default=TICKS_INFORME,
+        help=f"Ticks a simular (default {TICKS_INFORME}).",
+    )
+    telemetria.add_argument(
+        "--intervalo",
+        type=int,
+        default=INTERVALO_TELEMETRIA,
+        help=f"Ticks entre muestras (default {INTERVALO_TELEMETRIA}).",
+    )
+    telemetria.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Fichero JSON con los parámetros de la partida (ver docs/config-ejemplo.json).",
+    )
+    telemetria.add_argument(
+        "--crisis",
+        action="store_true",
+        help="Simula la crisis (sequía) durante la toma de muestras.",
+    )
+    telemetria.add_argument(
+        "--json", action="store_true", help="Muestras como un único objeto JSON."
+    )
+
     gate = informes.add_parser(
         "gate-f1",
         help="Barrido de la puerta F1→F2: proporción divergente en calma y en crisis.",
@@ -158,6 +203,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "report":
         if args.report == "gate-f1":
             return _report_gate_f1(args)
+        if args.report == "telemetry":
+            return _report_telemetry(args)
         return _report(args)
     return 1
 
@@ -233,6 +280,49 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _report_telemetry(args: argparse.Namespace) -> int:
+    """`report telemetry`: una fila por intervalo, no por tick.
+
+    La corrida es la misma que la de `run --headless` con esos `--seed/--ticks`
+    y esa `--config`; la última muestra es el estado final, así que coincide con
+    el resumen de esa partida.
+    """
+    try:
+        base = SimConfig.desde_json(args.config) if args.config else SimConfig()
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    seed = base.seed if args.seed is None else args.seed
+    if args.ticks <= 0:
+        print("error: --ticks debe ser mayor que 0", file=sys.stderr)
+        return 2
+    if args.intervalo <= 0:
+        print("error: --intervalo debe ser mayor que 0", file=sys.stderr)
+        return 2
+
+    config = replace(base, seed=seed, crisis=base.crisis or args.crisis)
+    _, muestras = run_muestreado(
+        args.ticks,
+        seed,
+        args.intervalo,
+        individuos=config.individuos,
+        config=config,
+    )
+    informe: dict[str, Any] = {
+        "seed": seed,
+        "ticks": args.ticks,
+        "intervalo": args.intervalo,
+        "crisis": config.crisis,
+        "muestras": muestras,
+    }
+    if args.json:
+        print(json.dumps(informe, ensure_ascii=True))
+    else:
+        print(_texto_telemetria(informe))
+    return 0
+
+
 def _report_gate_f1(args: argparse.Namespace) -> int:
     """`report gate-f1`: los dos brazos sobre las mismas semillas y su veredicto.
 
@@ -263,6 +353,21 @@ def _texto_cultura(informe: dict[str, Any]) -> str:
         f"  {nodo['rama']:<9} {nodo['nivel']}  {nodo['titulo']:<20} "
         f"({nodo['origen']}, autor {nodo['autor']}, tick {nodo['tick']})"
         for nodo in informe["nodos"]
+    )
+    return "\n".join(lineas)
+
+
+def _texto_telemetria(informe: dict[str, Any]) -> str:
+    lineas = [
+        f"seed {informe['seed']}  ticks {informe['ticks']}  "
+        f"intervalo {informe['intervalo']}  crisis {informe['crisis']}",
+        "  tick  pob  div  conf  neut  nodos  aristas  energia  sed",
+    ]
+    lineas.extend(
+        f"  {muestra['tick']:>4}  {muestra['poblacion']:>3}  {muestra['divergentes']:>3}  "
+        f"{muestra['conformistas']:>4}  {muestra['neutros']:>4}  {muestra['nodos']:>5}  "
+        f"{muestra['aristas']:>7}  {muestra['media_energia']:>7}  {muestra['media_sed']:>4}"
+        for muestra in informe["muestras"]
     )
     return "\n".join(lineas)
 

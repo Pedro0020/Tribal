@@ -523,6 +523,33 @@ class Simulacion:
     def ms_tick_medio(self) -> float:
         return self._ms_acumulados / self.mundo.tick if self.mundo.tick else 0.0
 
+    def muestra(self) -> dict[str, Any]:
+        """Foto del estado para la telemetría por intervalo.
+
+        Una fila por muestra, no por tick: es lo que publica `report telemetry`
+        y lo que la Fase 3 escribirá en la tabla `telemetria`. La última
+        muestra de una corrida coincide con su `resumen()`.
+        """
+        vivos = self.mundo.individuos
+        temperamentos = [modulo_genoma.temperamento(individuo.genoma) for individuo in vivos]
+        media_energia = (
+            sum(individuo.necesidades.energia for individuo in vivos) / len(vivos) if vivos else 0.0
+        )
+        media_sed = (
+            sum(individuo.necesidades.sed for individuo in vivos) / len(vivos) if vivos else 0.0
+        )
+        return {
+            "tick": self.mundo.tick,
+            "poblacion": len(vivos),
+            "divergentes": temperamentos.count("divergente"),
+            "conformistas": temperamentos.count("conformista"),
+            "neutros": temperamentos.count("neutro"),
+            "nodos": len(self.grafo.nodos),
+            "aristas": len(self.grafo.aristas),
+            "media_energia": round(media_energia, 2),
+            "media_sed": round(media_sed, 2),
+        }
+
     def resumen(self) -> dict[str, Any]:
         """Dict serializable y determinista: no incluye tiempos de reloj de pared."""
         vivos = self.mundo.individuos
@@ -690,6 +717,33 @@ def run(
 
     app.bucle(simulacion, ticks)
     return simulacion
+
+
+def run_muestreado(
+    ticks: int,
+    seed: int,
+    intervalo: int,
+    individuos: int = 12,
+    config: SimConfig | None = None,
+) -> tuple[Simulacion, list[dict[str, Any]]]:
+    """Corre la partida y toma una muestra cada `intervalo` ticks.
+
+    El último tramo puede ser más corto si `ticks` no es múltiplo de
+    `intervalo`; así la última muestra es siempre el estado final y coincide
+    con el `resumen()` de la misma corrida.
+    """
+    if intervalo <= 0:
+        raise ValueError("intervalo debe ser mayor que 0")
+    simulacion = crear(seed, individuos, config)
+    muestras: list[dict[str, Any]] = []
+    restantes = ticks
+    while restantes > 0:
+        paso = min(intervalo, restantes)
+        for _ in range(paso):
+            simulacion.step()
+        restantes -= paso
+        muestras.append(simulacion.muestra())
+    return simulacion, muestras
 
 
 def _tramo(individuo: Individuo) -> str:

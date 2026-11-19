@@ -3,7 +3,7 @@
 > Documento de diseño técnico. Destila `concepto.md` (§4, §10/10b, §11, §8b) y
 > `stack-tecnologico.md` (§2, §3, §5, §8) sin introducir decisiones nuevas: si
 > algo aquí contradice al concepto, gana el concepto.
-> Estado: **Fase 0 en curso**. Última revisión: 2026-11-18.
+> Estado: **Fase 1 cerrada; Fase 2 (LLM) pendiente**. Última revisión: 2026-11-19.
 
 ---
 
@@ -358,39 +358,54 @@ bueno. Eso son las puertas de concepto §15 y el líder de la fase.
 
 ## 9. Estado de implementación
 
-**Existe hoy (Fase 0 en curso):**
+**Existe hoy (Fase 1 cerrada, sin LLM):**
 
-- Paquete `tribal/` con `__init__.py` (versión), `__main__.py`, `cli.py`
-  (subcomando `hello`) y `paths.py` (raíz y directorios derivados).
-- Entry point de consola `tribal`, hatch `packages = ["tribal"]` y coverage
-  `source = ["tribal"]` coherentes; `project_slug: tribal` en `project.yml`.
-- Tests de humo: CLI, rutas e importación del paquete (7 tests).
-- Puerta del arnés en verde (`harness gate` → `ENTORNO LISTO`).
+- Paquete `tribal/` con `__init__.py` (versión), `__main__.py`, `paths.py`,
+  `config.py` (`SimConfig` inmutable y serializable a JSON) y `cli.py` con
+  `hello`, `run`, `report culture`, `report telemetry` y `report gate-f1`.
+- `tribal/core/`: mundo, recursos y parches, acciones, modelos, genoma con
+  mutación, habilidades y depredador.
+- `tribal/agents/`: necesidades e instinto (política sin LLM; la percepción
+  cambia con el temperamento, la decisión no).
+- `tribal/culture/`: árbol de plausibilidad con cinco ramas, grafo de nodos y
+  aristas con `origen`, combinaciones, utilidad situacional y tradiciones.
+- `tribal/sim.py`: `Simulacion` (motor de una partida), `run` (corrida
+  headless o con ventana), `run_muestreado` (telemetría por intervalo) y el
+  `resumen()` determinista que publica `run --json`.
+- `tribal/ui/`: bucle Pygame a 60 fps y render top-down; la UI lee el mundo y
+  no lo muta.
+- `tribal/gate_f1.py`: barrido calma/crisis por semilla y veredicto de la
+  puerta F1→F2.
+- Puerta del arnés en verde (`harness gate` → `ENTORNO LISTO`) y `pytest -q`
+  cubriendo motor, puertas F0/F1, genoma, habilidades, divergencia, utilidad,
+  ambiente, tradiciones, configuración y reproducibilidad por semilla.
+
+Comandos de la fase:
+
+```bash
+uv run python -m tribal run --headless --json --ticks 600 --seed 7
+uv run python -m tribal run --headless --config docs/config-ejemplo.json --json --ticks 600
+uv run python -m tribal report culture --json
+uv run python -m tribal report telemetry --json --ticks 600 --intervalo 60
+uv run python -m tribal report gate-f1 --seeds 1-10 --ticks 8000
+```
 
 **No existe todavía (y este documento no implementa):**
 
-- Motor de reglas, individuos, instinto, saliencia (`tribal/core/`,
-  `tribal/agents/`): CORE-001 y siguientes.
-- Persistencia SQLite y esquema de stack §5 (`tribal/store/`).
-- Capa LLM: cola, cliente HTTP de Ollama, esquema JSON, selección por saliencia
-  (`tribal/llm/`). Nada de esto se usa hasta Fase 2; el diseño existe para que
-  Fase 0–1 no lo necesite. El id que usa el código es `tribal-llm` (Modelfile
-  `FROM qwen2.5:3b-instruct-q8_0` con `num_ctx 8192`; el base es solo el
-  `FROM`, no el id del cliente); el propio `tribal-llm` vive en el almacén de
-  Ollama, fuera del repo.
-- Render Pygame y telemetría (`tribal/ui/`). `pygame-ce` **no** está declarado
-  en `pyproject.toml` todavía: se añade en CORE-001.
-- Grafo de cultura (`tribal/culture/`) y export a Obsidian (`tribal/store/export.py`).
-- Índice RAG del código de producto: `agents/tools/rag_tool.py` sigue apuntando
-  a `app`; hasta que se corrija (feature aparte), `make index-rag` no indexa
-  `tribal/`.
+- Capa LLM (`tribal/llm/`): cola asíncrona, cliente HTTP de Ollama, esquema
+  JSON y selección por saliencia. Empieza en Fase 2 (`F2-001`). El id del
+  modelo es `tribal-llm` (Modelfile `FROM qwen2.5:3b-instruct-q8_0` con
+  `num_ctx 8192`), fuera del repo.
+- Persistencia SQLite (`tribal/store/`), export a Obsidian y telemetría leída
+  de una partida guardada. Fase 3 (`F3-001`, `F3-003`, `F3-004`).
+- Diario narrado, memoria colectiva persistida y consulta del grafo. Fase 2–3.
 
 ### 9.1 Qué ramas avanza F1 y con qué prácticas
 
 La puerta F1→F2 de `concepto.md` §15 pide descubrir sin LLM algo más allá del
 primer paso forzado y que la proporción divergente reaccione a la crisis. Esta
-fase cubre la primera mitad —el material—: cada rama avanza porque la tribu
-**hace** algo, no porque el motor premie un rasgo.
+sección describe el material: cada rama avanza porque la tribu **hace** algo,
+no porque el motor premie un rasgo. La medida de la puerta está en §9.3.
 
 | Rama | Práctica (verbo) | Condición | Efecto |
 |---|---|---|---|
@@ -413,9 +428,8 @@ los primeros ticks; roles cuando aparece una cría o un herido. Con eso,
 `tribal/culture/combinaciones.py` dejan de ser inalcanzables cuando un divergente
 experimenta en crisis.
 
-Lo que esta fase **no** hace es medir la puerta completa: la proporción de
-divergentes que reacciona a la crisis se mide en §9.3 (F1-005), y el
-`pct_fuera_arbol` de `objetivo.md` §3.2 (por encima del 50 %) es de Fase 3.
+La puerta completa se mide en §9.3 (F1-006); el `pct_fuera_arbol` de
+`objetivo.md` §3.2 (por encima del 50 %) sigue siendo de Fase 3.
 
 ### 9.2 La divergencia como conducta (DIVERGENCIA-002)
 
@@ -447,7 +461,7 @@ publica `descubridores` (ids que descubrieron una combinación),
 habilidad que el autor aprende al descubrir; el informe de 10 semillas de
 DIVERGENCIA-002 está en el README.
 
-### 9.3 La puerta F1→F2, medida (F1-005)
+### 9.3 La puerta F1→F2, medida (F1-006)
 
 La puerta de concepto §15 no se decide con una corrida afortunada: se mide con
 `python -m tribal report gate-f1 --seeds 1-10 --ticks 8000` (`--json` para el
@@ -525,7 +539,7 @@ la condición de régimen favorable es dependiente de escala. El default del
 juego sigue en 12 (concepto §1b); la salvedad queda documentada. `desc/c` = 0
 por construcción (los conformistas no experimentan) y `long_d` = 0 porque
 ningún descubridor murió dentro de la ventana. El diagnóstico completo está en
-`harness/progress/implementer-F1-005.md`.
+`harness/progress/implementer-F1-006.md`.
 
 ---
 
@@ -536,3 +550,8 @@ ningún descubridor murió dentro de la ventana. El diagnóstico completo está 
   §11 arquitectura, §14 riesgos, §16 decisiones abiertas.
 - `vault/01_PROYECTO/stack-tecnologico.md` — §2 hardware, §3 datos, §5 esquema,
   §8 herramientas y concurrencia del LLM.
+- `README.md` — comandos de Fase 1 (`run`, `report culture`,
+  `report telemetry`, `report gate-f1`), config de ejemplo y barrido de la
+  puerta F1→F2.
+- `harness/progress/implementer-F1-006.md` — diagnóstico, mutaciones y salida
+  literal que respaldan la puerta.

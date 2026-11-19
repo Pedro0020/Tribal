@@ -943,3 +943,45 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 47 so
 ```
 
 </details>
+
+## HARD-1 — Endurecimiento tras Fase 1: semilla, telemetria y docs
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 255 passed in 151.14s (0:02:31)
+- **Cambios:** tribal/sim.py (run_muestreado y Simulacion.muestra: telemetria por intervalo); tribal/cli.py (report telemetry con --seed/--ticks/--intervalo/--config/--crisis y tabla legible); tests/test_semillas.py (nuevo, 10 semillas con dos subprocess) y tests/test_telemetria.py (nuevo); README (Estado tras Fase 1 + telemetria, numeros recalculados); vault/01_PROYECTO/arquitectura.md (§9/§10 estado real y comandos)
+- **Decisiones:** La reproducibilidad se comprueba donde duele: en procesos distintos y comparando bytes, no solo claves; y se complementa con la config no-default. La telemetria muestrea por intervalo y se contrasta contra run(N) en los extremos, de modo que una fila no pueda inventarse. README y arquitectura se regeneran con los comandos ejecutados y se comprobaron byte a byte por el reviewer; §9 solo lista modulos que existen. No se toco ningun mecanismo: el diff de core/agents/culture esta vacio (insercion pura en sim/cli). Deuda anotada: project.yml sigue en 0.1.0 mientras pyproject va por 0.1.19 (doctor lo canta) y el epigrafe 'Ejecutar (Fase 0)' del README sobrevive bajo 'Estado tras Fase 1'; ambos se cierran en HARD-3.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 255 passed
+
+$ uv run pytest tests/test_semillas.py -q
+10 passed in 14.98s
+  parametrizado range(1,11): dos subprocess de `-m tribal run --headless --json --ticks 600 --seed N`
+  con assert primera.stdout == segunda.stdout (bytes) y comparacion con el resumen in-process
+
+$ uv run python -m tribal report telemetry --json --seed 42 --ticks 600 --intervalo 60
+10 muestras (60..600, no 600 filas) con tick, poblacion, divergentes, conformistas, neutros,
+nodos, aristas, media_energia y media_sed
+  tick 60  -> 12/3/7/2/15/12/75.56/20.6   = run(60,42)
+  tick 600 -> 16/3/8/5/30/27/75.23/34.51  = run(600,42)
+dos ejecuciones byte-identicas; sin --json, tabla legible
+bordes: --ticks 130 -> 60/120/130 ; --intervalo 0 y --ticks 0 -> exit 2
+
+$ README y arquitectura
+JSON de 600 ticks byte-identico al stdout real; seed 7 benchmark y seed 2/3000 identicos;
+report culture (30 nodos, 27 aristas, 23.3 %) y gate-f1 (7/10, 7/10, PRIMARIA True) coinciden
+docs/config-ejemplo.json = el JSON del README ; §9 solo lista lo que existe (llm/ y store/ aun no)
+
+$ uv run pytest -q
+811 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 49 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 49 source files
+$ git diff tribal/core tribal/agents tribal/culture -> vacio (sin cambios de mecanismo)
+```
+
+</details>
