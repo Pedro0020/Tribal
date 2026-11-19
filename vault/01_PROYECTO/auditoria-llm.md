@@ -82,6 +82,9 @@ por partida, de las que el LLM decide decenas).
     contradicen el presupuesto de `stack §8` (`num_predict ≤ 32`).
   - El modelo es **único** para los tres roles (decidir, narrar, inventar). No
     hay separación de modelos ni de parámetros por rol.
+  - El modelo base es de la generación **Qwen2.5** (una generación por detrás
+    del estado del arte local de 2026). El catálogo de candidatos y el veredicto
+    de sustitución están en §9.
 
 ### 2.2 El transporte — `tribal/llm/http.py`
 - `Transporte = Callable[(método, url, cuerpo, timeout) -> (estado, bytes)]`,
@@ -362,9 +365,9 @@ alcance.
   gravedad del dilema. *Criterio:* el router elige el modelo correcto en cada
   nivel; un test lo verifica con backends falsos.
 - **G2 — Modelos separados por rol.** Un modelo pequeño/rápido para decidir
-  (3B, temp 0.3) y otro más creativo para narrar/inventar (p. ej.
-  `gemma-3-4b-it`, temp 0.7–0.9). *Criterio:* narrar y decidir usan modelos
-  distintos; `llm selfcheck` lo reporta.
+  (temp 0.3) y otro más potente/creativo para narrar/inventar (temp 0.7–0.9).
+  Los candidatos concretos y el veredicto están en §9. *Criterio:* narrar y
+  decidir usan modelos distintos; `llm selfcheck` lo reporta.
 - **G3 — Offload VRAM+RAM.** Evaluar un modelo mayor (7–8B) con capas en CPU
   (offload, como hacen los repos de `llama.cpp` / `num_gpu` de Ollama),
   combinando VRAM y RAM. *Criterio:* el modelo potente corre sin pasarse de la
@@ -438,6 +441,10 @@ memoria (D) un lugar natural donde vivir.
 Dependencias clave: F depende de E (hay que tener canal de innovación antes de
 que las categorías emerjan); G3 depende de H2 (la decisión de modelo).
 
+**Camino nube (alternativa, §10):** O1–O5 (optimizar tokens) → N1 (adapter) →
+N2 (proveedor) → N3 (medir coste). Se activa solo si se quiere el PC aparte; la
+optimización de tokens (O*) también beneficia al camino local.
+
 ---
 
 ## 7. Decisiones pendientes (cuando se retome)
@@ -447,9 +454,11 @@ que las categorías emerjan); G3 depende de H2 (la decisión de modelo).
 - ¿Se corrige `MAX_TOKENS` a 32 (stack §8) o se actualiza stack? (§2.1)
 - ¿El KPI se redefine a "% fuera del seed" (F4) o se mantiene "% fuera del
   árbol" y solo se añade `origen=llm` (E1)? (§2.18, §4)
-- ¿Salto a 7–8B con offload, o se queda el 3B y se separan roles? (§G3/H2)
+- ¿Salto a `qwen3:8b`/`qwen3.5:9b` con offload, o se queda el 3B y se separan
+  roles? Ver §9 (catálogo) y §H2 (medir antes de decidir).
 - ¿Las ramas emergentes (F) son una feature nueva o una reescritura de
   `arbol.py`? Implica tocar `RAMAS`, `ARBOL`, `propuestas.py` y el KPI a la vez.
+- ¿Nube como sustituta (solo nube) o híbrida (router local+nube, §G)? Ver §10.
 
 ---
 
@@ -464,7 +473,369 @@ que las categorías emerjan); G3 depende de H2 (la decisión de modelo).
 
 ---
 
-## 9. Apéndice: referencias de código (índice)
+## 9. Catálogo de modelos candidatos (nov 2026)
+
+> Datos a 2026-11-19, de fuentes públicas (Ollama library, MTEB/MMLU, guías de
+> VRAM por tier). **El paisaje cambia rápido: re-verificar antes de decidir**
+> (igual que pide `stack §2`). Los tamaños son Q4_K_M salvo que se indique otro.
+> La columna "Español" es cualitativa y debe confirmarse con el plan de §H.
+
+### 9.1 Criterios de selección para "lo nuestro"
+
+1. **Local y Ollama** (HTTP + `format` JSON schema).
+2. **RTX 2060 6 GB VRAM** + ~6.9 GB RAM libre (stack §2); offload VRAM→RAM
+   aceptable para el nivel potente.
+3. **Español de calidad** (narración y diálogo son en español).
+4. **Salida estructurada** (el contrato "candidatas → elige → valida" depende
+   del JSON schema).
+5. **Modo "thinking"** para el nivel profundo (razonar, inventar, mito).
+6. **Dos niveles** (visión multi-nivel, §G): pequeño/rápido para decidir y
+   potente/creativo para narrar/inventar.
+
+### 9.2 Nivel 1 — pequeño y rápido (decidir, temp 0.3)
+
+| Modelo | Tag Ollama | VRAM (Q4) | Español | Thinking | Veredicto |
+|---|---|---|---|---|---|
+| **Qwen3.5 4B** | `qwen3.5:4b` | ~3.4 GB | Muy bueno | Sí | **Recomendado** |
+| Qwen2.5 3B (actual) | `tribal-llm` | ~3.6 GB (Q8) | Bueno | No | Reemplazar |
+| Qwen3 4B | `qwen3:4b` | ~3 GB | Muy bueno | Sí | Bueno, 1 gen atrás |
+| Phi-4 mini | `phi4-mini` | ~2.5 GB | Bueno | No | KV cara (~1 GB/8K) |
+| Granite 4.1 3B | `granite4.1:3b` | ~2.1 GB | Medio | No | KV barata, tool calling |
+| Llama 3.2 3B | `llama3.2:3b` | ~2.0 GB | Medio | No | Solo si algo exige Llama |
+
+### 9.3 Nivel 2 — potente y creativo (narrar, inventar, mito, temp 0.7–0.9)
+
+| Modelo | Tag Ollama | VRAM (Q4) | Español | Thinking | Veredicto |
+|---|---|---|---|---|---|
+| **Qwen3 8B** | `qwen3:8b` | ~4.6 GB | Muy bueno | Sí | **Recomendado (cabe, o offload mínimo)** |
+| Qwen3.5 9B | `qwen3.5:9b` | ~6.6 GB | Muy bueno | Sí | Offload obligado (excede 6 GB) |
+| Gemma 3 4B | `gemma3:4b` | ~3.3 GB | Bueno | No | Creativo, 1 gen atrás |
+| Gemma 4 E2B QAT | `gemma4:e2b-it-qat` | ~4.3 GB | Bueno | No | Lento; solo tag QAT |
+| DeepSeek-R1 8B | `deepseek-r1:8b` | ~5.2 GB | Medio | Sí (CoT) | Razona, pero exige contexto (mal en 6 GB) |
+| Ornith 9B | `ornith:9b` | ~5.6 GB | ? | Sí | Agentic; offload y lento |
+
+### 9.4 Embeddings (en CPU)
+
+| Modelo | Tag | Descarga | Dims | MTEB multilingüe | Veredicto |
+|---|---|---|---|---|---|
+| Qwen3-Embedding 0.6B (actual) | `qwen3-embedding:0.6b` | 639 MB | 1024 | 64.33 | **Mantener** |
+| Qwen3-Embedding 4B | `qwen3-embedding:4b` | 2.5 GB | 2560 | 69.45 | Subir si la memoria crece |
+
+### 9.5 Veredicto — el que mejor se adapta
+
+**`qwen3.5:4b` (nivel 1) es el modelo que mejor se adapta a lo nuestro**, por:
+
+1. **Continuidad**: misma familia Qwen que el actual `qwen2.5:3b` → el JSON
+   schema y el español ya están probados en el proyecto (`viabilidad-modelo.md`).
+2. **Piensa de verdad**: modo "thinking" nativo (la pieza que falta para el
+   razonamiento por profundidad, §B).
+3. **Cabe holgado**: ~3.4 GB deja ~2 GB de VRAM para KV cache y contexto, con
+   margen para el freno térmico (§G4).
+4. **Es el consenso 2026 para 6 GB**: MMLU-Pro 79.1, tool calling, visión y
+   262K de contexto nativo.
+
+Para el **nivel 2** (narrar, inventar, mito), el salto natural es **`qwen3:8b`
+(Q4, ~4.6 GB)**: cabe en 6 GB con contexto corto o hace offload mínimo a RAM, y
+es un salto de calidad real (Qwen3-4B ya rivaliza con Qwen2.5-72B en parte de
+los benchmarks). Si se quiere más, `qwen3.5:9b` exige offload y es la opción de
+compromiso.
+
+> **No se instala nada sin medir.** Antes de sustituir `tribal-llm`, correr el
+> plan de §H contra el 3B actual y contra `qwen3.5:4b`/`qwen3:8b` y decidir con
+> números (acierto, latencia, coherencia del español), no con fe.
+
+### 9.6 Notas técnicas que condicionan la elección
+
+- **Salida estructurada + thinking**: históricamente incompatibles en Ollama
+  (issue #10538); con Qwen3 ya funciona, pero es un punto de fricción conocido.
+  Para el nivel 1 (decidir, temp 0.3) el thinking debe estar **apagado**; solo el
+  nivel 2 lo necesita.
+- **Cuenta de KV cache**: no todo es el tamaño del modelo. Phi-4 mini cuesta
+  ~1 GB de KV por 8K de contexto; Granite es la más barata (~80 KiB/token). Con
+  6 GB, el contexto y el KV importan tanto como los pesos.
+- **Modelos de razonamiento (DeepSeek-R1)**: emiten trazas largas de thinking y
+  necesitan el máximo de contexto libre, justo lo que menos tiene una 6 GB. Se
+  descartan para este hardware.
+- **Cuantización**: el actual usa `q8_0` (3B). Para 4B/8B en 6 GB la práctica es
+  `q4_K_M`. Revisar si la pérdida de calidad en narración justifica subir a
+  `q8_0` y pagar offload.
+- **Co-residencia de modelos**: los dos LLMs no caben juntos en VRAM
+  (3.4 + 4.6 ≈ 8 GB > 6 GB). Estrategia **A** —un solo modelo (`qwen3.5:4b`)
+  con modos por rol (`thinking`/sampling)—, o **B** —4B residente + 8B bajo
+  demanda con `keep_alive` corto (paga 2–4 s de recarga solo en narración e
+  invención, que son raras). El embedding va siempre en CPU y no compite.
+
+### 9.7 Técnicas y modelos especializados (prior art)
+
+> Otros ya han resuelto estos problemas. El proyecto no está solo: hay dos
+> referencias directas y una familia de modelos y técnicas especializadas.
+
+#### 9.7.1 La arquitectura que resuelve exactamente esto — Generative Agents (Stanford, 2023)
+
+"Generative Agents: Interactive Simulacra of Human Behavior" (Park et al.,
+arxiv 2304.03442) es el antecedente canónico de un "sistema vivo que piensa,
+recuerda y planifica". Su arquitectura de tres piezas es el blueprint del §B/§D:
+
+| Pieza | Qué hace | En Tribal hoy |
+|---|---|---|
+| **Memory stream** | Registro de observaciones con timestamp de creación y último acceso | `recuerdos` (índice) — existe, pero sin contenido ni recencia |
+| **Reflection** | Sintetiza memorias en abstracciones de nivel superior (árbol de reflexiones) | **No existe** — es la pieza que falta para "profundizar" |
+| **Planning** | Plan amplio descompuesto recursivamente, revisable ante novedades | `intencion_llm` (1 paso) — no hay plan |
+| **Retrieval** | recency × importance × relevance (decay 0.995) | `IndiceRecuerdos.buscar` (solo coseno, sin recencia ni importancia) |
+
+Puntos clave (y un par de coincidencias con lo que ya haces):
+
+- El **decay 0.995** de su retrieval es el mismo patrón que
+  `saliencia.DECAIMIENTO = 0.999` — tu instinto ya iba por ahí.
+- La **reflection** se dispara cuando la suma de importancias de los eventos
+  recientes supera un umbral (150 en el paper): un "cuándo pensar" mucho más
+  rico que tu `_hay_dilema` (dos condiciones AND).
+- La **ablación** del paper demostró que quitar memoria, reflexión o
+  planificación degrada la credibilidad: es evidencia de que el bucle cerrado
+  (§D) no es opcional sino estructural.
+
+#### 9.7.2 El antecedente directo de "civilización emergente" — Project Sid (Altera, 2024)
+
+"Project Sid: Many-agent simulations toward AI civilization" (arxiv 2411.00114)
+simula 10–1000+ agentes (en Minecraft) que desarrollan **roles especializados,
+adaptan reglas colectivas y transmiten cultura**. Es la demostración de que la
+visión de "las ramas y las eras emergen" (§F) es alcanzable y ya se ha hecho a
+escala. Vale como referencia para no reinventar el mecanismo.
+
+#### 9.7.3 Modelos especializados para estas tareas
+
+El contrato "candidatas → elige → valida" es, en el fondo, **function/tool
+calling** (elegir una de N acciones válidas). Hay modelos afinados exactamente
+para eso, y modelos de rol/narración:
+
+| Modelo | Base / tag | Especialidad | Relevancia para Tribal |
+|---|---|---|---|
+| `nemotron-mini` | 4B | Roleplay + RAG QA + function calling | Interesante para diálogo/NPC |
+| `command-r7b` | 7B | Tool use, RAG | Candidato para decidir |
+| `functiongemma` | Gemma 3 270M | Function calling | Diminuto; solo como curiosidad |
+| `lfm2.5` | 8B-A1B | Tool calling en hardware de consumo | Candidato edge |
+| `firefunction-v2` | Llama 3 70B | Function calling | Demasiado grande para 6 GB |
+| Hermes 3 (Nous) | — | Ficción, roleplay, worldbuilding, diálogo | Para cronista/inventor (baja negativa) |
+| Dolphin | — | Low-refusal | Para mito/narración sin auto-censura |
+
+Benchmark de referencia: **BFCL** (Berkeley Function-Calling Leaderboard), que
+mide "elige la acción correcta" — justo lo que evalúa el contrato del proyecto.
+
+#### 9.7.4 Qué significa para la hoja de soluciones (§4)
+
+1. **La reflection es lo que convierte "elige" en "piensa".** Añadirla a §D:
+   cuando la importancia acumulada de los hitos supera un umbral, el individuo
+   genera una reflexión que se guarda como recuerdo de nivel superior. Es el
+   mecanismo de "profundizar" del que habla el objetivo.
+2. **La retrieval debe ser recency × importance × relevance**, no solo coseno.
+   Hoy `IndiceRecuerdos` es puro coseno; añadir recencia e importancia es barato
+   y está validado por el paper.
+3. **Hay modelos especializados** (function calling, roleplay, low-refusal) que
+   pueden sustituir o complementar a Qwen por rol, en vez de un generalista para
+   todo. Revisar §9.5 a la luz de §9.7.3 antes de fijar el veredicto.
+
+### 9.8 Referencias (verificadas 2026-11-19)
+
+- Ollama library (tags y tamaños de descarga).
+- Guías de VRAM por tier 2026 (6 GB: `qwen3.5:4b` como ganador; Qwen3 8B ~4.6 GB Q4).
+- MTEB multilingüe (Qwen3-Embedding 0.6B/4B/8B).
+- MMLU-Pro de Qwen3.5-4B.
+- Informe técnico Qwen3 (0.6B–32B densos; 30B-A3B y 235B-A22B MoE).
+- Creative writing 2026 (Gemma 4 31B / Qwen3.8-27B son los mejores, fuera de
+  rango para 6 GB).
+
+---
+
+## 10. Opción nube — LLM de pago (complementario, futuro)
+
+> Estado: opción a futuro, para ejecutar Tribal en una máquina **sin GPU ni
+> Ollama**. Complementa al local (§9), no lo sustituye por defecto. No se
+> implementa ahora; se documenta para decidirlo y valorarlo cuando toque.
+
+### 10.1 Objetivo
+
+- Ejecutar Tribal en un PC aparte que **no puede correr un LLM local** (sin GPU,
+  sin Ollama, o con RAM insuficiente).
+- Opcionalmente, acceder a modelos **mejores** que el 3B local (los modelos de
+  pago superan a `qwen3.5:4b` en español, razonamiento y narración).
+- Mantener **intacto** todo lo que no sea "quién responde al prompt": reglas,
+  grafo, saliencia, instinto, validación y el determinismo de la física.
+
+### 10.2 La buena noticia: ya está casi preparado
+
+La capa LLM ya separa lo que cambia de lo que no:
+
+| Pieza | ¿Cambia con nube? |
+|---|---|
+| `esquema.py` (prompts + JSON schema) | **No** — reutilizable tal cual |
+| `decision.py` (validar/corregir) | **No** |
+| `candidatas.py` (filtro 2–4) | **No** |
+| `cola.py` (async, ventana de validez) | **No** (quizá subir el timeout) |
+| `http.py` (transporte) | **Sí** — protocolo y sobre distintos |
+| `cliente.py` (construye cuerpo de Ollama) | **Sí** — cuerpo y sobre distintos |
+
+`stack §12` ya lo anticipó: "enrutado local + nube con fallback al local, diferido".
+
+### 10.3 Qué valorar cuando se haga (checklist)
+
+1. **Protocolo.** El estándar de facto es OpenAI-compatible
+   (`/v1/chat/completions`). Casi todos (OpenRouter, Groq, Together, Mistral,
+   DeepSeek…) lo hablan.
+2. **Salida estructurada.** El equivalente al `format` de Ollama es
+   `response_format: {type: "json_schema", ...}` (o `json_object`). Verificar que
+   el proveedor lo soporta **y** que el modelo respeta el schema.
+3. **Latencia de red.** La local mide ~1 s; la nube 0.5–2 s+ y añade red. Subir
+   el timeout de 3 s a ~15–30 s y revisar la ventana de validez (180 ticks): una
+   decisión tardía ya se descarta y manda el instinto (eso ya funciona).
+4. **Coste.** Muchas llamadas pequeñas (prompt corto + respuesta ~64 tokens). El
+   salience gating y `max_en_vuelo=4` ya racionan, pero hay que **medir**
+   tokens/petición y coste por partida antes de fiarse.
+5. **Rate limits.** El presupuesto en vuelo ayuda; añadir backoff si el proveedor
+   devuelve 429.
+6. **Privacidad.** El estado de la tribu (números + textos) va a un tercero. No es
+   sensible, pero hay que decidir qué se manda. `agents/redaction.py` ya tapa
+   credenciales; aplicarlo a lo que salga.
+7. **Autenticación.** La API key va en `.env` (nunca en git). Reusar el patrón de
+   `.env.example` y el redactor.
+8. **Determinismo.** La nube es no determinista (temp > 0). Los tests siguen con
+   `--llm stub`/`backend_falso`; la nube es solo para partidas reales.
+9. **Disponibilidad del modelo.** Español, JSON schema y razonamiento cambian por
+   proveedor; verificar con §H antes de elegir.
+10. **Flag de proyecto.** `project.yml` tiene `use_api: false`; habría que pasarlo
+    a `true` y que los agentes lo lean (ya lo consultan).
+
+### 10.4 Diseño propuesto (adapter de proveedor)
+
+- Introducir un **adapter** que normalice a OpenAI-compatible, compartiendo
+  `esquema/decision/cola`:
+  - `OllamaProveedor` (actual, default local).
+  - `NubeProveedor` (OpenAI-compatible, con `base_url` + API key).
+  - `OpenCodeProveedor` (HTTP API de OpenCode, modelos `*-free`; ver §10.9).
+- CLI: `run --llm {off, stub, http, nube, opencode}` o `--proveedor
+  {ollama, openai, opencode}`.
+- La nube puede ser **sustituta** (solo nube) o **híbrida** (router §G: local
+  para decidir, nube para narrar/inventar). Ambas salen del mismo adapter.
+
+### 10.5 Candidatos de proveedor (orden de preferencia sugerido)
+
+| Proveedor | OpenAI-compatible | JSON schema | Español | Nota |
+|---|---|---|---|---|
+| **OpenRouter** | Sí | Sí | Según modelo | Un punto a muchos modelos; pago por uso |
+| Groq | Sí | Sí | Bueno | Muy rápido, tier gratis |
+| OpenAI | Sí | Sí | Bueno | Referencia de calidad |
+| Anthropic | Parcial | Sí | Bueno | Protocolo propio |
+| Google Gemini | Parcial | Sí | Bueno | Protocolo propio |
+| Mistral / DeepSeek | Sí | Sí | Bueno | Más baratos |
+
+> Default sugerido: **OpenRouter** (agnóstico, OpenAI-compatible, un solo
+> contrato para probar varios modelos, pago por uso). La elección final se decide
+> con §H (medir calidad, latencia y coste) cuando se active la opción.
+
+### 10.6 Cómo se convertiría en features (ids N*)
+
+- **N1 — Adapter de proveedor.** Un `Proveedor` con backends Ollama,
+  OpenAI-compatible y OpenCode, compartiendo `esquema/decision/cola`. *Criterio:*
+  la misma partida con `--llm stub` es idéntica con cualquiera de los backends;
+  cada sobre (Ollama / OpenAI / OpenCode) se desenvuelve a la misma `Decision`.
+- **N2 — Selección de proveedor y modelo.** `--proveedor` + `--modelo` + API key
+  desde `.env`. *Criterio:* `llm selfcheck` reporta el proveedor, el modelo y si
+  la clave está configurada (sin imprimirla).
+- **N3 — Coste y latencia visibles.** Contar tokens/petición y latencia, y
+  exponerlos en `resumen()` como ya se hace con la cola. *Criterio:* el resumen
+  incluye coste estimado y latencia media por proveedor.
+
+### 10.7 Decisión abierta
+
+- ¿Sustituir (solo nube) o híbrido (router local+nube, §G)? Ambas salen del mismo
+  adapter; la híbrida es más trabajo y es la que aprovecha el router de §G.
+
+### 10.8 Fase de optimización de tokens (uso y prompts)
+
+> Obligatoria antes de (o junto con) activar la nube de pago: cada token se paga.
+> Beneficia también al local: menos tokens = más rápido y menos presión de VRAM.
+
+**Primero medir (baseline).** Antes de optimizar, fijar tokens-in, tokens-out y
+coste por partida (esto es N3). Sin baseline no se puede saber si una palanca
+sirvió.
+
+**Palancas (ids O*):**
+
+- **O1 — Prompt comprimido y cache-friendly.** System prompt mínimo y estable;
+  few-shot reducido a lo imprescindible (1 ejemplo o ninguno si el modelo es
+  bueno). Un prefijo (system + few-shot) **byte-idéntico entre llamadas** habilita
+  el *prefix caching* del proveedor (OpenAI/Anthropic) y abarata los tokens de
+  entrada repetidos. *Criterio:* el prefijo es idéntico entre llamadas y su tamaño
+  en tokens baja mediblemente.
+- **O2 — Estado compacto.** `estado_para` serializa solo lo relevante para el
+  dilema, en notación compacta (no un JSON verboso con claves largas). *Criterio:*
+  el prompt de decisión baja de tamaño sin bajar el acierto (§H).
+- **O3 — Tope de respuesta y de thinking.** `max_tokens` bajo (32 para decidir),
+  `razon`/`dialogo` con tope de longitud (el motor ya valida textos; añadir
+  `maxLength`), y **thinking apagado** en nivel 1 (solo nivel 2, con tope de
+  tokens de thinking). Es la palanca más grande: los tokens de *thinking* de un
+  modelo razonador se pagan y no se usan. *Criterio:* la respuesta de decisión
+  nunca excede N tokens; el thinking solo aparece en narración/invención y está
+  acotado.
+- **O4 — Recuerdos acotados.** La memoria inyecta top-1 (o top-3 truncado a X
+  palabras), no texto completo. *Criterio:* el contexto de memoria cabe en un
+  presupuesto fijo de tokens.
+- **O5 — Menos llamadas (coalescencia).** Reusar la decisión anterior si el estado
+  no cambió; no llamar para lo que el instinto ya resuelve; narrar solo hitos de
+  peso. *Criterio:* el nº de peticiones por partida baja sin cambiar los resultados
+  clave.
+
+**Validación:** re-medir con §H (acierto) y N3 (coste) para comprobar que el coste
+baja sin bajar la calidad. Un test puede comparar "coste por partida antes y
+después" con un backend falso que cuente tokens.
+
+> **Nota de ejecución:** al hacer esta fase (y la de evaluación de modelos, §H),
+> buscar primero **skills reutilizables** —optimización de prompts, reducción de
+> coste de tokens, prompt-engineering— en lugar de partir de cero (`find-skills`
+> o el catálogo de skills del arnés). Investigarlo **en el momento de ejecutar**,
+> no ahora.
+
+### 10.9 Vía OpenCode API — modelos free del asistente (tercera opción)
+
+OpenCode expone un HTTP API desde su servicio de fondo (documentado en
+`opencode.ai/docs/api`) que permite generación de texto con los modelos
+configurados — incluidos los `*-free`. Es una tercera opción para la simulación,
+además de Ollama local y API cloud de pago.
+
+**Endpoints relevantes:**
+
+- `POST /api/experimental/generate/text` — generación de una sola vez.
+- `POST /api/session/{id}/prompt` — mensaje dentro de una sesión.
+- `POST /api/experimental/generate/decisions` — decisiones con preguntas de
+  opción (parecido al contrato "candidatas → elige").
+
+**Matices (no es "clave y listo"):**
+
+1. **Experimental**: los endpoints están marcados `experimental` y pueden
+   cambiar entre versiones de OpenCode.
+2. **No es OpenAI-compatible**: formato propio; necesita el adapter N1.
+3. **Lo sirve el servicio de fondo de OpenCode**, con su autenticación (la del
+   TUI). Requiere OpenCode corriendo y conectado; no es un endpoint público con
+   clave.
+4. **Pensado para integraciones**, no para inferencia a 60 fps de alto volumen.
+
+**Qué verificar en la práctica (no asumir):**
+
+- El request/response exacto de `/api/experimental/generate/text`.
+- Que acepta los modelos `*-free` (p. ej. `opencode/deepseek-v4.1-flash-free`).
+- Latencia y límites de uso (`/api/experimental/usage/limits`).
+- Si soporta salida estructurada (equivalente al `format`/`response_format`).
+
+**Cómo encaja:** es un tercer backend del adapter N1 (`OpenCodeProveedor`). Para
+el PC aparte sin GPU sería la opción **gratis** (si el servicio de OpenCode corre
+ahí), frente a la nube de pago.
+
+**Distinción clave (no confundir):** los modelos free son el motor interno del
+asistente. Acceder a ellos desde la simulación solo es posible **a través del
+HTTP API de OpenCode**, no como una API cloud normal.
+
+---
+
+## 11. Apéndice: referencias de código (índice)
 
 | Tema | Archivo | Símbolo |
 |---|---|---|
