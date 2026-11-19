@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, cast, get_args
 
 from tribal.core.acciones import NombreAccion
+from tribal.culture.arbol import RAMAS
 
 #: Vocabulario real del motor; no se duplican los strings a mano.
 ACCIONES: tuple[str, ...] = get_args(NombreAccion)
@@ -69,6 +70,32 @@ ESQUEMA_NARRACION: dict[str, Any] = {
     "type": "object",
     "properties": {"texto": {"type": "string"}},
     "required": ["texto"],
+    "additionalProperties": False,
+}
+
+#: Inventor de concepto §10: propone un cruce, no escribe en el grafo.
+SISTEMA_PROPUESTA = (
+    "Eres un inventor de una tribu paleolítica. Propón una técnica nueva que "
+    "combine exactamente dos técnicas que ya están activas, de la misma rama o "
+    "de ramas adyacentes. No propongas una técnica que ya exista. Devuelve solo "
+    "un objeto JSON con los campos id, rama, requisitos, titulo y contenido."
+)
+#: JSON schema de la propuesta. El motor valida la plausibilidad después.
+ESQUEMA_PROPUESTA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string"},
+        "rama": {"type": "string", "enum": list(RAMAS)},
+        "requisitos": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 2,
+            "maxItems": 2,
+        },
+        "titulo": {"type": "string"},
+        "contenido": {"type": "string"},
+    },
+    "required": ["id", "rama", "requisitos", "titulo", "contenido"],
     "additionalProperties": False,
 }
 
@@ -204,5 +231,26 @@ def construir_prompt_narracion(
             "role": "user",
             "content": f"Hito: {hito}\nEstado: {estado}\nEscribe una sola frase y responde "
             "con el JSON del esquema.",
+        },
+    ]
+
+
+def construir_prompt_propuesta(contexto: Mapping[str, Any] | str) -> list[dict[str, str]]:
+    """Mensajes de `/api/chat` para el inventor: nodos activos y qué ya existe.
+
+    El contexto es plano y serializable (ids y ramas), nunca objetos vivos del
+    mundo: el modelo propone y el motor valida con el grafo de este tick.
+    """
+    estado = (
+        contexto
+        if isinstance(contexto, str)
+        else json.dumps(contexto, ensure_ascii=False, sort_keys=True)
+    )
+    return [
+        {"role": "system", "content": SISTEMA_PROPUESTA},
+        {
+            "role": "user",
+            "content": f"Estado: {estado}\nPropón un nodo nuevo y responde con el JSON del "
+            "esquema.",
         },
     ]

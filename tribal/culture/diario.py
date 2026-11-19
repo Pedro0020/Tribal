@@ -32,12 +32,18 @@ TIPOS: tuple[str, ...] = get_args(TipoEntrada)
 
 @dataclass(slots=True)
 class Entrada:
-    """Un hecho del diario. `narrada` dice si la frase la puso el LLM."""
+    """Un hecho del diario. `narrada` dice si la frase la puso el LLM.
+
+    `individuo_id` es el sujeto del hecho y `narrador_id` quien lo cuenta: la
+    saliencia decide el segundo (concepto §10b), y solo las entradas con
+    `narrador_id` cuentan para la concentración narrativa.
+    """
 
     tick: int
     tipo: str
     texto: str = ""
     individuo_id: int | None = None
+    narrador_id: int | None = None
     narrada: bool = False
 
     def a_json(self) -> dict[str, Any]:
@@ -46,6 +52,7 @@ class Entrada:
             "tipo": self.tipo,
             "texto": self.texto,
             "individuo_id": self.individuo_id,
+            "narrador_id": self.narrador_id,
             "narrada": self.narrada,
         }
 
@@ -62,12 +69,21 @@ class Diario:
         tipo: str,
         *,
         individuo_id: int | None = None,
+        narrador_id: int | None = None,
         texto: str = "",
     ) -> int:
         """Anota la entrada y devuelve su índice, que es lo que luego se narra."""
         if tipo not in TIPOS:
             raise ValueError(f"tipo de entrada desconocido: {tipo!r}")
-        self.entradas.append(Entrada(tick=tick, tipo=tipo, texto=texto, individuo_id=individuo_id))
+        self.entradas.append(
+            Entrada(
+                tick=tick,
+                tipo=tipo,
+                texto=texto,
+                individuo_id=individuo_id,
+                narrador_id=narrador_id,
+            )
+        )
         return len(self.entradas) - 1
 
     def narrar(self, indice: int, texto: str) -> bool:

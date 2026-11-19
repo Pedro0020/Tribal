@@ -22,11 +22,13 @@ from typing import Any, Literal
 from tribal.llm.esquema import (
     EJEMPLOS,
     ESQUEMA_NARRACION,
+    ESQUEMA_PROPUESTA,
     ESQUEMA_RESPUESTA,
     Decision,
     ErrorValidacion,
     construir_prompt,
     construir_prompt_narracion,
+    construir_prompt_propuesta,
     validar,
 )
 from tribal.llm.http import Transporte, transporte_http
@@ -67,6 +69,15 @@ class ResultadoNarracion:
 
     estado: Estado
     texto: str = ""
+    motivo: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoPropuesta:
+    """Lo que devuelve `proponer`: el JSON crudo que el motor validará."""
+
+    estado: Estado
+    propuesta: dict[str, Any] | None = None
     motivo: str | None = None
 
 
@@ -169,6 +180,37 @@ class ClienteLLM:
         if isinstance(texto, ErrorValidacion):
             return ResultadoNarracion("error", motivo=texto.motivo)
         return ResultadoNarracion("ok", texto=texto)
+
+    def proponer(self, contexto: Mapping[str, Any] | str) -> ResultadoPropuesta:
+        """Pide una combinación nueva; nunca lanza, como `decidir` y `narrar`.
+
+        Aquí solo se comprueba que la respuesta sea un objeto JSON. La
+        plausibilidad la decide `tribal.culture.propuestas` con el grafo del
+        tick: el cliente no conoce el catálogo ni puede ampliarlo.
+        """
+        cuerpo: dict[str, Any] = {
+            "model": self.modelo,
+            "messages": construir_prompt_propuesta(contexto),
+            "format": ESQUEMA_PROPUESTA,
+            "stream": False,
+            "options": {"temperature": TEMPERATURA, "num_predict": MAX_TOKENS * 2},
+        }
+        try:
+            estado, bruto = self._transporte(
+                "POST", f"{self.endpoint}/api/chat", cuerpo, self.timeout
+            )
+        except Exception as exc:  # conexión rechazada, timeout, transporte roto
+            return ResultadoPropuesta("degradado", motivo=f"transporte: {exc}")
+
+        if estado != 200:
+            return ResultadoPropuesta("degradado", motivo=f"http {estado}")
+
+        datos = _mensaje_json(bruto)
+        if isinstance(datos, ErrorValidacion):
+            return ResultadoPropuesta("error", motivo=datos.motivo)
+        if not isinstance(datos, Mapping):
+            return ResultadoPropuesta("error", motivo="la propuesta no es un objeto JSON")
+        return ResultadoPropuesta("ok", propuesta=dict(datos))
 
     def intercambiar(self, cuerpo: Mapping[str, Any]) -> Resultado:
         """POST `/api/chat` con un cuerpo ya construido; nunca lanza.

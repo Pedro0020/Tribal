@@ -4,8 +4,8 @@ tribal.cli — punto de entrada del proyecto: `python -m tribal` o `make run`.
 argparse de la stdlib. `hello` se mantiene como humo del renombrado; `run`
 arranca la simulación en ventana o en modo headless, `report culture` resume
 el árbol de conocimiento de una corrida headless corta, `report diary` publica
-los últimos hitos narrados y `report gate-f1` publica el barrido de la puerta
-F1→F2 con su veredicto.
+los últimos hitos narrados y `report gate-f1` / `report gate-f2` publican los
+barridos de las puertas F1→F2 y F2→F3 con su veredicto.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from tribal.gate_f1 import (
     medir_barrido,
     parsear_semillas,
 )
+from tribal.gate_f2 import SEMILLAS_PUERTA_F2, TICKS_PUERTA_F2, medir_puerta
 from tribal.llm.cliente import (
     ENDPOINT_POR_DEFECTO,
     MODELO_POR_DEFECTO,
@@ -269,6 +270,61 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gate.add_argument("--json", action="store_true", help="Barrido como un único objeto JSON.")
 
+    gate_f2 = informes.add_parser(
+        "gate-f2",
+        help="Puerta F2→F3: nodos fuera del árbol propuestos por el LLM y narración.",
+        description=(
+            "Corre una partida por semilla con un backend guionizado determinista y "
+            "publica nodos totales y por origen, nodos fuera del árbol con autor y "
+            "tick, porcentaje fuera del árbol, narraciones por individuo, concentración "
+            "top-3 y el veredicto. Los valores por defecto son los de la puerta: "
+            f"{SEMILLAS_PUERTA_F2[0]}-{SEMILLAS_PUERTA_F2[-1]} x {TICKS_PUERTA_F2} en crisis."
+        ),
+    )
+    gate_f2.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Una sola semilla; manda sobre --seeds.",
+    )
+    gate_f2.add_argument(
+        "--seeds",
+        default=f"{SEMILLAS_PUERTA_F2[0]}-{SEMILLAS_PUERTA_F2[-1]}",
+        help=(
+            "Semillas a correr: `1-5`, `1,3,5` o una mezcla "
+            f"(default {SEMILLAS_PUERTA_F2[0]}-{SEMILLAS_PUERTA_F2[-1]})."
+        ),
+    )
+    gate_f2.add_argument(
+        "--ticks",
+        type=int,
+        default=TICKS_PUERTA_F2,
+        help=f"Ticks por corrida (default {TICKS_PUERTA_F2}).",
+    )
+    gate_f2.add_argument(
+        "--crisis",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Crisis (sequía) antes de medir; `--no-crisis` la apaga (default crisis).",
+    )
+    gate_f2.add_argument(
+        "--llm",
+        choices=("off", "stub", "http", "script"),
+        default="script",
+        help="Capa LLM de la puerta: `script` (guion determinista, default), `stub`, "
+        "`http` u `off`.",
+    )
+    gate_f2.add_argument(
+        "--llm-sincrono",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Resuelve la petición en el tick (default); `--no-llm-sincrono` usa la cola "
+        "asíncrona.",
+    )
+    gate_f2.add_argument(
+        "--json", action="store_true", help="Tabla y veredicto como un único objeto JSON."
+    )
+
     llm = sub.add_parser("llm", help="Capa LLM local (Ollama).")
     llm_sub = llm.add_subparsers(dest="llm", required=True)
     selfcheck = llm_sub.add_parser(
@@ -355,6 +411,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "report":
         if args.report == "gate-f1":
             return _report_gate_f1(args)
+        if args.report == "gate-f2":
+            return _report_gate_f2(args)
         if args.report == "telemetry":
             return _report_telemetry(args)
         if args.report == "diary":
@@ -451,11 +509,20 @@ def _report(args: argparse.Namespace) -> int:
     simulacion = run_sim(
         args.ticks, seed, headless=True, individuos=config.individuos, config=config
     )
+    grafo = simulacion.grafo.a_json()
     informe: dict[str, Any] = {
         "seed": seed,
         "ticks": args.ticks,
         "crisis": config.crisis,
-        **simulacion.grafo.a_json(),
+        **grafo,
+        #: Nodos que no son escalones del árbol, con su origen y su autor. El KPI
+        #: `pct_fuera_arbol` solo cuenta `combinacion` e `interaccion`; `llm` se
+        #: publica aquí porque también nació fuera del árbol (F2-006).
+        "fuera_arbol": [
+            nodo
+            for nodo in grafo["nodos"]
+            if nodo["origen"] in ("combinacion", "interaccion", "llm")
+        ],
     }
     if args.json:
         print(json.dumps(informe, ensure_ascii=True))
@@ -577,6 +644,40 @@ def _report_gate_f1(args: argparse.Namespace) -> int:
     try:
         semillas = parsear_semillas(args.seeds)
         barrido = medir_barrido(semillas, ticks=args.ticks, individuos=args.individuos)
+    except (ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(barrido.a_json(), ensure_ascii=True))
+    else:
+        print(barrido.texto())
+    return 0
+
+
+def _report_gate_f2(args: argparse.Namespace) -> int:
+    """`report gate-f2`: nodos fuera del árbol y concentración de la narración.
+
+    No es un test: es la herramienta con la que la puerta F2→F3 se publica
+    entera. El backend `script` es determinista y no toca la red; `--llm-sincrono`
+    (default) hace reproducible hasta el orden de las respuestas.
+    """
+    if args.llm_sincrono and args.llm == "http":
+        print(
+            "error: --llm-sincrono no vale con --llm http: resolver http en el tick "
+            "congelaría el bucle hasta el timeout",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        semillas = (args.seed,) if args.seed is not None else parsear_semillas(args.seeds)
+        barrido = medir_puerta(
+            semillas,
+            ticks=args.ticks,
+            crisis=args.crisis,
+            llm=args.llm,
+            sincrono=args.llm_sincrono,
+        )
     except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

@@ -369,10 +369,13 @@
         "uv run python -m tribal report culture --json muestra nodos fuera del arbol con su origen y su autor",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F2-005"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 0,
+      "closed": "2026-11-19"
     },
     {
       "id": "HARD-2",
@@ -750,10 +753,11 @@
         "opencode models lista ambos IDs y OpenCode arranca sin error",
         "el cambio queda commiteado para sobrevivir a git checkout (no solo en working tree)"
       ],
-      "status": "pending",
+      "status": "blocked",
       "depends_on": [
         "HARD-3"
-      ]
+      ],
+      "blocked_reason": "Descartada por el usuario: no se edita opencode.json para repartir modelos por subagente. El reparto de modelos se gestiona fuera del backlog."
     },
     {
       "id": "F1-006",
@@ -793,6 +797,26 @@
       "status": "pending",
       "depends_on": [
         "F2-005"
+      ]
+    },
+    {
+      "id": "HARNESS-REMOVE",
+      "title": "Descartar features con estado propio y borrar solo las creadas por error",
+      "description": "El backlog es la memoria de decisiones, no solo una lista: borrar una feature borra su motivo y history.md solo registra lo cerrado. blocked mezcla 'no se puede todavia' con 'no se quiere', y con 4 bloqueadas deja de servir como alarma. Esta feature separa los dos casos: un estado discarded con motivo y fecha que conserva el rastro, y remove restringido a features pending creadas por error. Mismo dueño de siempre, harness: nada se edita a mano.",
+      "acceptance_criteria": [
+        "VALID_STATUS en harness_agent.py, HARNESS_STATUS en evals/runner.py y el validador de init.sh aceptan discarded",
+        "harness discard --id X --reason R deja status discarded, discarded_reason y discarded_on",
+        "discarded no entra en next ni en elegibles y sale como contador propio en harness status",
+        "cada descarte deja una linea en harness/progress/history.md con id, titulo y motivo",
+        "harness revive --id X devuelve una discarded a pending y start la rechaza mientras siga descartada",
+        "harness remove --id X solo borra features pending y se niega si otra la lista en depends_on, nombrando a los dependientes",
+        "remove es destructiva en agents/contracts.py: sin --yes devuelve la confirmacion en needs y con --dry-run no escribe nada",
+        "tests: descartar, revive, borrar una pending sin tocar el resto del backlog y rechazo de done e in_progress",
+        "harness gate success=true"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "HARNESS-EDIT"
       ]
     }
   ]

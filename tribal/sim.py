@@ -29,13 +29,15 @@ from tribal.core.modelos import (
     TipoTile,
 )
 from tribal.culture import beneficios as modulo_beneficios
+from tribal.culture import propuestas as modulo_propuestas
 from tribal.culture import tradiciones
 from tribal.culture.arbol import Nodo
 from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.diario import Diario
 from tribal.culture.grafo import Grafo
+from tribal.culture.propuestas import PropuestaInvalida
 from tribal.llm import candidatas as modulo_candidatas
-from tribal.llm.cola import ColaLLM, Peticion, PeticionNarracion
+from tribal.llm.cola import ColaLLM, Peticion, PeticionNarracion, PeticionNodo, PropuestaNodo
 from tribal.llm.embeddings import IndiceRecuerdos, embedder_por_defecto
 
 #: Presupuesto de frame a 60 fps.
@@ -103,6 +105,10 @@ REGENERACION_INVIERNO = 0.5
 #: (máximo 15 % por tick) y completa el cruce la mitad de las veces.
 PROB_INTENTO_DIVERGENTE = 0.15
 PROB_COMPLETAR_COMBINACION = 0.5
+#: Ticks mínimos entre dos propuestas de nodo al LLM (F2-006). El inventor no
+#: puede inundar el grafo: una propuesta cada 200 ticks ≈ 15 por partida de
+#: 3000, suficiente para medir el canal sin convertir la cultura en ruido.
+PROPUESTA_CADA_TICKS = 200
 #: Un muerto con esta edad o más es un anciano: su muerte entra en el diario.
 UMBRAL_ANCIANO = 1500
 #: Nodo del árbol que dispara cada hito de "primera vez" (concepto §10). Se ata
@@ -202,6 +208,20 @@ class Simulacion:
             for x, tipo in enumerate(fila)
             if tipo == TipoTile.AGUA
         }
+        #: Propuestas de nodo pedidas al LLM y cómo acabaron (F2-006). El motor
+        #: las valida con `tribal.culture.propuestas`: aceptar no es deber del
+        #: modelo, sino de la regla de plausibilidad.
+        self.propuestas_solicitadas = 0
+        self.propuestas_aceptadas = 0
+        self.propuestas_rechazadas = 0
+        self.propuestas_por_origen: dict[str, int] = {"combinacion": 0, "llm": 0}
+        self._propuestas_rechazos: dict[str, int] = {}
+        self._propuesta_pedida_tick = -PROPUESTA_CADA_TICKS
+        #: Peso narrativo acumulado (F2-006): área bajo la curva de saliencia con
+        #: el mismo olvido que la saliencia (`DECAIMIENTO`). A diferencia de la
+        #: saliencia instantánea, no se satura en `SALIENCIA_MAX`, así que sirve
+        #: para ordenar a los narradores sin empates arbitrarios.
+        self._saliencia_acumulada: dict[int, float] = {}
 
     def step(self) -> None:
         """Un tick: reloj, homeostasis, depredador y muertes, decisiones y crías.
@@ -367,6 +387,15 @@ class Simulacion:
         self._reproducir()
         self.agrupamiento_max = max(self.agrupamiento_max, self._junto_al_agua())
 
+        #: Protagonismo acumulado del tick: la puerta F2→F3 mide la narración
+        #: contra este peso, no contra un top instantáneo empatado en
+        #: `SALIENCIA_MAX`. El olvido es el mismo que el de la saliencia.
+        for individuo in self.mundo.individuos:
+            self._saliencia_acumulada[individuo.id] = (
+                self._saliencia_acumulada.get(individuo.id, 0.0) * saliencia.DECAIMIENTO
+                + individuo.saliencia
+            )
+
         self._drenar()
 
         self._ms_acumulados += (time.perf_counter() - inicio) * 1000.0
@@ -478,6 +507,8 @@ class Simulacion:
             return
         for texto in self.cola.drenar_textos():
             self.diario.narrar(texto.entrada, texto.texto)
+        for propuesta in self.cola.drenar_propuestas(self.mundo.tick):
+            self._aplicar_propuesta(propuesta)
         vivos = {individuo.id: individuo for individuo in self.mundo.individuos}
         for respuesta in self.cola.drenar(self.mundo.tick):
             if respuesta.decision is None:
@@ -498,6 +529,107 @@ class Simulacion:
                 respuesta.decision.accion,
                 respuesta.tick + self.cola.ventana,
             )
+
+    def _solicitar_propuesta_llm(self, individuo: Individuo) -> None:
+        """Pide al inventor un cruce cuando un divergente experimenta (F2-006).
+
+        Una petición por tick como mucho: la cola es asíncrona y no se puede
+        convertir el experimento en una tormenta de propuestas. El contexto son
+        datos planos —ids, ramas y niveles—, nunca objetos del mundo.
+        """
+        if self.cola is None:
+            return
+        activos = sorted(
+            (nodo for nodo in self.grafo.nodos.values() if nodo.estado == "activo"),
+            key=lambda nodo: nodo.id,
+        )
+        contexto = {
+            "seed": self.mundo.seed,
+            "tick": self.mundo.tick,
+            "individuo": individuo.id,
+            "nodos_activos": [
+                {"id": nodo.id, "rama": nodo.rama, "nivel": nodo.nivel} for nodo in activos
+            ],
+            "nodos": sorted(self.grafo.nodos),
+            "catalogo": sorted(COMBINACIONES),
+        }
+        peticion = PeticionNodo(
+            id=self._peticion_id + 1,
+            tick=self.mundo.tick,
+            individuo_id=individuo.id,
+            contexto=contexto,
+            valida_hasta=self.mundo.tick + self.cola.ventana,
+        )
+        if self.cola.solicitar_nodo(peticion):
+            self._peticion_id += 1
+            self.propuestas_solicitadas += 1
+
+    def _aplicar_propuesta(self, respuesta: PropuestaNodo) -> None:
+        """Valida la propuesta contra el grafo del tick y, si pasa, la inscribe.
+
+        El motor no confía en el modelo: `propuestas.parsear` valida la forma y
+        `propuestas.validar` decide la plausibilidad. Un rechazo no toca el
+        grafo; solo suma un motivo al informe.
+        """
+        if respuesta.propuesta is None:
+            self._rechazar_propuesta(respuesta.error or "sin propuesta")
+            return
+        try:
+            propuesta = modulo_propuestas.parsear(respuesta.propuesta)
+            nodo = modulo_propuestas.validar(
+                propuesta,
+                self.grafo,
+                autor=respuesta.individuo_id,
+                tick=respuesta.tick,
+            )
+        except (PropuestaInvalida, ValueError) as exc:
+            self._rechazar_propuesta(str(exc))
+            return
+
+        self.propuestas_aceptadas += 1
+        self.propuestas_por_origen[nodo.origen] = self.propuestas_por_origen.get(nodo.origen, 0) + 1
+        self._registrar_nodo_propuesto(nodo, respuesta.individuo_id)
+
+    def _registrar_nodo_propuesto(self, nodo: Nodo, autor_id: int) -> None:
+        """Lo que cambia en la tribu cuando un nodo propuesto pasa la validación."""
+        autor = next(
+            (individuo for individuo in self.mundo.individuos if individuo.id == autor_id),
+            None,
+        )
+        if nodo.origen == "combinacion":
+            self.combinaciones_logradas += 1
+            if autor is not None:
+                autor.habilidades.aprender(modulo_beneficios.HABILIDAD_POR_COMBINACION[nodo.id])
+        self._descubridores.add(autor_id)
+        if autor is not None:
+            self._descubrimientos_tramo[_tramo(autor)] += 1
+            saliencia.subir(autor, "combinacion")
+        self._registrar_recuerdo(
+            nodo.id,
+            f"{nodo.origen} {nodo.rama} {nodo.id} {nodo.titulo}",
+        )
+
+    def _rechazar_propuesta(self, motivo: str) -> None:
+        """Cuenta un rechazo por su causa de primer nivel (`rama`, `duplicado`…)."""
+        self.propuestas_rechazadas += 1
+        clave = motivo.split(":", 1)[0].strip() or "otro"
+        self._propuestas_rechazos[clave] = self._propuestas_rechazos.get(clave, 0) + 1
+
+    @property
+    def propuestas_llm(self) -> dict[str, Any]:
+        """Resumen serializable del canal de propuestas de nodo (F2-006)."""
+        return {
+            "solicitadas": self.propuestas_solicitadas,
+            "aceptadas": self.propuestas_aceptadas,
+            "rechazadas": self.propuestas_rechazadas,
+            "por_origen": dict(sorted(self.propuestas_por_origen.items())),
+            "rechazos": dict(sorted(self._propuestas_rechazos.items())),
+        }
+
+    @property
+    def saliencia_acumulada(self) -> dict[int, float]:
+        """Área bajo la curva de saliencia por individuo (medida de la puerta F2)."""
+        return dict(self._saliencia_acumulada)
 
     def _factor_dano(self, presa: Individuo) -> float:
         """Cuánto le muerde el depredador: la utilidad de vigilia del tick."""
@@ -683,11 +815,14 @@ class Simulacion:
 
         Solo pasa en crisis (concepto §9b y §13): en calma la tradición basta y
         el motor no gasta ticks en experimentar, así que sin crisis no aparece
-        ningún nodo `combinacion`. El candidato tiene que tener sus dos nodos
-        activos y no existir aún; si el cruce no cuaja, el intento se cuenta
-        igual, porque el experimento ocurrió. Descubrirlo enseña al autor la
-        habilidad de la técnica: el nodo es de la tribu, pero la ventaja es de
-        quien la sabe usar (concepto §9b).
+        ningún nodo `combinacion`. El catálogo tiene prioridad: si hay un cruce
+        con sus dos nodos activos, se intenta como siempre. Después —o cuando el
+        catálogo ya no tiene candidatos— el experimento se ofrece al inventor
+        (`_solicitar_propuesta_llm`), que propone un nodo nuevo que el motor
+        valida (F2-006). Si el cruce no cuaja, el intento se cuenta igual,
+        porque el experimento ocurrió. Descubrirlo enseña al autor la habilidad
+        de la técnica: el nodo es de la tribu, pero la ventaja es de quien la
+        sabe usar (concepto §9b).
         """
         if not self._en_crisis():
             return False
@@ -703,7 +838,14 @@ class Simulacion:
             if combinacion.id not in self.grafo.nodos
             and all(self.grafo.activo(requisito) for requisito in combinacion.requisitos)
         ]
-        if not candidatas:
+        # Sin catálogo pendiente solo se experimenta si el inventor tiene turno:
+        # si no, el divergente come o bebe como cualquier otro (la dinámica de
+        # F1 sin LLM no cambia).
+        puede_proponer = (
+            self.cola is not None
+            and self.mundo.tick - self._propuesta_pedida_tick >= PROPUESTA_CADA_TICKS
+        )
+        if not candidatas and not puede_proponer:
             return False
         exceso = individuo.genoma.divergencia - modulo_genoma.UMBRAL_DIVERGENTE
         margen = modulo_genoma.DIVERGENCIA_MAX - modulo_genoma.UMBRAL_DIVERGENTE
@@ -711,27 +853,36 @@ class Simulacion:
             return False
 
         self.intentos_divergentes += 1
-        candidata = self.mundo.azar.choice(candidatas)
-        if self.mundo.azar.random() < PROB_COMPLETAR_COMBINACION:
-            self.grafo.descubrir(
-                candidata.id,
-                autor=individuo.id,
-                tick=self.mundo.tick,
-                origen="combinacion",
-            )
-            individuo.habilidades.aprender(
-                modulo_beneficios.HABILIDAD_POR_COMBINACION[candidata.id]
-            )
-            self.combinaciones_logradas += 1
-            self._descubridores.add(individuo.id)
-            self._descubrimientos_tramo[_tramo(individuo)] += 1
-            # Hito narrativo: el cruce es de la tribu, pero el peso es de quien
-            # lo hizo (concepto §10b). No depende de su divergencia: la
-            # experimentación sí, la saliencia no.
-            saliencia.subir(individuo, "combinacion")
-            self._registrar_recuerdo(
-                candidata.id, f"combinacion {candidata.rama} {candidata.id} {candidata.titulo}"
-            )
+        if candidatas:
+            candidata = self.mundo.azar.choice(candidatas)
+            if self.mundo.azar.random() < PROB_COMPLETAR_COMBINACION:
+                self.grafo.descubrir(
+                    candidata.id,
+                    autor=individuo.id,
+                    tick=self.mundo.tick,
+                    origen="combinacion",
+                )
+                individuo.habilidades.aprender(
+                    modulo_beneficios.HABILIDAD_POR_COMBINACION[candidata.id]
+                )
+                self.combinaciones_logradas += 1
+                self._descubridores.add(individuo.id)
+                self._descubrimientos_tramo[_tramo(individuo)] += 1
+                # Hito narrativo: el cruce es de la tribu, pero el peso es de
+                # quien lo hizo (concepto §10b). No depende de su divergencia:
+                # la experimentación sí, la saliencia no.
+                saliencia.subir(individuo, "combinacion")
+                self._registrar_recuerdo(
+                    candidata.id,
+                    f"combinacion {candidata.rama} {candidata.id} {candidata.titulo}",
+                )
+
+        # El inventor propone lo que el catálogo no tiene. Una petición cada
+        # `PROPUESTA_CADA_TICKS` como mucho, y solo cuando el experimento ya
+        # ocurrió de verdad: el canal tiene ritmo, no inunda el grafo.
+        if puede_proponer:
+            self._propuesta_pedida_tick = self.mundo.tick
+            self._solicitar_propuesta_llm(individuo)
         return True
 
     def _practicar(self, individuo: Individuo, accion: str, *, descubrir: bool) -> bool:
@@ -782,17 +933,57 @@ class Simulacion:
         self._hitos_vistos.add(tipo)
         self._hito(tipo, individuo, f"{nodo.titulo} ({nodo.id})")
 
+    def _narrador(self, sujeto: Individuo | None) -> int | None:
+        """Quién cuenta el hito: el sujeto si es saliente, o el más saliente.
+
+        Concepto §10b: la saliencia concentra la narración. El peso es el área
+        con olvido **hasta este tick**, el mismo criterio con el que la puerta
+        ordena el top-3 final: si se usara solo el valor instantáneo, el techo
+        `SALIENCIA_MAX` empataría a media tribu y el cronista cambiaría a
+        cualquier recién llegado. Solo se narra si algún vivo tiene peso
+        positivo; el sujeto cuenta su propio hito si está en el top-3 y, si no,
+        lo cuenta el individuo con más peso.
+        """
+        if self.cola is None:
+            return None
+        candidatos = [
+            individuo
+            for individuo in self.mundo.individuos
+            if individuo.vivo and self._peso_narrativo(individuo) > 0.0
+        ]
+        if not candidatos:
+            return None
+        top3 = sorted(
+            candidatos, key=lambda individuo: (-self._peso_narrativo(individuo), individuo.id)
+        )[:3]
+        if sujeto is not None and any(individuo.id == sujeto.id for individuo in top3):
+            return sujeto.id
+        return top3[0].id
+
+    def _peso_narrativo(self, individuo: Individuo) -> float:
+        """Peso con olvido acumulado hasta el tick anterior, más el de este."""
+        previo = self._saliencia_acumulada.get(individuo.id, 0.0) * saliencia.DECAIMIENTO
+        return previo + individuo.saliencia
+
     def _hito(self, tipo: str, individuo: Individuo | None, detalle: str) -> int:
         """Anota el hito en el diario y pide su frase. Nunca espera al LLM.
 
         La entrada existe con o sin modelo: la narración es un adorno opcional y
-        llega después, cuando la cola la resuelve.
+        llega después, cuando la cola la resuelve. `narrador_id` lo elige la
+        saliencia (`_narrador`); sin nadie con peso no se pide frase y la
+        entrada queda `narrada=false`.
         """
+        narrador = self._narrador(individuo)
         entrada = self.diario.registrar(
-            self.mundo.tick, tipo, individuo_id=None if individuo is None else individuo.id
+            self.mundo.tick,
+            tipo,
+            individuo_id=None if individuo is None else individuo.id,
+            narrador_id=narrador,
         )
-        if self.cola is not None:
-            self.cola.narrar(
+        if (
+            self.cola is not None
+            and narrador is not None
+            and not self.cola.narrar(
                 PeticionNarracion(
                     entrada=entrada,
                     tick=self.mundo.tick,
@@ -803,9 +994,13 @@ class Simulacion:
                         "poblacion": len(self.mundo.individuos),
                         "estacion": self.mundo.estacion,
                         "detalle": detalle,
+                        "narrador": narrador,
                     },
                 )
             )
+        ):
+            # Sin hueco en la cola: la entrada se queda sin cronista.
+            self.diario.entradas[entrada].narrador_id = None
         return entrada
 
     @property

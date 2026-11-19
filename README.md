@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.26-green)
+![Version](https://img.shields.io/badge/Version-0.1.27-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -163,7 +163,15 @@ primer rito (`ritual`), la primera tradición y la muerte de cada anciano
 (≥ `UMBRAL_ANCIANO = 1500` ticks), más cada diálogo que devuelve una decisión.
 Cada hito se ata al nodo que representa el hecho, no al primer escalón de su
 rama: `gestos` no es una palabra ni `arte_rupestre` un rito. Cada entrada guarda
-`tick`, `tipo`, `texto`, `individuo_id` y `narrada`.
+`tick`, `tipo`, `texto`, `individuo_id`, `narrador_id` y `narrada`.
+
+**Quién narra lo decide la saliencia (F2-006).** El sujeto del hito cuenta su
+propia historia si está en el top-3 de peso narrativo; si no, la cuenta el
+individuo con más saliencia, y sin nadie con peso positivo no se pide frase. El
+peso es la saliencia acumulada con el mismo olvido que la instantánea
+(`0.999` por tick), no el valor del tick: así el techo `SALIENCIA_MAX` no
+convierte el top-3 en un empate de ids. `narrador_id` queda en la entrada y es
+la columna con la que se mide la concentración narrativa de la puerta F2→F3.
 
 La entrada se registra **siempre**; la narración es opcional:
 
@@ -387,8 +395,14 @@ Subir esa cifra por encima del 50 % sigue siendo el trabajo de la Fase 3.
 ```bash
 uv run python -m tribal report culture             # legible
 uv run python -m tribal report culture --json      # nodos, aristas y pct_fuera_arbol
-uv run python -m tribal report culture --seed 7 --ticks 900
+uv run python -m tribal report culture --seed 7 --ticks 900 --crisis
 ```
+
+El JSON incluye `fuera_arbol`: la lista de nodos que no son escalones del árbol
+con su `origen` (`combinacion`, `interaccion` o `llm`), su `autor` y su `tick`.
+El KPI `pct_fuera_arbol` sigue contando solo `combinacion` e `interaccion`, como
+`objetivo.md` §3.2; `llm` se publica aparte porque también es un nodo nacido
+fuera del árbol.
 
 Todavía no hay partida persistida, así que el informe sale de simular
 `--ticks` ticks (600 por defecto) en headless con la semilla y el `--config`
@@ -930,8 +944,59 @@ desventaja de conducta, no un decreto. Los tests
 de `Simulacion` fijan nacidos, reproductores, descubrimientos por temperamento,
 imitaciones y longevidad.
 
+### Puerta F2→F3 (F2-006): nodos fuera del árbol y narración
 
+`report gate-f2` corre una partida por semilla con un **backend guionizado**
+determinista y publica nodos totales y por origen, nodos fuera del árbol con su
+autor y su tick, el porcentaje fuera del árbol, las narraciones por individuo, la
+concentración top-3 y el veredicto. Los valores por defecto son los de la
+puerta: semillas 1-5 × 3000 ticks, en crisis, con la capa `script` y resolución
+síncrona.
 
+```bash
+uv run python -m tribal report gate-f2
+uv run python -m tribal report gate-f2 --seed 1 --ticks 3000 --crisis --llm script --llm-sincrono --json
+uv run python -m tribal report gate-f2 --seeds 1-5 --ticks 3000 --llm stub
+```
+
+El backend guionizado no inventa desde cero: propone combinaciones del catálogo
+(`combinaciones.py`) cuando sus dos requisitos ya están activos, propone cruces
+nuevos de dos nodos activos de la misma rama o de ramas adyacentes, e intercala
+propuestas imposibles (prerrequisitos inexistentes o ramas lejanas). El motor
+**valida** con `tribal/culture/propuestas.py`: un id del catálogo nace con
+`origen="combinacion"`; uno nuevo y plausible nace con `origen="llm"`; lo demás
+se rechaza y se cuenta por motivo (`prerrequisito`, `rama`, `duplicado`,
+`formato`, `catalogo`). El inventor no escribe en el grafo.
+
+El **K de la puerta es 5**: las cinco combinaciones del catálogo, el nivel 1
+completo de §8b. Es no trivial porque no basta un cruce afortunado —todos los
+cruces posibles tienen que cuajar en cada semilla— y además se exige al menos un
+nodo `llm` que no esté en el catálogo, para que el canal del modelo se haya
+ejercitado de verdad.
+
+La narración se mide con el peso narrativo **acumulado con el mismo olvido que
+la saliencia** (`0.999` por tick), no con el valor instantáneo: con
+`SALIENCIA_MAX = 10` media tribu empata al final y el top-3 por id sería un
+empate arbitrario. El cronista es el sujeto del hito si está en el top-3 de peso
+y, si no, el individuo con más peso; solo se narra cuando algún vivo tiene peso
+positivo. La concentración es `líneas de los tres más salientes / líneas
+narradas` y debe ser ≥ 50 %.
+
+```
+seed | nodos | arbol comb inter llm | fuera | %fuera | %+llm | lineas | top3 (peso narrativo) | conc | propuestas sol/ok/rech | ok
+   1 |    42 |   23    5     6   8 |    13 |  26.2% |  45.2% |     14 | 9:4166.5 16:3319.5 2:3310.6    |   0.6 |  13/ 9/ 4 | True
+   2 |    43 |   23    5     6   9 |    14 |  25.6% |  46.5% |     17 | 6:5426.9 5:4285.2 2:3838.4     |   0.8 |  15/10/ 5 | True
+   3 |    41 |   23    5     4   9 |    14 |  22.0% |  43.9% |     16 | 13:5803.6 10:5553.9 7:5124.2   |   0.5 |  14/ 9/ 5 | True
+   4 |    40 |   23    5     5   7 |    12 |  25.0% |  42.5% |     16 | 4:3620.6 8:2859.4 2:2304.3     |   0.8 |  12/ 7/ 5 | True
+   5 |    43 |   23    5     5  10 |    15 |  23.3% |  46.5% |     15 | 14:5780.2 6:5596.5 1:5538.4    |   0.6 |  15/10/ 5 | True
+
+VEREDICTO F2->F3: 5/5 semillas | K=5 nodos fuera | concentración top-3 >= 50% | SUCCESS True
+```
+
+`%fuera` es el KPI de `objetivo.md` §3.2 (`combinacion` + `interaccion` sobre
+todos los activos); `%+llm` lo amplía con los nodos `llm`. La columna `fuera` es
+la del criterio de la puerta (`combinacion` + `llm`). La tabla completa, con la
+lista de cada nodo fuera del árbol y su autor/tick, sale en la misma orden.
 
 ## Principios
 

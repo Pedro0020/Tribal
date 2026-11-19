@@ -653,6 +653,66 @@ por construcción (los conformistas no experimentan) y `long_d` = 0 porque
 ningún descubridor murió dentro de la ventana. El diagnóstico completo está en
 `harness/progress/implementer-F1-006.md`.
 
+### 9.4 La puerta F2→F3, medida (F2-006)
+
+La puerta de concepto §15 pide dos cosas observables: que el LLM proponga nodos
+**fuera del árbol** (nivel 1 de §8b) que pasen la validación a un ritmo no
+trivial, y que la saliencia concentre la narración en pocos individuos (§10b).
+`python -m tribal report gate-f2` las mide con un **backend guionizado**
+determinista, sin red y sin tocar el catálogo:
+
+```bash
+uv run python -m tribal report gate-f2 --seeds 1-5 --ticks 3000 --crisis \
+  --llm script --llm-sincrono --json
+```
+
+**Canal de propuestas.** `tribal/culture/propuestas.py` es la frontera entre el
+modelo y el grafo. El LLM devuelve `{id, rama, requisitos, titulo, contenido}` y
+el motor decide:
+
+- id del catálogo (`combinaciones.py`): se comprueba que los requisitos no se
+  hayan cambiado y se delega en `Grafo.descubrir`, que vuelve a validar los
+  prerrequisitos y escribe `origen="combinacion"`;
+- id nuevo: los dos requisitos tienen que estar **activos** y ser de la misma
+  rama o de ramas adyacentes en `RAMAS`; la rama del nodo es una de las dos. El
+  nodo nace con `origen="llm"`, `autor` y `tick`, y `nivel = max(niveles) + 1`;
+- cualquier otra cosa se rechaza con un motivo (`prerrequisito`, `rama`,
+  `duplicado`, `formato`, `catalogo`) y se cuenta en `propuestas_llm`.
+
+La petición se dispara cuando un divergente experimenta en crisis y como mucho
+una vez cada `PROPUESTA_CADA_TICKS = 200`: una partida de 3000 ticks pide ~15
+propuestas y acepta 7-10, sin inundar el grafo. Sin LLM, o fuera de su turno, el
+divergente vuelve a comer/beber: la dinámica de F1 no cambia. El canal usa la
+misma cola y el mismo presupuesto en vuelo que las decisiones y la narración
+(`PeticionNodo`), y la propuesta se valida contra el grafo del tick en que se
+aplica, no contra el que había cuando se pidió.
+
+**K = 5.** Son las cinco combinaciones del catálogo, el nivel 1 completo de
+§8b. No es trivial porque exige que cuajen **todos** los cruces posibles en cada
+semilla, no un acierto aislado; además el veredicto pide ≥ 1 nodo `llm` que no
+esté en el catálogo, para que el canal del modelo se haya ejercitado. El backend
+intercala propuestas imposibles para que el test demuestre también el rechazo.
+
+**Narración concentrada.** El cronista ya no se reparte por el censo: en
+`_hito`, `_narrador` elige al sujeto del hito si está en el top-3 de **peso
+narrativo acumulado** y, si no, al individuo con más peso; sin nadie con peso
+positivo no se pide frase. El peso es la saliencia acumulada con el mismo olvido
+que la instantánea (`DECAIMIENTO = 0.999` por tick), de modo que el techo
+`SALIENCIA_MAX = 10` no convierte el top-3 en un empate de ids y un protagonista
+puede decaer. La entrada guarda `narrador_id` además de `individuo_id`; la
+concentración de la puerta es `líneas de los tres con más peso / líneas
+narradas` y exige ≥ 50 %.
+
+**Resultado del barrido (5 × 3000, 12 individuos, crisis):** la tabla completa
+está en el README. `SUCCESS True` en 5/5: 5 combinaciones + 7-10 nodos `llm` por
+semilla, 4-5 propuestas rechazadas con motivo, y concentración top-3 entre 0.5 y
+0.8. El KPI `pct_fuera_arbol` (combinación + interacción, `objetivo.md` §3.2)
+queda en 22-26 % porque los nodos `llm` no entran en esa métrica; el JSON
+publica `pct_fuera_arbol_llm` (40-46 %) para no confundir los dos números. El
+límite conocido es el tamaño de la muestra: la concentración se mide sobre
+14-17 líneas narradas por partida; el test fija las semillas 1 y 3 y la tabla
+publica las cinco.
+
 ---
 
 ## 10. Referencias
@@ -662,8 +722,10 @@ ningún descubridor murió dentro de la ventana. El diagnóstico completo está 
   §11 arquitectura, §14 riesgos, §16 decisiones abiertas.
 - `vault/01_PROYECTO/stack-tecnologico.md` — §2 hardware, §3 datos, §5 esquema,
   §8 herramientas y concurrencia del LLM.
-- `README.md` — comandos de Fase 1 (`run`, `report culture`,
-  `report telemetry`, `report gate-f1`), config de ejemplo y barrido de la
-  puerta F1→F2.
+- `README.md` — comandos de Fase 1 y 2 (`run`, `report culture`,
+  `report telemetry`, `report gate-f1`, `report gate-f2`), config de ejemplo y
+  barridos de las puertas F1→F2 y F2→F3.
 - `harness/progress/implementer-F1-006.md` — diagnóstico, mutaciones y salida
-  literal que respaldan la puerta.
+  literal que respaldan la puerta F1.
+- `harness/progress/implementer-F2-006.md` — tabla, backend guionizado y salida
+  literal que respaldan la puerta F2.

@@ -80,6 +80,28 @@ class TextoNarrado:
     texto: str
 
 
+@dataclass(frozen=True, slots=True)
+class PeticionNodo:
+    """Una propuesta de nodo para el inventor. El motor la valida al aplicarla."""
+
+    id: int
+    tick: int
+    individuo_id: int
+    contexto: Mapping[str, Any]
+    valida_hasta: int
+
+
+@dataclass(frozen=True, slots=True)
+class PropuestaNodo:
+    """Lo que devolvió el inventor: el JSON crudo o el motivo de no tenerlo."""
+
+    id: int
+    individuo_id: int
+    tick: int
+    propuesta: dict[str, Any] | None
+    error: str | None
+
+
 class ColaLLM:
     """Hilo dedicado + dos colas acotadas. `sincrona` existe para los tests."""
 
@@ -99,11 +121,12 @@ class ColaLLM:
         self.max_en_vuelo = max_en_vuelo
         self.ventana = ventana
         self.sincrona = sincrona
-        self._peticiones: queue.Queue[Peticion | PeticionNarracion | None] = queue.Queue(
-            maxsize=max_en_vuelo
+        self._peticiones: queue.Queue[Peticion | PeticionNarracion | PeticionNodo | None] = (
+            queue.Queue(maxsize=max_en_vuelo)
         )
         self._resultados: queue.Queue[Respuesta] = queue.Queue(maxsize=max_en_vuelo * 2)
         self._textos: queue.Queue[TextoNarrado] = queue.Queue(maxsize=max_en_vuelo * 2)
+        self._propuestas: queue.Queue[PropuestaNodo] = queue.Queue(maxsize=max_en_vuelo * 2)
         self._cerrojo = threading.Lock()
         self._hilo: threading.Thread | None = None
         self._cerrada = False
@@ -116,6 +139,7 @@ class ColaLLM:
         #: En modo síncrono no hay hilo: las respuestas esperan aquí.
         self._sincronas: list[Respuesta] = []
         self._textos_sincronos: list[TextoNarrado] = []
+        self._propuestas_sincronas: list[PropuestaNodo] = []
 
     def encolar(self, peticion: Peticion) -> bool:
         """Acepta la petición si hay hueco. Nunca bloquea; `False` si está lleno."""
@@ -212,6 +236,49 @@ class ColaLLM:
                     break
         return [texto for texto in pendientes if texto.texto]
 
+    def solicitar_nodo(self, peticion: PeticionNodo) -> bool:
+        """Pide una propuesta sin bloquear. `False` si no cabe o está cerrada.
+
+        Comparte el presupuesto en vuelo con las decisiones y las narraciones:
+        si no hay hueco, ese experimento se queda sin propuesta y el motor no
+        inventa nada por su cuenta.
+        """
+        if self._cerrada:
+            return False
+        if self.sincrona:
+            self._propuestas_sincronas.append(self._resolver_propuesta(peticion))
+            return True
+
+        self._arrancar()
+        with self._cerrojo:
+            if self._en_vuelo >= self.max_en_vuelo:
+                return False
+            self._en_vuelo += 1
+        try:
+            self._peticiones.put_nowait(peticion)
+        except queue.Full:  # el contador y la cola discrepan: no se acepta
+            with self._cerrojo:
+                self._en_vuelo -= 1
+            return False
+        return True
+
+    def drenar_propuestas(self, tick_actual: int | None = None) -> list[PropuestaNodo]:
+        """Propuestas ya resueltas, sin bloquear; las caducadas se descartan."""
+        if self.sincrona:
+            pendientes, self._propuestas_sincronas = self._propuestas_sincronas, []
+        else:
+            pendientes = []
+            while True:
+                try:
+                    pendientes.append(self._propuestas.get_nowait())
+                except queue.Empty:
+                    break
+        return [
+            propuesta
+            for propuesta in sorted(pendientes, key=lambda item: (item.tick, item.id))
+            if tick_actual is None or tick_actual <= propuesta.tick + self.ventana
+        ]
+
     def registrar_aplicada(self) -> None:
         """El bucle aplicó la decisión; solo la cola lleva la cuenta."""
         with self._cerrojo:
@@ -244,6 +311,7 @@ class ColaLLM:
         with self._cerrojo:
             if self._cerrada:
                 self._descartar_textos()
+                self._descartar_propuestas()
                 return self._hilo is None or not self._hilo.is_alive()
             self._cerrada = True
 
@@ -252,6 +320,7 @@ class ColaLLM:
             self._descartar_resultados()
             self._descartar_en_vuelo()
             self._descartar_textos()
+            self._descartar_propuestas()
             return True
 
         # Lo aceptado y no empezado no se va a inferir: se descarta sin gastar
@@ -276,6 +345,7 @@ class ColaLLM:
         self._descartar_resultados()
         self._descartar_en_vuelo()
         self._descartar_textos()
+        self._descartar_propuestas()
         return not hilo.is_alive()
 
     def _descartar_resultados(self) -> None:
@@ -328,6 +398,21 @@ class ColaLLM:
                     # `cerrar` puede haber puesto el contador a 0 mientras tanto.
                     self._en_vuelo = max(0, self._en_vuelo - 1)
                 continue
+            if isinstance(trabajo, PeticionNodo):
+                try:
+                    propuesta = self._resolver_propuesta(trabajo)
+                except Exception as exc:  # el worker no puede morir
+                    propuesta = PropuestaNodo(
+                        id=trabajo.id,
+                        individuo_id=trabajo.individuo_id,
+                        tick=trabajo.tick,
+                        propuesta=None,
+                        error=f"excepción: {exc}",
+                    )
+                self._guardar_propuesta(propuesta)
+                with self._cerrojo:
+                    self._en_vuelo = max(0, self._en_vuelo - 1)
+                continue
             peticion = trabajo
             try:
                 respuesta = self._resolver(peticion)
@@ -364,10 +449,27 @@ class ColaLLM:
         resultado = self.cliente.narrar(peticion.hito, peticion.contexto)
         return TextoNarrado(peticion.entrada, resultado.texto)
 
+    def _resolver_propuesta(self, peticion: PeticionNodo) -> PropuestaNodo:
+        resultado = self.cliente.proponer(peticion.contexto)
+        return PropuestaNodo(
+            id=peticion.id,
+            individuo_id=peticion.individuo_id,
+            tick=peticion.tick,
+            propuesta=resultado.propuesta,
+            error=None
+            if resultado.propuesta is not None
+            else (resultado.motivo or "sin propuesta"),
+        )
+
     def _guardar_texto(self, texto: TextoNarrado) -> None:
         """Deposita la frase; si no cabe, el diario conserva el hito sin narrar."""
         with contextlib.suppress(queue.Full):
             self._textos.put_nowait(texto)
+
+    def _guardar_propuesta(self, propuesta: PropuestaNodo) -> None:
+        """Deposita la propuesta; si no cabe, el motor no inventa nada."""
+        with contextlib.suppress(queue.Full):
+            self._propuestas.put_nowait(propuesta)
 
     def _descartar_textos(self) -> None:
         """Vacía lo narrado y no leído: al cerrar nadie va a aplicarlo."""
@@ -377,3 +479,12 @@ class ColaLLM:
             except queue.Empty:
                 break
         self._textos_sincronos = []
+
+    def _descartar_propuestas(self) -> None:
+        """Vacía las propuestas y no leídas: al cerrar nadie va a aplicarlas."""
+        while True:
+            try:
+                self._propuestas.get_nowait()
+            except queue.Empty:
+                break
+        self._propuestas_sincronas = []

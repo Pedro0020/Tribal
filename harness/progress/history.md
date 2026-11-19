@@ -1243,3 +1243,52 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 66 so
 ```
 
 </details>
+
+## F2-006 — Puerta F2 a F3: nodos fuera del arbol y narracion concentrada
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 378 passed in 195.31s (0:03:15)
+- **Cambios:** tribal/culture/propuestas.py (nuevo: validacion de plausibilidad de nodos llm y menu guionizado); tribal/gate_f2.py (nuevo: barrido 1-5, tabla y veredicto); tribal/sim.py (propuestas de nodo y narrador por saliencia); tribal/cli.py (report gate-f2); tests/test_puerta_f2.py (nuevo); README (F2->F3 y fuera_arbol); arquitectura.md §9.4
+- **Decisiones:** Se distingue combinacion (catalogo) de llm (propuesta fuera del catalogo pero plausible): los dos cuentan como fuera del arbol, y un nodo llm exige requisitos activos, rama igual a una de las dos y adyacente en RAMAS, id no existente y tick posterior; las propuestas imposibles o lejanas se rechazan y se cuentan por motivo. K=5 se elige porque son todos los cruces de nivel 1 del catalogo mas al menos un nodo llm: con --llm off no se alcanza (control negativo). La concentracion se mide sobre lineas reales del diario y no sobre pesos: mutar el narrador a aleatorio la hunde a 0.167. Semilla 3 queda en 0.500 exacto: el criterio se cumple, pero el margen es de una linea y se anota. El top-3 final puede incluir muertos (conservador); y report culture corre sin cola, asi que nunca mostrara nodos llm (se ven con --crisis y el gate).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 378 passed
+
+$ uv run python -m tribal report gate-f2 --seeds 1-5 --ticks 3000 --crisis
+seed | nodos | arbol comb inter llm | fuera | %fuera | %+llm | lineas | conc | propuestas | ok
+   1 |    42 |   23    5     6   8 |    13 |  26.2% |  45.2% |     14 | 0.6 |  13/ 9/ 4 | True
+   2 |    43 |   23    5     6   9 |    14 |  25.6% |  46.5% |     17 | 0.8 |  15/10/ 5 | True
+   3 |    41 |   23    5     4   9 |    14 |  22.0% |  43.9% |     16 | 0.5 |  14/ 9/ 5 | True
+   4 |    40 |   23    5     5   7 |    12 |  25.0% |  42.5% |     16 | 0.8 |  12/ 7/ 5 | True
+   5 |    43 |   23    5     5  10 |    15 |  23.3% |  46.5% |     15 | 0.6 |  15/10/ 5 | True
+VEREDICTO F2->F3: 5/5 semillas | K=5 nodos fuera | concentracion top-3 >= 50 por ciento | True
+
+$ validacion de los nodos llm (auditados 27 en semillas 1,3,5)
+requisitos activos, rama igual a una de las dos y adyacente, id fuera de ARBOL/COMBINACIONES,
+tick posterior al requisito -> 0 incumplimientos
+propuestas imposibles/lejanas nunca entran: 4-5 rechazos por prerrequisito o rama
+
+$ concentracion de narracion
+sobre lineas reales del diario (narrada and narrador_id), no sobre pesos: 0.6/0.8/0.5/0.8/0.6
+4-5 narradores por partida, cuota maxima 0.47-0.50 (no un solo individuo)
+mutacion: narrador aleatorio -> 0.167 y fallan dos semillas
+
+$ report culture --json
+7 nodos interaccion con origen/autor/tick (600 ticks); con --crisis --ticks 3000 salen ademas
+las 5 combinacion; derivado del grafo, no hardcodeado
+
+$ control negativo: --llm off -> success=false (no hay nodos llm y K no se alcanza)
+$ determinismo: dos --seed 1 --json byte-identicos en sincrono
+
+$ uv run pytest -q
+934 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 73 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 73 source files
+```
+
+</details>
