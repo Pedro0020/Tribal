@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.25-green)
+![Version](https://img.shields.io/badge/Version-0.1.26-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -153,6 +153,62 @@ observados de individuos que pensaron en un tick y de peticiones en vuelo (este
 último, solo con la cola asíncrona; en síncrono vale 0). El
 bloque sale también sin LLM —la saliencia se gana igual—, con `pensamientos`
 vacío; `sum(pensamientos) == llm.peticiones` siempre.
+
+### Diario y narración (concepto §10)
+
+El motor escribe **lo que pasó**; el LLM solo pone la frase. El diario
+(`tribal/culture/diario.py`) anota el primer fuego (`observar_rayo`), la primera
+caza en grupo (`caza_cooperativa`), la primera palabra (`proto_palabras`), el
+primer rito (`ritual`), la primera tradición y la muerte de cada anciano
+(≥ `UMBRAL_ANCIANO = 1500` ticks), más cada diálogo que devuelve una decisión.
+Cada hito se ata al nodo que representa el hecho, no al primer escalón de su
+rama: `gestos` no es una palabra ni `arte_rupestre` un rito. Cada entrada guarda
+`tick`, `tipo`, `texto`, `individuo_id` y `narrada`.
+
+La entrada se registra **siempre**; la narración es opcional:
+
+- Con capa LLM (`--llm stub|http`) el hito encola una petición al cronista —
+  una sola frase en español, sin diálogo— sin bloquear el tick. La frase llega
+  a la entrada por su propia cola y se guarda **tal cual** la devolvió el
+  modelo; `narrada=true`.
+- Sin LLM, con el servicio caído, con un timeout, con JSON inválido o sin
+  hueco en la cola, el hito queda con `texto=""` y `narrada=false`. El diario
+  no pierde nada: la historia es del motor, no del modelo.
+- `--llm stub --llm-sincrono` es el modo reproducible: el stub elige la frase
+  por hash del prompt, así que misma semilla y mismos ticks dan el mismo
+  diario.
+
+La narración es **best-effort**: comparte con las decisiones el presupuesto en
+vuelo (4 por defecto), así que en partidas largas una parte de los hitos queda
+sin frase (p. ej. 34 entradas / 18 narradas en 6000 ticks) y lo que llega
+después de cerrar la cola se descarta. El hecho nunca se pierde; la frase sí.
+
+El diálogo no se narra: es lo que el individuo dijo en la decisión, y se asocia
+a él (`tipo="dialogo"`, `individuo_id`). `Diario.ultimas(n)` ordena **por
+`tick`** (estable para empates), no por orden de llegada: una decisión
+asíncrona que aterriza tarde puede anotar un tick anterior al último hito, y el
+diario sigue cronológico. `resumen()["diario"]` publica `{entradas, narradas,
+dialogos, ultimas}` con las últimas tres entradas ya ordenadas; el `resumen()`
+legible de `run` imprime esas tres y `report diary` usa la misma vista.
+
+```bash
+uv run python -m tribal report diary --json --last 5
+uv run python -m tribal report diary --llm stub --llm-sincrono
+```
+
+```
+seed 42  ticks 600  llm stub  entradas 5  narradas 5  dialogos 0
+      2  primer_fuego       ind 3   el grupo reconoció en sí mismo lo que antes solo hacía
+      6  primer_rito        ind 3   el humo subió y nadie volvió a mirar atrás
+     12  primera_tradicion  ind 9   el grupo reconoció en sí mismo lo que antes solo hacía
+     13  primera_caza_grupo ind 3   la presa cayó entre varios y la carne alcanzó para todos
+     86  primera_palabra    ind 11  el gesto se repitió sin que nadie lo mandara
+```
+
+`report diary` corre una partida headless (acepta `--seed`, `--ticks`,
+`--last`, `--config`, `--crisis`, `--llm` y `--llm-sincrono`) y publica las
+últimas `--last` entradas (5 por defecto). Todavía no lee una partida
+persistida: cuando exista `tribu.db` leerá la tabla `diario`.
 
 El contrato sale de [`viabilidad-modelo.md`](vault/01_PROYECTO/viabilidad-modelo.md)
 y está implementado en `tribal/llm/candidatas.py` + `decision.py`: el modelo

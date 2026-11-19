@@ -3,8 +3,9 @@ tribal.cli — punto de entrada del proyecto: `python -m tribal` o `make run`.
 
 argparse de la stdlib. `hello` se mantiene como humo del renombrado; `run`
 arranca la simulación en ventana o en modo headless, `report culture` resume
-el árbol de conocimiento de una corrida headless corta y `report gate-f1`
-publica el barrido de la puerta F1→F2 con su veredicto.
+el árbol de conocimiento de una corrida headless corta, `report diary` publica
+los últimos hitos narrados y `report gate-f1` publica el barrido de la puerta
+F1→F2 con su veredicto.
 """
 
 from __future__ import annotations
@@ -44,6 +45,8 @@ from tribal.sim import run as run_sim
 TICKS_INFORME = 600
 #: Cada cuántos ticks muestrea `report telemetry`: 10 filas para 600 ticks.
 INTERVALO_TELEMETRIA = 60
+#: Entradas de diario que publica `report diary` si no se pide otra cosa.
+DIARIO_ULTIMAS = 5
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -182,6 +185,58 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="Muestras como un único objeto JSON."
     )
 
+    diario = informes.add_parser(
+        "diary",
+        help="Diario: los últimos hitos de una corrida y su frase, si la hubo.",
+        description=(
+            "Corre una partida headless (--ticks, 600 por defecto) y publica las "
+            "últimas --last entradas del diario: tick, tipo, individuo, texto y si "
+            "la frase la puso el LLM. Sin capa LLM el hito se registra igual, sin "
+            "narración; `--llm stub --llm-sincrono` es el modo reproducible."
+        ),
+    )
+    diario.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Semilla del mundo; manda sobre la del --config (default 42).",
+    )
+    diario.add_argument(
+        "--ticks",
+        type=int,
+        default=TICKS_INFORME,
+        help=f"Ticks a simular (default {TICKS_INFORME}).",
+    )
+    diario.add_argument(
+        "--last",
+        type=int,
+        default=DIARIO_ULTIMAS,
+        help=f"Entradas más recientes a mostrar (default {DIARIO_ULTIMAS}).",
+    )
+    diario.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Fichero JSON con los parámetros de la partida (ver docs/config-ejemplo.json).",
+    )
+    diario.add_argument(
+        "--crisis",
+        action="store_true",
+        help="Simula la crisis (sequía) antes de leer el diario.",
+    )
+    diario.add_argument(
+        "--llm",
+        choices=("off", "stub", "http"),
+        default="off",
+        help="Capa LLM que narra los hitos: `off` (default), `stub` o `http`.",
+    )
+    diario.add_argument(
+        "--llm-sincrono",
+        action="store_true",
+        help="Sin hilo: la frase se resuelve en el tick. Determinista; para tests.",
+    )
+    diario.add_argument("--json", action="store_true", help="Diario como un único objeto JSON.")
+
     gate = informes.add_parser(
         "gate-f1",
         help="Barrido de la puerta F1→F2: proporción divergente en calma y en crisis.",
@@ -302,6 +357,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _report_gate_f1(args)
         if args.report == "telemetry":
             return _report_telemetry(args)
+        if args.report == "diary":
+            return _report_diary(args)
         return _report(args)
     if args.command == "llm":
         if args.llm == "eval":
@@ -450,6 +507,67 @@ def _report_telemetry(args: argparse.Namespace) -> int:
     return 0
 
 
+def _report_diary(args: argparse.Namespace) -> int:
+    """`report diary`: los hitos de una corrida y la frase que les puso el LLM.
+
+    La corrida es la misma que la de `run --headless`. Sin `--llm` no hay
+    narraciones, pero los hitos se registran igual y salen con `narrada=false`.
+    """
+    try:
+        base = SimConfig.desde_json(args.config) if args.config else SimConfig()
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    seed = base.seed if args.seed is None else args.seed
+    if args.ticks <= 0:
+        print("error: --ticks debe ser mayor que 0", file=sys.stderr)
+        return 2
+    if args.last <= 0:
+        print("error: --last debe ser mayor que 0", file=sys.stderr)
+        return 2
+    if args.llm_sincrono and args.llm == "http":
+        print(
+            "error: --llm-sincrono solo vale con --llm stub: resolver http en el tick "
+            "congelaría el bucle hasta el timeout",
+            file=sys.stderr,
+        )
+        return 2
+
+    cola = None
+    if args.llm != "off":
+        cliente = ClienteLLM(transporte=backend_stub()) if args.llm == "stub" else ClienteLLM()
+        cola = ColaLLM(cliente, sincrona=args.llm_sincrono)
+
+    config = replace(base, seed=seed, crisis=base.crisis or args.crisis)
+    try:
+        simulacion = run_sim(
+            args.ticks,
+            seed,
+            headless=True,
+            individuos=config.individuos,
+            config=config,
+            cola=cola,
+        )
+    finally:
+        if cola is not None:
+            cola.cerrar()
+
+    informe: dict[str, Any] = {
+        "seed": seed,
+        "ticks": args.ticks,
+        "crisis": config.crisis,
+        "llm": args.llm,
+        **simulacion.diario.a_json(),
+        "ultimas": [entrada.a_json() for entrada in simulacion.diario.ultimas(args.last)],
+    }
+    if args.json:
+        print(json.dumps(informe, ensure_ascii=True))
+    else:
+        print(_texto_diario(informe))
+    return 0
+
+
 def _report_gate_f1(args: argparse.Namespace) -> int:
     """`report gate-f1`: los dos brazos sobre las mismas semillas y su veredicto.
 
@@ -557,6 +675,19 @@ def _texto_telemetria(informe: dict[str, Any]) -> str:
     return "\n".join(lineas)
 
 
+def _texto_diario(informe: dict[str, Any]) -> str:
+    lineas = [
+        f"seed {informe['seed']}  ticks {informe['ticks']}  llm {informe['llm']}  "
+        f"entradas {informe['entradas']}  narradas {informe['narradas']}  "
+        f"dialogos {informe['dialogos']}"
+    ]
+    for entrada in informe["ultimas"]:
+        quien = entrada["individuo_id"] if entrada["individuo_id"] is not None else "-"
+        texto = entrada["texto"] or "(sin narracion)"
+        lineas.append(f"  {entrada['tick']:>5}  {entrada['tipo']:<18} ind {quien:<3} {texto}")
+    return "\n".join(lineas)
+
+
 def _benchmark(ms_tick_medio: float) -> int:
     """Presupuesto de frame. Va a stderr: no contamina la salida JSON ni la del resumen."""
     if ms_tick_medio >= MS_FRAME:
@@ -587,6 +718,16 @@ def _texto_resumen(resumen: dict[str, Any]) -> str:
         lineas.append(
             f"llm peticiones {llm['peticiones']}  aplicadas {llm['aplicadas']}  "
             f"descartadas {llm['descartadas']}  fallos {llm['fallos']}"
+        )
+    diario = resumen.get("diario")
+    if diario and diario["entradas"]:
+        lineas.append(
+            f"diario entradas {diario['entradas']}  narradas {diario['narradas']}  "
+            f"dialogos {diario['dialogos']}"
+        )
+        lineas.extend(
+            f"  {entrada['tick']:>5}  {entrada['tipo']:<18} {entrada['texto'] or '(sin narracion)'}"
+            for entrada in diario["ultimas"]
         )
     return "\n".join(lineas)
 

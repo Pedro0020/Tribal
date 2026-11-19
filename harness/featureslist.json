@@ -351,10 +351,13 @@
         "uv run python -m tribal report diary --json --last 5 imprime las ultimas cinco entradas",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F2-004"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 1,
+      "closed": "2026-11-19"
     },
     {
       "id": "F2-006",
@@ -776,6 +779,21 @@
       "started": "2026-11-19",
       "review_rounds": 0,
       "closed": "2026-11-19"
+    },
+    {
+      "id": "ART-001",
+      "title": "Versionar el kit de arte 16 px y enlazarlo en el README",
+      "description": "El kit de arte 16 px (16 PNG cuantizados, hojas de contacto, mockups y docs/art/README.md) ya existe en disco, pero al cerrar F2-004 se anadio docs/art/ al .git/info/exclude y no se versiono. Esta feature lo mete en git, lo enlaza desde el README y deja constancia en el historial. No toca codigo de producto: TILE_PX sigue en 8 y el kit no se cablea.",
+      "acceptance_criteria": [
+        "docs/art versionado: git ls-files docs/art lista mas de 0 ficheros (hace falta git add -f porque .git/info/exclude lo oculta)",
+        "README.md enlaza docs/art/README.md en la tabla de Documentacion: uv run python docs/art/enlazar_readme.py y la fila aparece una sola vez",
+        "Sin secretos: grep recursivo de pixl_ en el arbol de trabajo devuelve 0 ficheros",
+        "./init.sh en verde"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "F2-005"
+      ]
     }
   ]
 }

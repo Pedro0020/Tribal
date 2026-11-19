@@ -21,10 +21,12 @@ from typing import Any, Literal
 
 from tribal.llm.esquema import (
     EJEMPLOS,
+    ESQUEMA_NARRACION,
     ESQUEMA_RESPUESTA,
     Decision,
     ErrorValidacion,
     construir_prompt,
+    construir_prompt_narracion,
     validar,
 )
 from tribal.llm.http import Transporte, transporte_http
@@ -37,6 +39,16 @@ TEMPERATURA = 0.3
 #: Tokens por decisión, sobre JSON incluido. Una elección + razón + diálogo.
 MAX_TOKENS = 64
 
+#: Frases del stub, elegidas por hash del prompt: mismas peticiones, mismas frases.
+FRASES_STUB: tuple[str, ...] = (
+    "el humo subió y nadie volvió a mirar atrás",
+    "la presa cayó entre varios y la carne alcanzó para todos",
+    "la primera palabra quedó dicha y el silencio ya no fue igual",
+    "el gesto se repitió sin que nadie lo mandara",
+    "el viejo se fue y su memoria se quedó en los suyos",
+    "el grupo reconoció en sí mismo lo que antes solo hacía",
+)
+
 Estado = Literal["ok", "degradado", "error"]
 
 
@@ -46,6 +58,15 @@ class Resultado:
 
     estado: Estado
     decision: Decision | None = None
+    motivo: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoNarracion:
+    """Lo que devuelve `narrar`: la frase o el motivo por el que no la hay."""
+
+    estado: Estado
+    texto: str = ""
     motivo: str | None = None
 
 
@@ -121,6 +142,34 @@ class ClienteLLM:
             )
         return resultado
 
+    def narrar(self, hito: str, contexto: Mapping[str, Any] | str) -> ResultadoNarracion:
+        """Pide una frase sobre `hito`; nunca lanza, como `decidir`.
+
+        Sin servicio, HTTP no 200 o JSON inválido devuelve texto vacío: el hito
+        ya está en el diario y la falta de frase no es un fallo del motor.
+        """
+        cuerpo: dict[str, Any] = {
+            "model": self.modelo,
+            "messages": construir_prompt_narracion(hito, contexto),
+            "format": ESQUEMA_NARRACION,
+            "stream": False,
+            "options": {"temperature": TEMPERATURA, "num_predict": MAX_TOKENS},
+        }
+        try:
+            estado, bruto = self._transporte(
+                "POST", f"{self.endpoint}/api/chat", cuerpo, self.timeout
+            )
+        except Exception as exc:  # conexión rechazada, timeout, transporte roto
+            return ResultadoNarracion("degradado", motivo=f"transporte: {exc}")
+
+        if estado != 200:
+            return ResultadoNarracion("degradado", motivo=f"http {estado}")
+
+        texto = _texto_de(bruto)
+        if isinstance(texto, ErrorValidacion):
+            return ResultadoNarracion("error", motivo=texto.motivo)
+        return ResultadoNarracion("ok", texto=texto)
+
     def intercambiar(self, cuerpo: Mapping[str, Any]) -> Resultado:
         """POST `/api/chat` con un cuerpo ya construido; nunca lanza.
 
@@ -162,10 +211,16 @@ def backend_stub() -> Transporte:
         if metodo != "POST" or cuerpo is None:
             return 200, b'{"models": []}'
         prompt = _prompt_del_cuerpo(cuerpo)
+        digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        if _es_narracion(cuerpo):
+            frase = FRASES_STUB[int(digest, 16) % len(FRASES_STUB)]
+            sobre_texto = {
+                "message": {"role": "assistant", "content": json.dumps({"texto": frase})}
+            }
+            return 200, json.dumps(sobre_texto).encode("utf-8")
         candidatas = _candidatas_del_prompt(prompt)
         if not candidatas:
             return 500, b'{"error": "sin candidatas"}'
-        digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         elegida = candidatas[int(digest, 16) % len(candidatas)]
         contenido = {
             "accion": elegida,
@@ -177,6 +232,15 @@ def backend_stub() -> Transporte:
         return 200, json.dumps(sobre).encode("utf-8")
 
     return transporte
+
+
+def _es_narracion(cuerpo: Mapping[str, Any]) -> bool:
+    """El `format` distingue la petición del cronista de la de decisión."""
+    formato = cuerpo.get("format")
+    if not isinstance(formato, Mapping):
+        return False
+    propiedades = formato.get("properties")
+    return isinstance(propiedades, Mapping) and "texto" in propiedades
 
 
 def _prompt_del_cuerpo(cuerpo: Mapping[str, Any]) -> str:
@@ -240,6 +304,27 @@ def _bytes(respuesta: Any) -> bytes:
 
 def _contenido(bruto: bytes) -> Decision | ErrorValidacion:
     """Desenvuelve el sobre de `/api/chat` y valida el JSON del mensaje."""
+    datos = _mensaje_json(bruto)
+    if isinstance(datos, ErrorValidacion):
+        return datos
+    return validar(datos)
+
+
+def _texto_de(bruto: bytes) -> str | ErrorValidacion:
+    """Igual que `_contenido`, para la respuesta del cronista: solo `texto`."""
+    datos = _mensaje_json(bruto)
+    if isinstance(datos, ErrorValidacion):
+        return datos
+    if not isinstance(datos, Mapping):
+        return ErrorValidacion("la respuesta no es un objeto JSON")
+    texto = datos.get("texto")
+    if not isinstance(texto, str):
+        return ErrorValidacion("falta 'texto' o no es texto")
+    return texto
+
+
+def _mensaje_json(bruto: bytes) -> Any | ErrorValidacion:
+    """Desenvuelve el sobre de `/api/chat` y devuelve el JSON del mensaje."""
     try:
         sobre = json.loads(bruto)
     except (TypeError, ValueError):
@@ -253,7 +338,6 @@ def _contenido(bruto: bytes) -> Decision | ErrorValidacion:
     if not isinstance(contenido, str):
         return ErrorValidacion("el mensaje no trae 'content'")
     try:
-        datos = json.loads(contenido)
+        return json.loads(contenido)
     except ValueError:
         return ErrorValidacion("el contenido no es JSON")
-    return validar(datos)

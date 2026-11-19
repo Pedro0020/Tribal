@@ -30,10 +30,12 @@ from tribal.core.modelos import (
 )
 from tribal.culture import beneficios as modulo_beneficios
 from tribal.culture import tradiciones
+from tribal.culture.arbol import Nodo
 from tribal.culture.combinaciones import COMBINACIONES
+from tribal.culture.diario import Diario
 from tribal.culture.grafo import Grafo
 from tribal.llm import candidatas as modulo_candidatas
-from tribal.llm.cola import ColaLLM, Peticion
+from tribal.llm.cola import ColaLLM, Peticion, PeticionNarracion
 from tribal.llm.embeddings import IndiceRecuerdos, embedder_por_defecto
 
 #: Presupuesto de frame a 60 fps.
@@ -101,6 +103,17 @@ REGENERACION_INVIERNO = 0.5
 #: (máximo 15 % por tick) y completa el cruce la mitad de las veces.
 PROB_INTENTO_DIVERGENTE = 0.15
 PROB_COMPLETAR_COMBINACION = 0.5
+#: Un muerto con esta edad o más es un anciano: su muerte entra en el diario.
+UMBRAL_ANCIANO = 1500
+#: Nodo del árbol que dispara cada hito de "primera vez" (concepto §10). Se ata
+#: al nodo que representa el hecho y no al primer escalón de su rama: `gestos` no
+#: es una palabra y `arte_rupestre` no es todavía un rito.
+HITO_POR_NODO: dict[str, str] = {
+    "observar_rayo": "primer_fuego",
+    "proto_palabras": "primera_palabra",
+    "ritual": "primer_rito",
+    "caza_cooperativa": "primera_caza_grupo",
+}
 
 
 class Simulacion:
@@ -139,6 +152,11 @@ class Simulacion:
         self._ms_acumulados = 0.0
         #: Lo que la tribu ha descubierto. Vive aquí y no en el mundo.
         self.grafo = Grafo()
+        #: Historia de la tribu (concepto §10): hitos y diálogos, con su frase si
+        #: el LLM la puso. La entrada se registra siempre; narrar es opcional.
+        self.diario = Diario()
+        #: Tipos de hito de "primera vez" ya anotados: cada uno entra una sola vez.
+        self._hitos_vistos: set[str] = set()
         #: Quién ha descubierto una combinación y quién ha existido alguna vez.
         #: Con los dos conjuntos, `resumen` mide la supervivencia de cada grupo
         #: (eje 6: no se puede refinar lo que no se mide).
@@ -339,6 +357,9 @@ class Simulacion:
             )
             if autor is not None:
                 saliencia.subir(autor, "tradicion")
+            if "primera_tradicion" not in self._hitos_vistos:
+                self._hitos_vistos.add("primera_tradicion")
+                self._hito("primera_tradicion", autor, f"{tradicion.titulo} ({tradicion.id})")
             self._registrar_recuerdo(
                 tradicion.id,
                 f"tradicion {tradicion.rama} {tradicion.id} {tradicion.titulo}",
@@ -450,13 +471,26 @@ class Simulacion:
         """Recoge lo que llegue y lo aplica como intención futura (paso 7 de §3).
 
         El orden no depende de la carrera: `drenar` ya devuelve por `(tick, id)`.
+        Las narraciones llegan por su propia cola y se aplican a la entrada que
+        las pidió, sin tocar la decisión: el diario ya tenía el hito.
         """
         if self.cola is None:
             return
+        for texto in self.cola.drenar_textos():
+            self.diario.narrar(texto.entrada, texto.texto)
         vivos = {individuo.id: individuo for individuo in self.mundo.individuos}
         for respuesta in self.cola.drenar(self.mundo.tick):
             if respuesta.decision is None:
                 continue
+            if respuesta.decision.dialogo:
+                # Habló antes de morir: el diálogo se anota aunque su emisor ya
+                # no esté entre los vivos del tick.
+                self.diario.registrar(
+                    respuesta.tick,
+                    "dialogo",
+                    individuo_id=respuesta.individuo_id,
+                    texto=respuesta.decision.dialogo,
+                )
             individuo = vivos.get(respuesta.individuo_id)
             if individuo is None:
                 continue
@@ -485,6 +519,8 @@ class Simulacion:
             if individuo.necesidades.salud <= 0.0 or individuo.edad >= _longevidad(individuo):
                 individuo.vivo = False
                 self.muertes += 1
+                if individuo.edad >= UMBRAL_ANCIANO:
+                    self._hito("muerte_ancestro", individuo, f"edad {individuo.edad}")
                 if individuo.id in self._descubridores:
                     self._longevidad_descubridores.append(individuo.edad)
                 elif _tramo(individuo) == "conformista":
@@ -732,10 +768,45 @@ class Simulacion:
         # Hito narrativo: ser el primero de la tribu en un escalón de la rama
         # —el primer fuego, la primera palabra, el primer líder— (concepto §10b).
         saliencia.subir(individuo, "primer_nodo")
+        self._hito_nodo(nodo, individuo)
         self._registrar_recuerdo(
             nodo.id, f"{nodo.rama} {nodo.id} {nodo.titulo} practicando {accion}"
         )
         return True
+
+    def _hito_nodo(self, nodo: Nodo, individuo: Individuo) -> None:
+        """El nodo que representa el hecho —fuego, palabra, rito o caza— (§10)."""
+        tipo = HITO_POR_NODO.get(nodo.id)
+        if tipo is None or tipo in self._hitos_vistos:
+            return
+        self._hitos_vistos.add(tipo)
+        self._hito(tipo, individuo, f"{nodo.titulo} ({nodo.id})")
+
+    def _hito(self, tipo: str, individuo: Individuo | None, detalle: str) -> int:
+        """Anota el hito en el diario y pide su frase. Nunca espera al LLM.
+
+        La entrada existe con o sin modelo: la narración es un adorno opcional y
+        llega después, cuando la cola la resuelve.
+        """
+        entrada = self.diario.registrar(
+            self.mundo.tick, tipo, individuo_id=None if individuo is None else individuo.id
+        )
+        if self.cola is not None:
+            self.cola.narrar(
+                PeticionNarracion(
+                    entrada=entrada,
+                    tick=self.mundo.tick,
+                    hito=tipo,
+                    contexto={
+                        "seed": self.mundo.seed,
+                        "tick": self.mundo.tick,
+                        "poblacion": len(self.mundo.individuos),
+                        "estacion": self.mundo.estacion,
+                        "detalle": detalle,
+                    },
+                )
+            )
+        return entrada
 
     @property
     def poblacion(self) -> int:
@@ -898,6 +969,12 @@ class Simulacion:
             #: la saliencia no depende de que haya LLM; sin cola, `pensamientos`
             #: está vacío. Los `max_*` acotan el presupuesto de pensamiento.
             "saliencia": self._saliencia_json(),
+            #: Diario (concepto §10): el hito se registra siempre; `narradas`
+            #: cuenta las frases que puso el LLM y `dialogos` lo que dijo alguien.
+            "diario": {
+                **self.diario.a_json(),
+                "ultimas": [entrada.a_json() for entrada in self.diario.ultimas(3)],
+            },
             "config": self.config.a_json(),
         }
         if self.cola is not None:

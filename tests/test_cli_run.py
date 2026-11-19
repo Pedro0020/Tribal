@@ -69,6 +69,7 @@ CLAVES = {
     "nivel_max",
     "memoria",
     "saliencia",
+    "diario",
     "config",
 }
 

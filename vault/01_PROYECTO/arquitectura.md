@@ -143,6 +143,19 @@ correcciones en `llm.corregidas`. `llm eval` mide el acierto del contrato en 20
 escenarios simples con un backend simulado competente (CI) y deja
 `--backend http` para medir el modelo real.
 
+**Narración implementada en F2-005.** El cronista de concepto §10 no elige
+nada: `ClienteLLM.narrar(hito, contexto)` manda un prompt propio
+(`esquema.construir_prompt_narracion`) con `ESQUEMA_NARRACION`
+(`{texto}`) y devuelve `ResultadoNarracion`, degradando a texto vacío sin
+lanzar. La petición viaja por la misma cola que las decisiones como
+`PeticionNarracion`, comparte el presupuesto en vuelo y el worker la resuelve
+contra el mismo cliente; la frase vuelve como `TextoNarrado` y
+`Simulacion._drenar` la aplica a la entrada del diario que la pidió. Sin hueco
+en la cola, sin servicio o con JSON inválido el hito se queda sin frase, pero
+se registró igual en el tick en que ocurrió. `backend_stub` detecta el `format`
+de narración y responde por hash del prompt, así que `--llm stub
+--llm-sincrono` produce el mismo diario en cada corrida.
+
 ### 2.4 Memoria colectiva — `tribal/culture/`
 
 `grafo.py` mantiene `nodos` + `aristas` en RAM; el espejo en SQLite lo escribe
@@ -154,6 +167,18 @@ las dos rutas por las que un nodo se propaga: **enseñar** (anciano → joven,
 coste de tiempo, depende de lenguaje) e **imitar** (conformistas copian lo que
 ven funcionar). Un nodo que nadie transmite y cuyo portador muere queda
 `apagado`, no borrado: las técnicas perdidas son parte del experimento.
+
+`diario.py` (F2-005) es la memoria narrativa de concepto §10: `Entrada(tick,
+tipo, texto, individuo_id, narrada)` y `Diario.registrar/ultimas/a_json`. El
+motor lo llena desde `Simulacion._hito` —nodos `observar_rayo` (primer fuego),
+`proto_palabras` (primera palabra), `ritual` (primer rito) y `caza_cooperativa`
+(primera caza en grupo), más la primera tradición y cada muerte de anciano— y
+desde `_drenar` (diálogos), y la frase del LLM se escribe después, tal cual, con
+`Diario.narrar`. La entrada existe aunque no haya frase: narrar es opcional y
+nunca bloquea el tick. `ultimas(n)` ordena por `tick` —estable para empates— y
+no por orden de llegada, porque una decisión asíncrona puede anotar un diálogo
+anterior al último hito; `resumen()["diario"]` publica `{entradas, narradas,
+dialogos, ultimas}` ya ordenado, y `report diary` usa la misma vista.
 
 ### 2.5 Persistencia — `tribal/store/`
 

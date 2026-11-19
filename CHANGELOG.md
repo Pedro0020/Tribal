@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: diario de hitos con narracion y dialogo (F2-005)
 - feat: saliencia y pensamiento selectivo (F2-004)
 - feat: embeddings en CPU y recuperacion de memoria (F2-003)
 - feat: contrato de decision entre candidatas viables (F2-CONTRATO)

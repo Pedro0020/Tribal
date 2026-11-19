@@ -58,6 +58,20 @@ SISTEMA = (
     "elección en una frase; `dialogo` es lo que dice (cadena vacía si no habla)."
 )
 
+#: Cronista de concepto §10: no decide nada, solo pone una frase al hito.
+SISTEMA_NARRACION = (
+    "Eres el cronista de una tribu paleolítica. Escribe una sola frase en "
+    "español sobre el hito que se te describe, sin diálogo. Devuelve solo un "
+    "objeto JSON con el campo texto."
+)
+#: JSON schema de la narración. El campo es libre; el esqueleto no.
+ESQUEMA_NARRACION: dict[str, Any] = {
+    "type": "object",
+    "properties": {"texto": {"type": "string"}},
+    "required": ["texto"],
+    "additionalProperties": False,
+}
+
 #: Few-shot del prompt: dos dilemas resueltos para que el modelo copie el
 #: formato de elección, no el contenido.
 EJEMPLOS: tuple[dict[str, Any], ...] = (
@@ -169,3 +183,26 @@ def _texto(estado: Mapping[str, Any] | str, candidatas: Sequence[str]) -> str:
         f"Acciones candidatas: {', '.join(candidatas)}\n"
         "Elige exactamente una candidata y responde con el JSON del esquema."
     )
+
+
+def construir_prompt_narracion(
+    hito: str, contexto: Mapping[str, Any] | str
+) -> list[dict[str, str]]:
+    """Mensajes de `/api/chat` para el cronista: el hito y el estado del tick.
+
+    No lleva candidatas: aquí el modelo no elige, solo redacta lo que el motor
+    ya decidió que pasó.
+    """
+    estado = (
+        contexto
+        if isinstance(contexto, str)
+        else json.dumps(contexto, ensure_ascii=False, sort_keys=True)
+    )
+    return [
+        {"role": "system", "content": SISTEMA_NARRACION},
+        {
+            "role": "user",
+            "content": f"Hito: {hito}\nEstado: {estado}\nEscribe una sola frase y responde "
+            "con el JSON del esquema.",
+        },
+    ]

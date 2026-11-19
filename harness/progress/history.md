@@ -1201,3 +1201,45 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 66 so
 ```
 
 </details>
+
+## F2-005 — Narracion de hitos y dialogo
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 368 passed in 168.28s (0:02:48)
+- **Cambios:** tribal/culture/diario.py (nuevo: Entrada, registrar, narrar, ultimas ordenadas por tick, a_json); tribal/sim.py (hitos de fuego/palabra/rito/caza/tradicion y muerte de anciano, dialogo por individuo, narracion por la cola, bloque diario en el resumen); tribal/llm/{esquema,cliente}.py (narracion); tribal/cli.py (report diary); tests/test_diario.py (nuevo, 17 casos) y test_cli_run.py; README; arquitectura.md §2.3/§2.4
+- **Decisiones:** El diario registra el hito siempre y narra cuando puede: texto del LLM literal, y si falla o no hay LLM queda texto vacio con narrada=false, de modo que el evento no se pierde. La narracion viaja por la misma cola asincrona (no bloquea) y es best-effort: al cerrar se descarta lo pendiente. La vista `ultimas` ordena por tick (stable) en vez de asumir append == cronologia: una decision del tick 1 puede llegar despues de un hito del 5, y el reviewer reprodujo la inversion. Los hitos de lenguaje y rito se atan a proto_palabras y ritual, no a gestos/arte_rupestre, que son el nivel anterior. El dialogo se anota aunque el emisor haya muerto (documentado).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 368 passed
+
+$ hitos conectados y atados al nodo correcto
+fuego 2 (observar_rayo) | rito 6 (ritual) | caza 13 (caza_cooperativa) | palabra 86 (proto_palabras)
+muerte de anciano en 8000 ticks: 44 entradas, la primera en tick 1818 (umbral 1500; longevidad minima 2550)
+gestos/arte_rupestre ya no disparan "primera palabra"/"primer rito"
+
+$ narracion
+texto del stub guardado literal (espacios preservados)
+TimeoutError -> entrada registrada, texto="", narrada=false
+transporte de 400 ms: mundo.tick=10, ms_tick_medio=0.16 (<16.67), en_vuelo>=1 (no bloquea)
+al cerrar, la narracion pendiente se descarta (documentado)
+
+$ orden (bloqueante de la ronda 1)
+append [(5, hito), (1, dialogo)] -> ultimas [1,5] ; resumen y report diary usan esa vista
+cola asincrona real (200 ms): decision tick 1 tras hito tick 5 -> [1,5]
+report diary --json --last 5 -> ticks 2, 6, 12, 13, 86 (ordenado)
+
+$ dialogo: cada Decision con dialogo queda asociada a su individuo; contador en resumen
+$ report diary --json --last 5 -> 5 entradas completas ; determinista en sincrono
+
+$ uv run pytest -q
+924 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 55 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 66 source files
+```
+
+</details>

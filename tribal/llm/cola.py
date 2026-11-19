@@ -62,6 +62,24 @@ class Respuesta:
     corregida: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class PeticionNarracion:
+    """Un hito para el cronista. No decide nada y no caduca: se narra lo que pasó."""
+
+    entrada: int
+    tick: int
+    hito: str
+    contexto: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class TextoNarrado:
+    """La frase que devolvió el hilo para la entrada `entrada`."""
+
+    entrada: int
+    texto: str
+
+
 class ColaLLM:
     """Hilo dedicado + dos colas acotadas. `sincrona` existe para los tests."""
 
@@ -81,8 +99,11 @@ class ColaLLM:
         self.max_en_vuelo = max_en_vuelo
         self.ventana = ventana
         self.sincrona = sincrona
-        self._peticiones: queue.Queue[Peticion | None] = queue.Queue(maxsize=max_en_vuelo)
+        self._peticiones: queue.Queue[Peticion | PeticionNarracion | None] = queue.Queue(
+            maxsize=max_en_vuelo
+        )
         self._resultados: queue.Queue[Respuesta] = queue.Queue(maxsize=max_en_vuelo * 2)
+        self._textos: queue.Queue[TextoNarrado] = queue.Queue(maxsize=max_en_vuelo * 2)
         self._cerrojo = threading.Lock()
         self._hilo: threading.Thread | None = None
         self._cerrada = False
@@ -94,6 +115,7 @@ class ColaLLM:
         self._corregidas = 0
         #: En modo síncrono no hay hilo: las respuestas esperan aquí.
         self._sincronas: list[Respuesta] = []
+        self._textos_sincronos: list[TextoNarrado] = []
 
     def encolar(self, peticion: Peticion) -> bool:
         """Acepta la petición si hay hueco. Nunca bloquea; `False` si está lleno."""
@@ -152,6 +174,44 @@ class ColaLLM:
             respuestas.append(respuesta)
         return respuestas
 
+    def narrar(self, peticion: PeticionNarracion) -> bool:
+        """Encola una narración sin bloquear. `False` si no cabe o está cerrada.
+
+        Comparte el presupuesto en vuelo con las decisiones: si no hay hueco, el
+        hito se queda sin frase y no pasa nada, porque el diario ya lo tiene.
+        """
+        if self._cerrada:
+            return False
+        if self.sincrona:
+            self._textos_sincronos.append(self._resolver_narracion(peticion))
+            return True
+
+        self._arrancar()
+        with self._cerrojo:
+            if self._en_vuelo >= self.max_en_vuelo:
+                return False
+            self._en_vuelo += 1
+        try:
+            self._peticiones.put_nowait(peticion)
+        except queue.Full:  # el contador y la cola discrepan: no se acepta
+            with self._cerrojo:
+                self._en_vuelo -= 1
+            return False
+        return True
+
+    def drenar_textos(self) -> list[TextoNarrado]:
+        """Narraciones ya resueltas, sin bloquear; las vacías no se devuelven."""
+        if self.sincrona:
+            pendientes, self._textos_sincronos = self._textos_sincronos, []
+        else:
+            pendientes = []
+            while True:
+                try:
+                    pendientes.append(self._textos.get_nowait())
+                except queue.Empty:
+                    break
+        return [texto for texto in pendientes if texto.texto]
+
     def registrar_aplicada(self) -> None:
         """El bucle aplicó la decisión; solo la cola lleva la cuenta."""
         with self._cerrojo:
@@ -183,6 +243,7 @@ class ColaLLM:
         """
         with self._cerrojo:
             if self._cerrada:
+                self._descartar_textos()
                 return self._hilo is None or not self._hilo.is_alive()
             self._cerrada = True
 
@@ -190,6 +251,7 @@ class ColaLLM:
         if hilo is None:  # modo síncrono o cola nunca usada
             self._descartar_resultados()
             self._descartar_en_vuelo()
+            self._descartar_textos()
             return True
 
         # Lo aceptado y no empezado no se va a inferir: se descarta sin gastar
@@ -213,6 +275,7 @@ class ColaLLM:
 
         self._descartar_resultados()
         self._descartar_en_vuelo()
+        self._descartar_textos()
         return not hilo.is_alive()
 
     def _descartar_resultados(self) -> None:
@@ -252,9 +315,20 @@ class ColaLLM:
 
     def _bucle(self) -> None:
         while True:
-            peticion = self._peticiones.get()
-            if peticion is None:
+            trabajo = self._peticiones.get()
+            if trabajo is None:
                 return
+            if isinstance(trabajo, PeticionNarracion):
+                try:
+                    texto = self._resolver_narracion(trabajo)
+                except Exception:  # el worker no puede morir: dejaría cola sin consumidor
+                    texto = TextoNarrado(trabajo.entrada, "")
+                self._guardar_texto(texto)
+                with self._cerrojo:
+                    # `cerrar` puede haber puesto el contador a 0 mientras tanto.
+                    self._en_vuelo = max(0, self._en_vuelo - 1)
+                continue
+            peticion = trabajo
             try:
                 respuesta = self._resolver(peticion)
             except Exception as exc:  # el worker no puede morir: dejaría cola sin consumidor
@@ -285,3 +359,21 @@ class ColaLLM:
             tick=peticion.tick,
             corregida=eleccion.corregida,
         )
+
+    def _resolver_narracion(self, peticion: PeticionNarracion) -> TextoNarrado:
+        resultado = self.cliente.narrar(peticion.hito, peticion.contexto)
+        return TextoNarrado(peticion.entrada, resultado.texto)
+
+    def _guardar_texto(self, texto: TextoNarrado) -> None:
+        """Deposita la frase; si no cabe, el diario conserva el hito sin narrar."""
+        with contextlib.suppress(queue.Full):
+            self._textos.put_nowait(texto)
+
+    def _descartar_textos(self) -> None:
+        """Vacía lo narrado y no leído: al cerrar nadie va a aplicarlo."""
+        while True:
+            try:
+                self._textos.get_nowait()
+            except queue.Empty:
+                break
+        self._textos_sincronos = []
