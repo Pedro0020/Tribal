@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.21-green)
+![Version](https://img.shields.io/badge/Version-0.1.22-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -70,8 +70,45 @@ necesita red ni modelo.
 
 ## Capa LLM local (Fase 2)
 
-`tribal/llm/` es la capa aislada que habla con Ollama. Todavía **no** está
-conectada al bucle: la cola asíncrona y la selección por saliencia son F2-002.
+`tribal/llm/` es la capa aislada que habla con Ollama. `cola.py` es la cola
+asíncrona: un hilo daemon (`tribal-llm`) consume una `queue.Queue` acotada,
+llama al cliente y deposita la respuesta en otra cola acotada. **El LLM nunca se
+llama desde el hilo del bucle**: el tick encola como mucho una petición por tick
+—solo si hay dilema real (sed y energía en conflicto, o salud crítica)— y
+recoge al final lo que haya llegado.
+
+El presupuesto son dos cosas: como mucho `--llm-max-en-vuelo` peticiones
+aceptadas sin respuesta (4 por defecto; si está lleno, el individuo sigue por
+instinto) y una sola inferencia a la vez, porque el hilo es único. Una decisión
+vale una **ventana** de 180 ticks (~3 s a 60 fps): si llega más tarde se
+descarta en silencio y el individuo sigue por instinto. Una decisión vigente
+manda ese tick; si la acción elegida no se puede hacer, el instinto recupera el
+turno —una intención no puede congelar a nadie—.
+
+```bash
+uv run python -m tribal run --headless --json --llm stub --ticks 1200
+uv run python -m tribal run --headless --json --llm stub --llm-sincrono --ticks 1200
+uv run python -m tribal run --headless --json --llm http --llm-max-en-vuelo 2 --ticks 1200
+```
+
+`--llm off` (default) es la partida de Fase 0/1 y el resumen **no** lleva el
+bloque `llm`: nada cambia. Con `stub` un backend falso elige candidata con un
+hash del prompt —determinista entre procesos— y sirve para probar el cableado
+sin GPU ni red; `--llm-sincrono` resuelve en el mismo tick y es el modo
+exactamente reproducible (solo vale con `stub`: con `http` congelaría el tick
+hasta el timeout). En asíncrono, el tick en que aterriza una decisión y los
+propios contadores `llm` dependen del reloj real: la corrida es reproducible en
+el modelo, no en el `resumen()` completo. `--llm http` habla con Ollama.
+
+`resumen()["llm"]` publica `{peticiones, aplicadas, descartadas, fallos,
+en_vuelo}`; `fallos` son errores del transporte y `descartadas` lo que llegó
+fuera de ventana o quedó pendiente al cerrar. Al acabar la partida la cola se
+cierra: deja de aceptar, descarta lo que no había empezado y espera al hilo como
+mucho `en_vuelo * (timeout + 1)` —con Ollama caído y 4 en vuelo, ese es el tope
+del cierre—, así que `en_vuelo` queda a 0 y no hay hilos vivos. Si el LLM no
+responde —Ollama caído, timeout de 3 s, JSON inválido— no hay excepción: el
+fallo se cuenta en `fallos` y la tribu sigue por instinto indefinidamente. **No
+hay backoff**: el presupuesto de peticiones en vuelo es el único freno.
 
 El contrato sale de [`viabilidad-modelo.md`](vault/01_PROYECTO/viabilidad-modelo.md):
 el modelo **no genera la acción desde cero**, elige una de las **2–4 candidatas**

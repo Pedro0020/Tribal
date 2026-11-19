@@ -95,6 +95,9 @@ class Individuo:
     #: aunque el consumo lo deje temporalmente vacío.
     ultimo_parche: int | None = None
     ultimo_parche_migracion: int = -1
+    #: Intención forzada por el LLM: `(acción, tick en que caduca)`. Se consume
+    #: al usarse; si el tick ya pasó, el instinto manda (ventana de §3).
+    intencion_llm: tuple[str, int] | None = None
 
 
 @dataclass(slots=True)

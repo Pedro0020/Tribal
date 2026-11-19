@@ -31,7 +31,9 @@ from tribal.llm.cliente import (
     MODELO_POR_DEFECTO,
     TIMEOUT_POR_DEFECTO,
     ClienteLLM,
+    backend_stub,
 )
+from tribal.llm.cola import MAX_EN_VUELO_POR_DEFECTO, ColaLLM
 from tribal.sim import MS_FRAME, run_muestreado
 from tribal.sim import run as run_sim
 
@@ -79,6 +81,24 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--headless", action="store_true", help="Sin ventana.")
     run.add_argument("--json", action="store_true", help="Resumen como un único objeto JSON.")
     run.add_argument("--benchmark", action="store_true", help="Falla si no cabe en 16.67 ms/tick.")
+    run.add_argument(
+        "--llm",
+        choices=("off", "stub", "http"),
+        default="off",
+        help="Capa LLM: `off` (instinto, default), `stub` (backend falso determinista) "
+        "o `http` (Ollama en 127.0.0.1:11434).",
+    )
+    run.add_argument(
+        "--llm-sincrono",
+        action="store_true",
+        help="Sin hilo: la petición se resuelve en el tick. Determinista; para tests.",
+    )
+    run.add_argument(
+        "--llm-max-en-vuelo",
+        type=int,
+        default=MAX_EN_VUELO_POR_DEFECTO,
+        help=f"Peticiones aceptadas sin respuesta (default {MAX_EN_VUELO_POR_DEFECTO}).",
+    )
 
     report = sub.add_parser("report", help="Informes de la tribu, sin abrir ventana.")
     informes = report.add_subparsers(dest="report", required=True)
@@ -267,9 +287,35 @@ def _run(args: argparse.Namespace) -> int:
     if args.headless and args.ticks <= 0:
         print("error: --headless necesita --ticks mayor que 0", file=sys.stderr)
         return 2
+    if args.llm_max_en_vuelo < 1:
+        print("error: --llm-max-en-vuelo debe ser mayor que 0", file=sys.stderr)
+        return 2
+    if args.llm_sincrono and args.llm == "http":
+        print(
+            "error: --llm-sincrono solo vale con --llm stub: resolver http en el tick "
+            "congelaría el bucle hasta el timeout",
+            file=sys.stderr,
+        )
+        return 2
+
+    cola = None
+    if args.llm != "off":
+        cliente = ClienteLLM(transporte=backend_stub()) if args.llm == "stub" else ClienteLLM()
+        cola = ColaLLM(
+            cliente,
+            max_en_vuelo=args.llm_max_en_vuelo,
+            sincrona=args.llm_sincrono,
+        )
 
     config = replace(base, seed=seed, individuos=individuos, crisis=base.crisis or args.crisis)
-    simulacion = run_sim(args.ticks, seed, args.headless, individuos=individuos, config=config)
+    simulacion = run_sim(
+        args.ticks, seed, args.headless, individuos=individuos, config=config, cola=cola
+    )
+    if cola is not None and not cola.cerrar():
+        print(
+            "warning: la capa LLM no cerró limpia: el hilo tribal-llm sigue vivo",
+            file=sys.stderr,
+        )
     resumen = simulacion.resumen()
 
     if args.json:
@@ -442,21 +488,26 @@ def _benchmark(ms_tick_medio: float) -> int:
 
 
 def _texto_resumen(resumen: dict[str, Any]) -> str:
-    return "\n".join(
-        [
-            f"seed {resumen['seed']}  ticks {resumen['ticks']}  "
-            f"poblacion {resumen['poblacion_inicial']} -> {resumen['poblacion_final']}",
-            f"muertes {resumen['muertes']}  nacimientos {resumen['nacimientos']}  "
-            f"individuos movidos {resumen['individuos_movidos']}",
-            f"depredadores {resumen['depredador']['activos']}  "
-            f"ataques {resumen['depredador']['ataques']}  "
-            f"agrupamiento max {resumen['agrupamiento_max']}  huidas {resumen['huidas']}",
-            f"media energia {resumen['media_energia']}  media sed {resumen['media_sed']}",
-            f"estacion {resumen['estacion'] or 'sin estacion'}  "
-            f"parches {len(resumen['parches'])}  "
-            f"migraciones {resumen['migraciones']}",
-        ]
-    )
+    lineas = [
+        f"seed {resumen['seed']}  ticks {resumen['ticks']}  "
+        f"poblacion {resumen['poblacion_inicial']} -> {resumen['poblacion_final']}",
+        f"muertes {resumen['muertes']}  nacimientos {resumen['nacimientos']}  "
+        f"individuos movidos {resumen['individuos_movidos']}",
+        f"depredadores {resumen['depredador']['activos']}  "
+        f"ataques {resumen['depredador']['ataques']}  "
+        f"agrupamiento max {resumen['agrupamiento_max']}  huidas {resumen['huidas']}",
+        f"media energia {resumen['media_energia']}  media sed {resumen['media_sed']}",
+        f"estacion {resumen['estacion'] or 'sin estacion'}  "
+        f"parches {len(resumen['parches'])}  "
+        f"migraciones {resumen['migraciones']}",
+    ]
+    if "llm" in resumen:
+        llm = resumen["llm"]
+        lineas.append(
+            f"llm peticiones {llm['peticiones']}  aplicadas {llm['aplicadas']}  "
+            f"descartadas {llm['descartadas']}  fallos {llm['fallos']}"
+        )
+    return "\n".join(lineas)
 
 
 if __name__ == "__main__":

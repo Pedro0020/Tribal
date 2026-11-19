@@ -1021,3 +1021,47 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 55 so
 ```
 
 </details>
+
+## F2-002 — Cola asincrona de inferencia que no frena el mundo
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 298 passed in 156.23s (0:02:36)
+- **Cambios:** tribal/llm/cola.py (nuevo: hilo dedicado, colas acotadas, ventana de validez, cierre acotado con en_vuelo a 0); tribal/llm/cliente.py (backend_stub determinista por SHA-256, worker blindado); tribal/core/modelos.py (intencion_llm con caducidad); tribal/sim.py (encolar un dilema por tick, drenar al final, aplicar intencion con fallback, resumen llm); tribal/cli.py (--llm off|stub|http, --llm-sincrono, --llm-max-en-vuelo); tests/test_llm_cola.py (nuevo, 12 casos); README; vault/01_PROYECTO/arquitectura.md (§3)
+- **Decisiones:** El bucle nunca llama al LLM: encola con put_nowait, drena con get_nowait y aplica una intencion con caducidad; si no llega o caduca, el instinto manda. El cierre es el punto dificil: hay que dejar de aceptar, vaciar pendientes (descartadas), poner el centinela y esperar como maximo una inferencia, no N; el reviewer reprodujo el fallo original (en_vuelo=2 y hilo vivo) y ahora n=1,2,4 cierran en ~250 ms con en_vuelo=0 y sin hilos. Contadores separados: fallos son errores del transporte y descartadas incluye fuera de ventana y pendientes al cerrar. El modo sincrono solo existe para tests con stub; con http se rechaza para no congelar el bucle. En asincrono el resumen completo no es reproducible por construccion (el tick de llegada varia); el determinismo se prueba con --llm-sincrono. Deuda: ACCIONES_SIN_PARAMETROS duplica parte del vocabulario sin test de sincronia y la eleccion de dilema no usa saliencia (F2-004).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 298 passed
+
+$ backend lento 200 ms, 1200 ticks
+1200 ticks en 0.91 s ; durante cada peticion (0.218 s reales) avanzaron 318/266/244 ticks
+coste por tick: 0.754 ms medio, 1.697 ms maximo, p99 1.20  (presupuesto 16.67)
+todas las llamadas asincronas registradas en el hilo `tribal-llm`
+
+$ cola
+max_en_vuelo 1/3/7 -> en_vuelo_max exactamente 1/3/7 ; rechazo con cupo lleno en 0.19-0.57 ms
+drenar no bloquea ; decision con tick fuera de ventana -> descartada, sin intencion viva
+
+$ cierre (bloqueante de la ronda 1)
+n=1,2,4 con transporte que consume el timeout: True en ~250 ms, en_vuelo=0, hilos=[]
+segunda llamada idempotente ; invariante enviadas == aplicadas+descartadas+fallos+en_vuelo
+--llm http sin servicio: 3.97 s, exit 0, {"peticiones":4,"aplicadas":0,"descartadas":3,
+  "fallos":1,"en_vuelo":0}, cero hilos huerfanos en dos partidas seguidas
+
+$ run --headless --json --llm stub --ticks 1200
+{"peticiones": 88, "aplicadas": 2, "descartadas": 1, "fallos": 0, "en_vuelo": 0}
+--llm off -> resumen byte-identico a HEAD
+--llm-sincrono --llm http -> exit 2 con mensaje (no congela el bucle)
+guard: moverse/ensenar/cuidar/huir sin parametros no se aplican; resumen identico a instinto puro
+
+$ uv run pytest -q
+854 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 55 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 55 source files
+```
+
+</details>

@@ -157,11 +157,26 @@ Detalle de la parte que importa (pasos 4 y 7):
 - **Presupuesto.** Máximo *N* peticiones en vuelo (p. ej. 4). Si la cola está
   llena, el individuo sigue por instinto y el dilema se reevalúa más tarde. Es
   la traducción operativa de «solo ~3–6 individuos piensan a la vez».
+- **Implementación (F2-002).** `llm/cola.py`: un hilo daemon consume una
+  `queue.Queue` acotada a `max_en_vuelo` y deposita en otra cola acotada; el
+  bucle solo hace `put_nowait`/`get_nowait`, así que ninguna espera del modelo
+  entra en el tick. `drenar(tick_actual)` ordena por `(tick, id)` —el orden no
+  depende de la carrera— y descarta lo que llegó fuera de la ventana. `cerrar()`
+  deja de aceptar, vacía las peticiones que no habían empezado (cuentan como
+  descartadas), pone el centinela al final y no vuelve hasta que el worker sale
+  —como mucho `en_vuelo * (timeout + 1)`—: `en_vuelo` queda a 0 y no hay hilo
+  huérfano; si el transporte se pasara de ese plazo devuelve `False` para que el
+  llamante avise. `--llm-sincrono` sustituye el hilo por una resolución en el
+  mismo tick: es el único modo reproducible tick a tick, y solo vale con
+  `--llm stub` (con `http` congelaría el tick hasta el timeout). En asíncrono la
+  corrida es reproducible en el modelo pero no en los contadores `llm` ni en el
+  tick de llegada, que dependen del reloj real.
 - **Si el LLM no responde** (Ollama no está levantado, timeout, JSON inválido):
-  no hay excepción que suba al bucle. El cliente cuenta fallos, marca la capa
-  como `degradada` y deja de encolar durante un backoff; la simulación sigue
-  por instinto indefinidamente. Fase 0 y Fase 1 corren así *por diseño*, sin
-  LLM: la puerta de Fase 1 exige que la tribu ya viva sin él.
+  no hay excepción que suba al bucle. El cliente devuelve `degradado`/`error`, la
+  cola lo cuenta en `fallos` y sigue encolando con el mismo presupuesto —**no hay
+  backoff**—: la simulación sigue por instinto indefinidamente. Fase 0 y Fase 1
+  corren así *por diseño*, sin LLM: la puerta de Fase 1 exige que la tribu ya viva
+  sin él.
 - **Embeddings** van en su propio hilo, en CPU (stack §2), y solo se consultan
   al construir el contexto de una petición. Nunca en el hilo de render ni en el
   del LLM.

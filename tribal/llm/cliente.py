@@ -12,6 +12,7 @@ en `degradado` y un JSON inválido en `error`. El motor sigue por instinto.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import urllib.error
@@ -103,14 +104,14 @@ class ClienteLLM:
         if not candidatas:
             return Resultado("error", motivo="sin acciones candidatas")
 
-        cuerpo: dict[str, Any] = {
-            "model": self.modelo,
-            "messages": construir_prompt(contexto, candidatas, self._ejemplos),
-            "format": ESQUEMA_RESPUESTA,
-            "stream": False,
-            "options": {"temperature": TEMPERATURA, "num_predict": MAX_TOKENS},
-        }
         try:
+            cuerpo: dict[str, Any] = {
+                "model": self.modelo,
+                "messages": construir_prompt(contexto, candidatas, self._ejemplos),
+                "format": ESQUEMA_RESPUESTA,
+                "stream": False,
+                "options": {"temperature": TEMPERATURA, "num_predict": MAX_TOKENS},
+            }
             estado, bruto = self._transporte(
                 "POST", f"{self.endpoint}/api/chat", cuerpo, self.timeout
             )
@@ -126,6 +127,65 @@ class ClienteLLM:
         if valido.accion not in candidatas:
             return Resultado("error", motivo=f"accion fuera de candidatas: {valido.accion}")
         return Resultado("ok", decision=valido)
+
+
+def backend_stub() -> Transporte:
+    """Transporte de mentira para `--llm stub`: responde por contenido.
+
+    Elige una de las candidatas del prompt con un hash estable (SHA-256, no
+    `hash()`, que cambia entre procesos) del propio prompt y devuelve un JSON
+    válido del esquema. Misma petición → misma respuesta, en cualquier proceso:
+    es lo que hace reproducible `run --llm stub --llm-sincrono`.
+    """
+
+    def transporte(
+        metodo: str,
+        _url: str,
+        cuerpo: dict[str, Any] | None,
+        _timeout: float,
+    ) -> tuple[int, bytes]:
+        if metodo != "POST" or cuerpo is None:
+            return 200, b'{"models": []}'
+        prompt = _prompt_del_cuerpo(cuerpo)
+        candidatas = _candidatas_del_prompt(prompt)
+        if not candidatas:
+            return 500, b'{"error": "sin candidatas"}'
+        digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        elegida = candidatas[int(digest, 16) % len(candidatas)]
+        contenido = {
+            "accion": elegida,
+            "objetivo": "",
+            "razon": "stub: la candidata que el hash señala",
+            "dialogo": "",
+        }
+        sobre = {"message": {"role": "assistant", "content": json.dumps(contenido)}}
+        return 200, json.dumps(sobre).encode("utf-8")
+
+    return transporte
+
+
+def _prompt_del_cuerpo(cuerpo: Mapping[str, Any]) -> str:
+    """El último mensaje de usuario del prompt, o cadena vacía."""
+    mensajes = cuerpo.get("messages")
+    if not isinstance(mensajes, list):
+        return ""
+    for mensaje in reversed(mensajes):
+        if not isinstance(mensaje, Mapping) or mensaje.get("role") != "user":
+            continue
+        contenido = mensaje.get("content")
+        if isinstance(contenido, str):
+            return contenido
+    return ""
+
+
+def _candidatas_del_prompt(prompt: str) -> tuple[str, ...]:
+    """Extrae las candidatas de la línea que escribe `esquema.construir_prompt`."""
+    for linea in prompt.splitlines():
+        if linea.startswith("Acciones candidatas:"):
+            return tuple(
+                parte.strip() for parte in linea.split(":", 1)[1].split(",") if parte.strip()
+            )
+    return ()
 
 
 def backend_falso(respuestas: Iterable[Any]) -> Transporte:

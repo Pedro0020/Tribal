@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, cast
 
 from tribal.agents import instinto, necesidades
 from tribal.config import SimConfig
@@ -19,6 +19,7 @@ from tribal.core import acciones, recursos
 from tribal.core import depredador as modulo_depredador
 from tribal.core import genoma as modulo_genoma
 from tribal.core import mundo as modulo_mundo
+from tribal.core.acciones import Accion, NombreAccion
 from tribal.core.habilidades import Habilidades, Rama
 from tribal.core.modelos import (
     LONGEVIDAD_TICKS,
@@ -31,6 +32,7 @@ from tribal.culture import beneficios as modulo_beneficios
 from tribal.culture import tradiciones
 from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.grafo import Grafo
+from tribal.llm.cola import ColaLLM, Peticion
 
 #: Presupuesto de frame a 60 fps.
 MS_FRAME = 16.67
@@ -45,6 +47,11 @@ ENERGIA_CRIA = 50.0
 MUTACION = modulo_genoma.MUTACION
 #: Radio (en tiles) dentro del cual se considera que alguien está junto al agua.
 RADIO_AGUA = 2.0
+#: Verbos que `acciones.aplicar` resuelve con solo el nombre: sin destino,
+#: amenaza ni objetivo. Es lo único que el LLM puede forzar hoy.
+ACCIONES_SIN_PARAMETROS = frozenset(
+    {"beber", "comer", "descansar", "hablar", "tallar", "frotar_madera", "pintar"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,8 +103,13 @@ PROB_COMPLETAR_COMBINACION = 0.5
 class Simulacion:
     """Estado de una partida: mundo + contadores que no viven en el mundo."""
 
-    def __init__(self, mundo: Mundo, config: SimConfig | None = None) -> None:
+    def __init__(
+        self, mundo: Mundo, config: SimConfig | None = None, cola: ColaLLM | None = None
+    ) -> None:
         self.mundo = mundo
+        #: Capa LLM activa, si la hay. Sin ella el tick es el de siempre.
+        self.cola = cola
+        self._peticion_id = 0
         self.config = config or SimConfig(
             seed=mundo.seed,
             individuos=len(mundo.individuos),
@@ -225,6 +237,8 @@ class Simulacion:
         modulo_depredador.mover(self.mundo, self._factor_dano)
         self._enterrar()
 
+        self._encolar_dilema()
+
         descubierto = False
         for individuo in self.mundo.individuos:
             # Experimentar consume el tick: el divergente que prueba un cruce
@@ -233,7 +247,8 @@ class Simulacion:
                 continue
             efecto = beneficios[individuo.id]
             ya_se_movio = individuo.movido
-            accion = instinto.elegir(individuo, self.mundo)
+            intencion = self._intencion_llm(individuo)
+            accion = intencion if intencion is not None else instinto.elegir(individuo, self.mundo)
             huyendo_antes = individuo.huyendo
             individuo.huyendo = accion.nombre == "huir"
             if individuo.huyendo and not huyendo_antes:
@@ -245,6 +260,20 @@ class Simulacion:
                 bonus_bayas=efecto.bayas,
                 bonus_caza=efecto.caza,
             )
+            if intencion is not None:
+                if aplicada and self.cola is not None:
+                    self.cola.registrar_aplicada()
+                else:
+                    # El modelo eligió algo que aquí no se puede hacer: manda el
+                    # instinto. La intención no puede congelar al individuo.
+                    accion = instinto.elegir(individuo, self.mundo)
+                    aplicada = acciones.aplicar(
+                        individuo,
+                        self.mundo,
+                        accion,
+                        bonus_bayas=efecto.bayas,
+                        bonus_caza=efecto.caza,
+                    )
             # Explorar es viaje: el tick de búsqueda cuesta energía de más. Lo
             # paga la conducta, no el rasgo: un conformista que se ve obligado a
             # buscar lejos paga lo mismo.
@@ -274,7 +303,75 @@ class Simulacion:
         self._reproducir()
         self.agrupamiento_max = max(self.agrupamiento_max, self._junto_al_agua())
 
+        self._drenar()
+
         self._ms_acumulados += (time.perf_counter() - inicio) * 1000.0
+
+    def _encolar_dilema(self) -> None:
+        """Como mucho una petición por tick, y solo con dilema real y hueco.
+
+        Un dilema es un conflicto de necesidades (sed y energía a la vez) o la
+        salud por los suelos. Si la cola está llena, no se encola: el individuo
+        sigue por instinto y el dilema se reevalúa el tick siguiente (§3).
+        """
+        if self.cola is None:
+            return
+        for individuo in self.mundo.individuos:
+            candidatas = _candidatas_llm(individuo.necesidades)
+            if not candidatas:
+                continue
+            self._peticion_id += 1
+            peticion = Peticion(
+                id=self._peticion_id,
+                tick=self.mundo.tick,
+                individuo_id=individuo.id,
+                contexto={
+                    "tick": self.mundo.tick,
+                    "individuo": individuo.id,
+                    "energia": round(individuo.necesidades.energia, 1),
+                    "sed": round(individuo.necesidades.sed, 1),
+                    "salud": round(individuo.necesidades.salud, 1),
+                },
+                candidatas=candidatas,
+                valida_hasta=self.mundo.tick + self.cola.ventana,
+            )
+            self.cola.encolar(peticion)
+            return
+
+    def _intencion_llm(self, individuo: Individuo) -> Accion | None:
+        """Intención forzada si sigue dentro de su ventana; se consume al usarse.
+
+        Solo se aceptan verbos sin parámetros: `Accion(nombre)` no lleva destino
+        ni objetivo, y aplicar `moverse`/`ensenar`/`cuidar`/`huir` sin ellos
+        lanzaría `ValueError` desde el bucle. Las candidatas de `_candidatas_llm`
+        ya lo cumplen; el guard cierra la puerta a candidatas futuras.
+        """
+        if individuo.intencion_llm is None:
+            return None
+        nombre, hasta = individuo.intencion_llm
+        individuo.intencion_llm = None
+        if self.mundo.tick > hasta or nombre not in ACCIONES_SIN_PARAMETROS:
+            return None
+        return Accion(cast(NombreAccion, nombre))
+
+    def _drenar(self) -> None:
+        """Recoge lo que llegue y lo aplica como intención futura (paso 7 de §3).
+
+        El orden no depende de la carrera: `drenar` ya devuelve por `(tick, id)`.
+        """
+        if self.cola is None:
+            return
+        vivos = {individuo.id: individuo for individuo in self.mundo.individuos}
+        for respuesta in self.cola.drenar(self.mundo.tick):
+            if respuesta.decision is None:
+                continue
+            individuo = vivos.get(respuesta.individuo_id)
+            if individuo is None:
+                continue
+            individuo.intencion_llm = (
+                respuesta.decision.accion,
+                respuesta.tick + self.cola.ventana,
+            )
 
     def _factor_dano(self, presa: Individuo) -> float:
         """Cuánto le muerde el depredador: la utilidad de vigilia del tick."""
@@ -599,7 +696,7 @@ class Simulacion:
             if self._longevidad_conformistas
             else 0.0
         )
-        return {
+        datos: dict[str, Any] = {
             "seed": self.mundo.seed,
             "ticks": self.mundo.tick,
             "poblacion_inicial": self.poblacion_inicial,
@@ -667,6 +764,16 @@ class Simulacion:
             **self.grafo.a_json(),
             "config": self.config.a_json(),
         }
+        if self.cola is not None:
+            estadisticas = self.cola.estadisticas
+            datos["llm"] = {
+                "peticiones": estadisticas["enviadas"],
+                "aplicadas": estadisticas["aplicadas"],
+                "descartadas": estadisticas["descartadas"],
+                "fallos": estadisticas["fallos"],
+                "en_vuelo": estadisticas["en_vuelo"],
+            }
+        return datos
 
     def _parches(self) -> list[dict[str, Any]]:
         """Cada parche con su tipo, su abundancia y si está activo (da de comer)."""
@@ -686,13 +793,18 @@ class Simulacion:
         return resumen
 
 
-def crear(seed: int, individuos: int = 12, config: SimConfig | None = None) -> Simulacion:
+def crear(
+    seed: int,
+    individuos: int = 12,
+    config: SimConfig | None = None,
+    cola: ColaLLM | None = None,
+) -> Simulacion:
     """Partida nueva. `seed` e `individuos` mandan sobre lo que diga `config`."""
     if config is None:
         config = SimConfig(seed=seed, individuos=individuos)
     else:
         config = replace(config, seed=seed, individuos=individuos)
-    return Simulacion(modulo_mundo.crear(seed, individuos, config=config), config)
+    return Simulacion(modulo_mundo.crear(seed, individuos, config=config), config, cola)
 
 
 def run(
@@ -701,22 +813,28 @@ def run(
     headless: bool,
     individuos: int = 12,
     config: SimConfig | None = None,
+    cola: ColaLLM | None = None,
 ) -> Simulacion:
     """Corre la partida `ticks` ticks (`0` = sin límite) y devuelve la simulación.
 
     En modo ventana el límite lo pone el usuario con ESC o cerrando la ventana;
-    `ticks` sigue sirviendo como tope opcional.
+    `ticks` sigue sirviendo como tope opcional. Si hay cola LLM, se cierra aquí:
+    al volver no queda hilo vivo y `resumen()` publica `en_vuelo` a 0.
     """
-    simulacion = crear(seed, individuos, config)
-    if headless:
-        for _ in range(ticks):
-            simulacion.step()
+    simulacion = crear(seed, individuos, config, cola)
+    try:
+        if headless:
+            for _ in range(ticks):
+                simulacion.step()
+            return simulacion
+
+        from tribal.ui import app  # import perezoso: Pygame no entra en el motor
+
+        app.bucle(simulacion, ticks)
         return simulacion
-
-    from tribal.ui import app  # import perezoso: Pygame no entra en el motor
-
-    app.bucle(simulacion, ticks)
-    return simulacion
+    finally:
+        if cola is not None:
+            cola.cerrar()
 
 
 def run_muestreado(
@@ -749,6 +867,19 @@ def run_muestreado(
 def _tramo(individuo: Individuo) -> str:
     """Temperamento para telemetría (no decide nada del motor)."""
     return modulo_genoma.temperamento(individuo.genoma)
+
+
+def _candidatas_llm(nec: Necesidades) -> tuple[str, ...]:
+    """Las dos acciones que se le ofrecen al modelo, o vacío si no hay dilema.
+
+    Solo verbos sin parámetros (`beber`, `comer`, `descansar`): el motor aplica
+    la elección tal cual, sin pedirle al modelo un destino.
+    """
+    if necesidades.sed_critica(nec) and necesidades.energia_baja(nec):
+        return ("beber", "comer")
+    if necesidades.salud_critica(nec):
+        return ("descansar", "comer")
+    return ()
 
 
 def _media_divergencia_inicial(mundo: Mundo) -> float:

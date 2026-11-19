@@ -291,10 +291,13 @@
         "uv run python -m tribal run --headless --json --llm stub --ticks 1200 reporta peticiones, aplicadas, descartadas y fallos",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F2-001"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 1,
+      "closed": "2026-11-19"
     },
     {
       "id": "F2-003",
