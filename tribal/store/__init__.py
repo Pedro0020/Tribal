@@ -1,5 +1,14 @@
 """Persistencia de la partida: esquema SQLite y repositorio (stack §5)."""
 
+from tribal.store.export import ExportInvalido, ResumenExport, exportar_obsidian
 from tribal.store.repositorio import BaseInvalida, Estado, IndividuoGuardado, Repositorio
 
-__all__ = ["BaseInvalida", "Estado", "IndividuoGuardado", "Repositorio"]
+__all__ = [
+    "BaseInvalida",
+    "Estado",
+    "ExportInvalido",
+    "IndividuoGuardado",
+    "Repositorio",
+    "ResumenExport",
+    "exportar_obsidian",
+]

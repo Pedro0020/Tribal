@@ -230,6 +230,16 @@ se rehidrata y seguir jugando es SAVE-001. `relaciones` y `recuerdos` existen
 con su esquema, pero aún se escriben vacías: el motor no guarda vínculos y el
 índice de recuerdos solo expone vectores, no los textos.
 
+**Export (F3-003).** `export.py` lee nodos y aristas con `Repositorio` y
+escribe `out/<slug>.md` + `index.md`: frontmatter con los datos de nacimiento,
+cuerpo con el contenido y una sección de relaciones con un `[[wikilink]]` por
+arista de entrada y de salida. El slug sale del id saneado a ASCII y una
+colisión de saneado lleva sufijo `-2`; los títulos repetidos no colisionan
+porque el título nunca nombra el fichero. El orden (ids, aristas) y la
+codificación (UTF-8 sin BOM, LF) son fijos, así que el export es idempotente
+byte a byte. No borra `.md` viejos —el vault puede tener notas humanas—;
+`index.md` se reescribe siempre y resume nodos por origen y estado.
+
 ### 2.6 Observación — `tribal/ui/`
 
 `render.py` dibuja el mapa top-down con sprites; `telemetria.py` muestrea por
@@ -467,6 +477,7 @@ entender la emergencia (p. ej. el grafo en vivo pasa a ser la vista primaria).
 | 8 | **VRAM de 6 GB** | El LLM (3B Q8) + embeddings no caben juntos | Embeddings en CPU (stack §2); medir VRAM real antes de Fase 2 (`ollama ps` debe decir 100 % GPU) |
 | 9 | **Frame budget** | 60 fps con 15 individuos y UI | Motor determinista y barato; LLM fuera del hilo de render; telemetría por intervalo, no por frame |
 | 10 | **RAG ciego tras el renombrado** | `agents/tools/rag_tool.py` tiene `app` fijo en su tabla de fuentes | Feature aparte ya identificada: hasta arreglarlo, el código de `tribal/` no entra en el índice; no rompe la puerta ni los tests |
+| 11 | **Export que ensucia el vault** | Un orden distinto, un BOM o nombres que colisionan rompen los wikilinks entre exports | Slug = id saneado con sufijo `-2` en colisión, orden determinista y UTF-8/LF: dos exports son byte a byte iguales; los `.md` viejos no se borran |
 
 Riesgos 1–6 vienen de concepto §14; 7–10 son técnicos de esta arquitectura.
 

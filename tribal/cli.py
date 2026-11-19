@@ -4,8 +4,9 @@ tribal.cli — punto de entrada del proyecto: `python -m tribal` o `make run`.
 argparse de la stdlib. `hello` se mantiene como humo del renombrado; `run`
 arranca la simulación en ventana o en modo headless, `report culture` resume
 el árbol de conocimiento de una corrida headless corta, `report diary` publica
-los últimos hitos narrados y `report gate-f1` / `report gate-f2` publican los
-barridos de las puertas F1→F2 y F2→F3 con su veredicto.
+los últimos hitos narrados, `report gate-f1` / `report gate-f2` publican los
+barridos de las puertas F1→F2 y F2→F3 con su veredicto, y `export obsidian`
+vuelca el grafo de una partida a Markdown para la bóveda de la tribu.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from tribal.llm.embeddings import embedder_por_defecto
 from tribal.llm.eval import ESCENARIOS_POR_DEFECTO, backend_competente, escenarios, evaluar
 from tribal.sim import MS_FRAME, run_muestreado
 from tribal.sim import run as run_sim
+from tribal.store.export import ExportInvalido, exportar_obsidian
 from tribal.store.repositorio import BaseInvalida, Repositorio
 
 #: Ticks por defecto de `report culture`: con 600 la tribu ya comió y el árbol
@@ -360,6 +362,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="Tabla y veredicto como un único objeto JSON."
     )
 
+    export = sub.add_parser("export", help="Exporta el grafo a Markdown para Obsidian.")
+    export_sub = export.add_subparsers(dest="export", required=True)
+    obsidian = export_sub.add_parser(
+        "obsidian",
+        help="Un .md por nodo con frontmatter y [[wikilinks]] por arista.",
+        description=(
+            "Vuelca nodos y aristas de una partida a Markdown: un fichero por "
+            "nodo con frontmatter (origen, rama, estado, autor, tick) y una "
+            "sección de relaciones con [[wikilinks]], más un index.md con el "
+            "resumen. Es determinista e idempotente: dos ejecuciones seguidas "
+            "dejan los mismos bytes. No borra .md viejos que ya no correspondan."
+        ),
+    )
+    obsidian.add_argument("--db", type=Path, required=True, help="Base SQLite de la partida.")
+    obsidian.add_argument(
+        "--out",
+        type=Path,
+        default=Path("vault-tribu"),
+        help="Carpeta del vault donde escribir el export (default vault-tribu/).",
+    )
+
     llm = sub.add_parser("llm", help="Capa LLM local (Ollama).")
     llm_sub = llm.add_subparsers(dest="llm", required=True)
     selfcheck = llm_sub.add_parser(
@@ -455,6 +478,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.report == "db":
             return _report_db(args)
         return _report(args)
+    if args.command == "export":
+        return _export_obsidian(args)
     if args.command == "llm":
         if args.llm == "eval":
             return _llm_eval(args)
@@ -725,6 +750,30 @@ def _report_db(args: argparse.Namespace) -> int:
         print(json.dumps(informe, ensure_ascii=True))
     else:
         print(_texto_db(informe))
+    return 0
+
+
+def _export_obsidian(args: argparse.Namespace) -> int:
+    """`export obsidian`: vuelca la partida a Markdown para el vault de la tribu."""
+    if not args.db.exists():
+        print(f"error: no existe la base {args.db}", file=sys.stderr)
+        return 2
+    try:
+        repositorio = Repositorio(args.db, crear=False)
+    except BaseInvalida as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        resumen = exportar_obsidian(repositorio, args.out)
+    except ExportInvalido as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        repositorio.cerrar()
+    print(
+        f"export obsidian: {resumen.nodos} nodos, {resumen.aristas} aristas, "
+        f"{resumen.ficheros} ficheros -> {resumen.out}"
+    )
     return 0
 
 

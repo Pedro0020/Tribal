@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.30-green)
+![Version](https://img.shields.io/badge/Version-0.1.31-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -594,6 +594,37 @@ recuerdos no expone los textos.
 Dos partidas con semilla distinta producen bases distintas; la misma semilla y
 la misma configuración, el mismo estado. `ticks_guardado` se ajusta en el
 `--config` y viaja en el resumen dentro de `config`.
+
+## Export a Obsidian (F3-003)
+
+`tribal/store/export.py` vuelca el grafo de cultura a Markdown: un fichero por
+nodo con frontmatter (`id`, `rama`, `nivel`, `origen`, `estado`, `autor`,
+`tick`, `tick_apagado`), el contenido y una sección **Relaciones** con un
+`[[wikilink]]` por cada arista de entrada y de salida. `index.md` resume el
+grafo (nodos por origen y estado) y enlaza a todos los nodos: es el mapa desde
+el que se navega la constelación.
+
+```bash
+uv run python -m tribal export obsidian --db tribu.db --out vault-tribu/
+```
+
+Salida real sobre la partida de 600 ticks:
+
+```
+export obsidian: 30 nodos, 27 aristas, 31 ficheros -> vault-tribu
+```
+
+El slug de cada nota es el `id` del nodo saneado a ASCII (minúsculas, `-` y
+`_`); dos títulos iguales no chocan porque el título nunca es el nombre del
+fichero, y un choque de saneado se resuelve con sufijo `-2`. La escritura es
+determinista e idempotente —nodos ordenados por id, aristas por extremos, UTF-8
+sin BOM, LF—: dos ejecuciones seguidas dejan exactamente los mismos bytes. Los
+`.md` viejos que ya no correspondan a ningún nodo **no se borran** (el vault
+puede tener notas humanas); para un export limpio, vacía la carpeta antes. Sale
+con **2** si la base no existe o no es una partida válida.
+
+En Obsidian, **Abrir carpeta como bóveda** sobre `vault-tribu/`: `index.md` es
+la nota de entrada y las relaciones ya son enlaces navegables.
 
 ## Configuración y semilla
 

@@ -1431,3 +1431,46 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 78 fi
 ```
 
 </details>
+
+## F3-003 — Export del grafo a Obsidian con wikilinks
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 426 passed in 221.97s (0:03:41)
+- **Cambios:** tribal/store/export.py (nuevo: export a Obsidian, slugs ASCII con dedupe, frontmatter completo, wikilinks por arista, index.md, idempotente, ExportInvalido para aristas colgantes); tribal/store/__init__.py; tribal/cli.py (export obsidian --db --out); tests/test_export.py (nuevo, 5 casos); README (export y Obsidian); arquitectura.md §2.5/§6
+- **Decisiones:** Un .md por nodo mas un index.md; cada arista se escribe en los dos extremos (54 wikilinks para 27 aristas en una partida real) porque en el grafo de Obsidian se navega en ambas direcciones. El slug es el id saneado a ASCII y se deduplica con sufijo: titulos repetidos no colisionan y no hay subrutas. La idempotencia se mide por hash del arbol y se probo tambien con apagados y colisiones. Los ficheros viejos que ya no corresponden no se borran: el export no es dueno de la carpeta del usuario, y se documenta. Una arista colgante es un error de la base, no del export: exit 2 con el extremo y el nombre, sin traza.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 425 passed
+
+$ uv run python -m tribal export obsidian --db tribu.db --out vault-tribu
+export obsidian: 30 nodos, 27 aristas, 31 ficheros
+31 .md (30 nodos + index.md) | 54 wikilinks en notas (2 x 27, cada arista en ambos extremos) | 30 en index
+
+$ idempotencia
+hash 48c0c4f5575dc729d1e48193beb1a65096628687ca559d958db2778682d74ddc identico en 1a y 2a pasada
+probado tambien con directorio nuevo, titulos repetidos (eco-uno.md, eco-uno-2.md) y apagados
+UTF-8 sin BOM, LF, orden determinista
+
+$ frontmatter (base hecha a mano con acentos, mayusculas, CON, index, repetidos, 1 apagado)
+campos comparados contra el grafo: id, rama, nivel, origen, estado, autor, tick, tick_apagado,
+motivo_apagado -> 0 fallos ; 64/64 wikilinks, 0 aristas sin enlace en ambos extremos
+nodo apagado exportado con motivo; arista colgante -> exit 2 con mensaje, sin traza
+
+Mutaciones que caen: sin wikilink saliente | sin rama | valor de frontmatter fijado |
+sin dedupe de slug | index sin enlaces | sin Relaciones | estado hardcodeado
+
+$ seguridad de rutas: slugs ASCII sin colisiones ni subrutas; ficheros viejos NO se borran
+(docstring, --help, README y arquitectura §2.5/§6); sin sqlite3 fuera del repositorio
+
+$ uv run pytest -q
+982 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 82 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 82 files
+```
+
+</details>

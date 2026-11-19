@@ -445,10 +445,13 @@
         "test: numero de .md y de wikilinks coincide con nodos y aristas de la base",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F3-001"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 0,
+      "closed": "2026-11-19"
     },
     {
       "id": "F3-004",
