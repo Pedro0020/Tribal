@@ -9,8 +9,14 @@ La escritura es un volcado completo por intervalo, no una fila por frame: el
 motor llama a `guardar` cada `ticks_guardado` ticks y al cerrar, y cada volcado
 sustituye el estado anterior dentro de una sola transacción. Reabrir la partida
 reconstruye el grafo con el `origen`, el `autor` y el `tick` de cada nodo, que
-es lo que el KPI necesita. **No** se reanuda la simulación: este módulo deja el
+es lo que el KPI necesita, y con su `tick_apagado`/`motivo_apagado` si la
+técnica se perdió (F3-002). **No** se reanuda la simulación: este módulo deja el
 estado consultable para `report db` y los tests; reanudar es SAVE-001.
+
+Una base creada antes de F3-002 no tiene las columnas de apagado: al abrirla con
+`crear=True` se añaden con `ALTER TABLE` (`_migrar_apagado`), y al abrirla en
+solo lectura se leen como activas. Así la partida vieja no se rechaza ni se
+recrea.
 """
 
 from __future__ import annotations
@@ -92,6 +98,7 @@ class Repositorio:
                 for pragma in PRAGMAS:
                     conexion.execute(pragma)
                 conexion.executescript(ESQUEMA)
+                _migrar_apagado(conexion)
                 conexion.commit()
             else:
                 self._comprobar_esquema(conexion)
@@ -142,7 +149,8 @@ class Repositorio:
             )
             conexion.executemany(
                 "INSERT INTO nodos (id, tipo, titulo, contenido, popularidad, estado, origen, "
-                "autor, tick, nivel, requisitos) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "autor, tick, nivel, requisitos, tick_apagado, motivo_apagado) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         nodo.id,
@@ -156,6 +164,8 @@ class Repositorio:
                         nodo.tick,
                         nodo.nivel,
                         _json(list(nodo.requisitos)),
+                        nodo.tick_apagado,
+                        nodo.motivo_apagado,
                     )
                     for nodo in grafo.nodos.values()
                 ],
@@ -278,9 +288,17 @@ class Repositorio:
 
     def _leer_grafo(self, conexion: sqlite3.Connection) -> Grafo:
         grafo = Grafo()
+        # Una base creada antes de F3-002 no tiene las columnas de apagado: se
+        # leen como activas (0/""), igual que hacía el esquema anterior.
+        columnas = {str(fila[1]) for fila in conexion.execute("PRAGMA table_info(nodos)")}
+        apagado = (
+            "tick_apagado, motivo_apagado"
+            if {"tick_apagado", "motivo_apagado"} <= columnas
+            else "0 AS tick_apagado, '' AS motivo_apagado"
+        )
         for fila in conexion.execute(
             "SELECT id, tipo, titulo, contenido, popularidad, estado, origen, autor, tick, "
-            "nivel, requisitos FROM nodos"
+            f"nivel, requisitos, {apagado} FROM nodos"
         ):
             nodo = Nodo(
                 id=str(fila["id"]),
@@ -293,6 +311,8 @@ class Repositorio:
                 estado=cast(EstadoNodo, fila["estado"]),
                 autor=int(fila["autor"]),
                 tick=int(fila["tick"]),
+                tick_apagado=int(fila["tick_apagado"]),
+                motivo_apagado=str(fila["motivo_apagado"]),
             )
             grafo.nodos[nodo.id] = nodo
             if fila["popularidad"]:
@@ -345,6 +365,23 @@ def _fila_individuo(individuo: Individuo) -> tuple[Any, ...]:
 
 def _json(valor: object) -> str:
     return json.dumps(valor, ensure_ascii=False, sort_keys=True)
+
+
+#: Columnas de apagado que llegaron en F3-002, con su valor por defecto. Una
+#: base creada antes no las tiene; `estado` no cambia de formato (`activo`/
+#: `apagado`), solo se añade el tick y la causa de la pérdida.
+_COLUMNAS_APAGADO: tuple[tuple[str, str], ...] = (
+    ("tick_apagado", "INTEGER NOT NULL DEFAULT 0"),
+    ("motivo_apagado", "TEXT NOT NULL DEFAULT ''"),
+)
+
+
+def _migrar_apagado(conexion: sqlite3.Connection) -> None:
+    """Añade las columnas de apagado si la partida se creó antes de F3-002."""
+    columnas = {str(fila[1]) for fila in conexion.execute("PRAGMA table_info(nodos)")}
+    for nombre, tipo in _COLUMNAS_APAGADO:
+        if nombre not in columnas:
+            conexion.execute(f"ALTER TABLE nodos ADD COLUMN {nombre} {tipo}")
 
 
 def _contar(conexion: sqlite3.Connection, tabla: str, donde: str | None = None) -> int:

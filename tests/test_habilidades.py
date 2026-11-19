@@ -139,7 +139,7 @@ def _ensenanza(seed: int, distancia: float = 0.0, inteligencia: float = 1.0) -> 
         habilidades=Habilidades({"recolectar"}),
     )
     mundo = _mundo([maestro, aprendiz], seed=seed)
-    return acciones.ensenar(maestro, mundo, aprendiz)
+    return acciones.ensenar(maestro, mundo, aprendiz, lenguaje=True)
 
 
 def test_ensenar_transmite_la_habilidad_y_depende_de_la_semilla() -> None:
@@ -147,7 +147,7 @@ def test_ensenar_transmite_la_habilidad_y_depende_de_la_semilla() -> None:
     aprendiz = _individuo(2, habilidades=Habilidades({"recolectar"}))
     mundo = _mundo([maestro, aprendiz], seed=1)
 
-    assert acciones.ensenar(maestro, mundo, aprendiz) is True
+    assert acciones.ensenar(maestro, mundo, aprendiz, lenguaje=True) is True
     assert aprendiz.habilidades.sabe("cazar")
 
     resultados = {_ensenanza(seed) for seed in range(20)}
@@ -164,7 +164,7 @@ def test_solo_un_adulto_ensena() -> None:
     aprendiz = _individuo(2, habilidades=Habilidades({"recolectar"}))
     mundo = _mundo([maestro, aprendiz], seed=1)
 
-    assert acciones.ensenar(maestro, mundo, aprendiz) is False
+    assert acciones.ensenar(maestro, mundo, aprendiz, lenguaje=True) is False
     assert not aprendiz.habilidades.sabe("cazar")
 
 
@@ -174,7 +174,7 @@ def test_sin_nada_que_ensenar_no_hay_accion() -> None:
     mundo = _mundo([maestro, aprendiz], seed=1)
 
     assert acciones.candidato_a_ensenar(maestro, mundo) is None
-    assert acciones.ensenar(maestro, mundo, aprendiz) is False
+    assert acciones.ensenar(maestro, mundo, aprendiz, lenguaje=True) is False
 
 
 def test_la_imitacion_pasiva_aprende_al_ver_usar_la_habilidad() -> None:

@@ -31,7 +31,7 @@ from tribal.core.modelos import (
 )
 from tribal.culture import beneficios as modulo_beneficios
 from tribal.culture import propuestas as modulo_propuestas
-from tribal.culture import tradiciones
+from tribal.culture import tradiciones, transmision
 from tribal.culture.arbol import Nodo
 from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.diario import Diario
@@ -232,6 +232,10 @@ class Simulacion:
         #: saliencia instantánea, no se satura en `SALIENCIA_MAX`, así que sirve
         #: para ordenar a los narradores sin empates arbitrarios.
         self._saliencia_acumulada: dict[int, float] = {}
+        #: Nodo → tick en que se quedó sin portadores vivos. Lo consume
+        #: `culture.transmision.sostener` para apagar la técnica si nadie la
+        #: transmite (concepto §9).
+        self._sin_portadores: dict[str, int] = {}
 
     def step(self) -> None:
         """Un tick: reloj, homeostasis, depredador y muertes, decisiones y crías.
@@ -304,6 +308,9 @@ class Simulacion:
         self._beneficios_tick = beneficios
         modulo_depredador.mover(self.mundo, self._factor_dano)
         self._enterrar()
+        # La técnica vive mientras quede quien la sepa: un nodo que lleva
+        # `TICKS_SIN_PORTADOR` ticks sin portador se apaga, no se borra (§9).
+        transmision.sostener(self.grafo, self.mundo, self._sin_portadores, self.mundo.tick)
         self._hito_crisis(en_crisis)
 
         self._encolar_dilema()
@@ -328,6 +335,7 @@ class Simulacion:
                 accion,
                 bonus_bayas=efecto.bayas,
                 bonus_caza=efecto.caza,
+                lenguaje=self.grafo.activo("proto_palabras"),
             )
             if intencion is not None:
                 if aplicada and self.cola is not None:
@@ -342,6 +350,7 @@ class Simulacion:
                         accion,
                         bonus_bayas=efecto.bayas,
                         bonus_caza=efecto.caza,
+                        lenguaje=self.grafo.activo("proto_palabras"),
                     )
             # Explorar es viaje: el tick de búsqueda cuesta energía de más. Lo
             # paga la conducta, no el rasgo: un conformista que se ve obligado a
@@ -358,6 +367,7 @@ class Simulacion:
                     instinto.deambular(individuo, self.mundo),
                     bonus_bayas=efecto.bayas,
                     bonus_caza=efecto.caza,
+                    lenguaje=self.grafo.activo("proto_palabras"),
                 )
             if individuo.movido and not ya_se_movio:
                 self._movidos += 1

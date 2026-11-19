@@ -171,6 +171,23 @@ coste de tiempo, depende de lenguaje) e **imitar** (conformistas copian lo que
 ven funcionar). Un nodo que nadie transmite y cuyo portador muere queda
 `apagado`, no borrado: las técnicas perdidas son parte del experimento.
 
+**Implementación (F3-002).** Enseñar exige proximidad (≤2 tiles) y que
+`proto_palabras` esté activo: `core.acciones.ensenar(..., lenguaje=...)`, y
+`hablar` usa el mismo canal. Sin lenguaje no se transfiere ninguna habilidad;
+la imitación pasiva de quien ve usar una técnica sí ocurre y no mira el
+temperamento, así que los conformistas también copian. El portador de un nodo
+es un vivo que sabe la habilidad que el nodo exige (`HABILIDAD_POR_NODO`):
+las combinaciones piden la de `HABILIDAD_POR_COMBINACION` y el resto del árbol
+son prácticas situacionales que puede ejercer cualquier vivo. `Simulacion`
+llama a `transmision.sostener` en cada tick tras enterrar a los muertos; cuando
+un nodo lleva `TICKS_SIN_PORTADOR` (120) ticks sin portadores, `Grafo.apagar`
+lo marca `apagado` con tick y motivo, sin tocar `origen`, `autor` ni `tick`, y
+sin sacarlo de `nodos`. `Grafo.contar` y `report culture --json` publican
+`activos`, `apagados` y `nodos_por_estado`; `_nodo_a_json` añade `estado`,
+`tick_apagado` y `motivo_apagado`. La tabla `nodos` guarda también
+`tick_apagado` y `motivo_apagado` (con `ALTER TABLE` al abrir una base anterior
+a F3-002), así que cerrar y reabrir la partida conserva la defunción del nodo.
+
 `diario.py` (F2-005) es la memoria narrativa de concepto §10: `Entrada(tick,
 tipo, texto, individuo_id, narrada)` y `Diario.registrar/ultimas/a_json`. El
 motor lo llena desde `Simulacion._hito` —nodos `observar_rayo` (primer fuego),

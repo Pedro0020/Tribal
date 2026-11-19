@@ -557,11 +557,16 @@ def _report(args: argparse.Namespace) -> int:
         args.ticks, seed, headless=True, individuos=config.individuos, config=config
     )
     grafo = simulacion.grafo.a_json()
+    conteo = simulacion.grafo.contar()
     informe: dict[str, Any] = {
         "seed": seed,
         "ticks": args.ticks,
         "crisis": config.crisis,
         **grafo,
+        #: Nodos activos y apagados: un nodo perdido se queda en el grafo (§9).
+        "activos": conteo["activos"],
+        "apagados": conteo["apagados"],
+        "nodos_por_estado": {"activo": conteo["activos"], "apagado": conteo["apagados"]},
         #: Nodos que no son escalones del árbol, con su origen y su autor. El KPI
         #: `pct_fuera_arbol` solo cuenta `combinacion` e `interaccion`; `llm` se
         #: publica aquí porque también nació fuera del árbol (F2-006).
@@ -845,11 +850,17 @@ def _texto_cultura(informe: dict[str, Any]) -> str:
     lineas = [
         f"seed {informe['seed']}  ticks {informe['ticks']}",
         f"nodos {len(informe['nodos'])}  aristas {len(informe['aristas'])}  "
+        f"activos {informe['activos']}  apagados {informe['apagados']}  "
         f"pct_fuera_arbol {informe['pct_fuera_arbol']}  nivel_max {informe['nivel_max']}",
     ]
     lineas.extend(
         f"  {nodo['rama']:<9} {nodo['nivel']}  {nodo['titulo']:<20} "
         f"({nodo['origen']}, autor {nodo['autor']}, tick {nodo['tick']})"
+        + (
+            f" — apagado en {nodo['tick_apagado']} ({nodo['motivo_apagado']})"
+            if nodo["estado"] == "apagado"
+            else ""
+        )
         for nodo in informe["nodos"]
     )
     return "\n".join(lineas)

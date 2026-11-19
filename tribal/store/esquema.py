@@ -11,6 +11,8 @@ para poder consultar sin deserializar.
 de un nodo es su rama del árbol y `popularidad` son las veces que se ha
 practicado; `origen`, `autor` y `tick` son datos de nacimiento (concepto §8b)
 y por eso tienen columna propia: sin ellos el KPI no se puede reconstruir.
+`tick_apagado` y `motivo_apagado` (F3-002) completan el dato de defunción del
+nodo: un nodo apagado no se borra, y su tick y su causa se conservan al reabrir.
 """
 
 from __future__ import annotations
@@ -84,7 +86,9 @@ CREATE TABLE IF NOT EXISTS nodos (
     autor INTEGER NOT NULL,
     tick INTEGER NOT NULL,
     nivel INTEGER NOT NULL,
-    requisitos TEXT NOT NULL
+    requisitos TEXT NOT NULL,
+    tick_apagado INTEGER NOT NULL DEFAULT 0,
+    motivo_apagado TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS aristas (

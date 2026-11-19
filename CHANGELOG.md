@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: transmision intergeneracional y nodos apagados (F3-002)
 - feat: memoria colectiva persistida en SQLite (F3-001)
 - feat: telemetria LLM, selfcheck con modelo y Modelfile (HARD-2)
 - feat: puerta F2 con nodos fuera del arbol y narracion concentrada (F2-006)

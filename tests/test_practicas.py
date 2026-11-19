@@ -103,6 +103,10 @@ def test_una_practica_por_rama_descubre_su_rama(
     if accion == "ensenar":
         individuos.append(_individuo(2, 3.5, habilidades={"recolectar"}))
     simulacion = Simulacion(_mundo(individuos, tiles=tiles, seed=1))
+    if accion == "ensenar":
+        # Sin un nodo de lenguaje previo la enseñanza no transfiere (§6, §9).
+        simulacion.grafo.descubrir("gestos", autor=1, tick=0)
+        simulacion.grafo.descubrir("proto_palabras", autor=1, tick=0)
 
     simulacion.step()
 
@@ -225,7 +229,7 @@ def test_hablar_puede_transmitir_una_habilidad() -> None:
     oyente = _individuo(2, 3.5, habilidades={"recolectar"})
     mundo = _mundo([hablador, oyente], seed=1)
 
-    assert acciones.hablar(hablador, mundo) is True
+    assert acciones.hablar(hablador, mundo, lenguaje=True) is True
     assert oyente.habilidades.sabe("cazar")
 
 

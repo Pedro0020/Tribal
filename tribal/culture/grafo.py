@@ -159,6 +159,25 @@ class Grafo:
                 return self.descubrir(nodo_id, autor=autor, tick=tick)
         return None
 
+    def apagar(self, nodo_id: str, tick: int, motivo: str) -> Nodo | None:
+        """Marca el nodo `apagado`: no se borra y su origen, autor y tick no cambian.
+
+        La técnica perdida es parte del experimento (concepto §9), así que el
+        nodo se queda en el grafo con la fecha y la causa del apagado. Es
+        idempotente: apagar un nodo ya apagado no reescribe su motivo.
+        """
+        nodo = self.nodos.get(nodo_id)
+        if nodo is None or nodo.estado == "apagado":
+            return None
+        apagado = replace(nodo, estado="apagado", tick_apagado=tick, motivo_apagado=motivo)
+        self.nodos[nodo_id] = apagado
+        return apagado
+
+    def contar(self) -> dict[str, int]:
+        """Nodos por estado. Los apagados siguen contando en el total."""
+        activos = sum(1 for nodo in self.nodos.values() if nodo.estado == "activo")
+        return {"activos": activos, "apagados": len(self.nodos) - activos}
+
     def pct_fuera_arbol(self) -> float:
         """KPI de `objetivo.md` §3.2: % de nodos activos de origen `combinacion` o `interaccion`.
 
@@ -177,7 +196,7 @@ class Grafo:
         return {origen: sum(1 for nodo in activos if nodo.origen == origen) for origen in ORIGENES}
 
     def a_json(self) -> dict[str, Any]:
-        """Dict serializable y determinista: nodos por rama y nivel, aristas y KPI."""
+        """Dict serializable y determinista: nodos, aristas y KPI."""
         nodos = sorted(
             self.nodos.values(), key=lambda nodo: (RAMAS.index(nodo.rama), nodo.nivel, nodo.id)
         )
@@ -201,4 +220,7 @@ def _nodo_a_json(nodo: Nodo) -> dict[str, Any]:
         "origen": nodo.origen,
         "autor": nodo.autor,
         "tick": nodo.tick,
+        "estado": nodo.estado,
+        "tick_apagado": nodo.tick_apagado,
+        "motivo_apagado": nodo.motivo_apagado,
     }

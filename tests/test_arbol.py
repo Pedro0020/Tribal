@@ -237,6 +237,21 @@ def test_report_culture_json_imprime_nodos_aristas_y_pct(
     assert datos["nodos_por_origen"]["interaccion"] >= 1
 
 
+def test_report_culture_json_cuenta_activos_y_apagados(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["report", "culture", "--json"]) == 0
+
+    datos = json.loads(capsys.readouterr().out)
+    assert datos["activos"] > 0
+    assert datos["apagados"] == 0
+    assert datos["nodos_por_estado"] == {
+        "activo": datos["activos"],
+        "apagado": datos["apagados"],
+    }
+    assert datos["activos"] + datos["apagados"] == len(datos["nodos"])
+
+
 def test_report_culture_sin_json_es_legible(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["report", "culture", "--ticks", "300"]) == 0
 

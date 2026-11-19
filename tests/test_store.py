@@ -46,6 +46,7 @@ def test_el_esquema_crea_las_tablas_de_stack5(tmp_path: Path) -> None:
     assert set(TABLAS) <= tablas
     assert {"id", "tipo", "titulo", "contenido", "popularidad", "estado"} <= columnas_nodos
     assert {"origen", "autor", "tick"} <= columnas_nodos
+    assert {"tick_apagado", "motivo_apagado"} <= columnas_nodos
     assert journal == "wal"
 
 
@@ -148,6 +149,55 @@ def test_report_db_sale_con_2_si_la_base_no_sirve(
 
     assert main(["report", "db", "--db", str(tmp_path / "no-existe.db")]) == 2
     assert "no existe" in capsys.readouterr().err
+
+
+def test_el_apagado_del_nodo_sobrevive_a_cerrar_y_reabrir(tmp_path: Path) -> None:
+    ruta = tmp_path / "tribu.db"
+    simulacion = run(120, 42, headless=True)
+    original = simulacion.grafo.nodos["guijarro"]
+    simulacion.grafo.apagar("guijarro", tick=100, motivo="sin portadores")
+
+    repositorio = Repositorio(ruta)
+    try:
+        repositorio.guardar(
+            simulacion.mundo,
+            simulacion.grafo,
+            simulacion.diario,
+            [],
+            config=simulacion.config,
+        )
+    finally:
+        repositorio.cerrar()
+
+    reabierto = _estado(ruta)
+    try:
+        nodo = reabierto.cargar().grafo.nodos["guijarro"]
+    finally:
+        reabierto.cerrar()
+
+    assert (nodo.estado, nodo.tick_apagado, nodo.motivo_apagado) == (
+        "apagado",
+        100,
+        "sin portadores",
+    )
+    assert (nodo.origen, nodo.autor, nodo.tick) == (original.origen, original.autor, original.tick)
+
+
+def test_una_base_sin_columnas_de_apagado_se_migra_al_abrirla(tmp_path: Path) -> None:
+    ruta = tmp_path / "vieja.db"
+    with sqlite3.connect(ruta) as conexion:
+        conexion.execute(
+            "CREATE TABLE nodos (id TEXT PRIMARY KEY, tipo TEXT NOT NULL, "
+            "titulo TEXT NOT NULL, contenido TEXT NOT NULL, popularidad INTEGER NOT NULL, "
+            "estado TEXT NOT NULL, origen TEXT NOT NULL, autor INTEGER NOT NULL, "
+            "tick INTEGER NOT NULL, nivel INTEGER NOT NULL, requisitos TEXT NOT NULL)"
+        )
+
+    Repositorio(ruta).cerrar()
+
+    with sqlite3.connect(ruta) as conexion:
+        columnas = {fila[1] for fila in conexion.execute("PRAGMA table_info(nodos)")}
+    assert {"tick_apagado", "motivo_apagado"} <= columnas
 
 
 def test_solo_el_repositorio_importa_sqlite3() -> None:

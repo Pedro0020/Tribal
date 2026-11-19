@@ -237,12 +237,16 @@ def candidato_a_ensenar(maestro: Individuo, mundo: Mundo) -> Individuo | None:
     return mejor
 
 
-def ensenar(maestro: Individuo, mundo: Mundo, aprendiz: Individuo) -> bool:
+def ensenar(maestro: Individuo, mundo: Mundo, aprendiz: Individuo, *, lenguaje: bool) -> bool:
     """El adulto transmite una habilidad que el aprendiz todavía no tiene.
 
-    La probabilidad crece con la inteligencia del aprendiz y con la cercanía,
-    y sale de `Mundo.azar`: con la misma semilla el resultado se repite.
+    Exige proximidad y un nodo de lenguaje previo (`lenguaje`): sin palabras, el
+    gesto no alcanza a contar un procedimiento, y la habilidad no se transfiere
+    (concepto §6 y §9). La probabilidad crece con la inteligencia del aprendiz y
+    con la cercanía, y sale de `Mundo.azar`: con la misma semilla se repite.
     """
+    if not lenguaje:
+        return False
     if maestro.edad < maestro.madurez:
         return False
     distancia = recursos.distancia(maestro.x, maestro.y, aprendiz.x, aprendiz.y)
@@ -324,14 +328,15 @@ def pintar(individuo: Individuo, mundo: Mundo) -> bool:
     return True
 
 
-def hablar(individuo: Individuo, mundo: Mundo) -> bool:
+def hablar(individuo: Individuo, mundo: Mundo, *, lenguaje: bool = False) -> bool:
     """Charlar con el vecino: además de habilitar el nodo, puede transmitir."""
     interlocutor = vecino(individuo, mundo)
     if interlocutor is None:
         return False
     # La conversación es un canal de transmisión más lento que la enseñanza:
-    # usa la misma probabilidad y no falla la acción si no prende nada.
-    ensenar(individuo, mundo, interlocutor)
+    # usa la misma probabilidad y no falla la acción si no prende nada. Sin
+    # lenguaje previo no hay procedimiento que contar (§6, §9).
+    ensenar(individuo, mundo, interlocutor, lenguaje=lenguaje)
     return True
 
 
@@ -400,6 +405,7 @@ def aplicar(
     *,
     bonus_bayas: float = 1.0,
     bonus_caza: float = 1.0,
+    lenguaje: bool = False,
 ) -> bool:
     """Despacha la acción al verbo que toca. False si no se pudo aplicar."""
     if accion.nombre == "beber":
@@ -416,13 +422,13 @@ def aplicar(
         if accion.objetivo is None:
             raise ValueError("la accion ensenar necesita objetivo")
         aprendiz = _por_id(mundo, accion.objetivo)
-        return ensenar(individuo, mundo, aprendiz)
+        return ensenar(individuo, mundo, aprendiz, lenguaje=lenguaje)
     if accion.nombre == "cuidar":
         if accion.objetivo is None:
             raise ValueError("la accion cuidar necesita objetivo")
         return cuidar(individuo, mundo, _por_id(mundo, accion.objetivo))
     if accion.nombre == "hablar":
-        return hablar(individuo, mundo)
+        return hablar(individuo, mundo, lenguaje=lenguaje)
     if accion.nombre == "tallar":
         return tallar(individuo, mundo)
     if accion.nombre == "frotar_madera":

@@ -1386,3 +1386,48 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 78 so
 ```
 
 </details>
+
+## F3-002 — Transmision intergeneracional y nodos apagados
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 421 passed in 219.66s (0:03:39)
+- **Cambios:** tribal/culture/transmision.py (nuevo: mapa nodo->habilidad y conteo de portadores); tribal/culture/grafo.py (apagar/contar, estado apagado sin borrar ni tocar origen); tribal/core/acciones.py (ensenar/hablar exigen lenguaje); tribal/sim.py (portadores y apagado a los 120 ticks); tribal/cli.py (activos/apagados en report culture); tribal/store/{esquema,repositorio}.py (tick_apagado/motivo con migracion); tests/test_transmision.py (nuevo, 11 casos) y test_store.py; README; arquitectura.md §2.4
+- **Decisiones:** El nodo se apaga, no se borra: conserva autor, tick y origen, y el motivo queda persistido. La ventana es de 120 ticks sin ningun portador vivo; un ida y vuelta de portador reinicia el reloj y no apaga antes. No hay reactivacion: una combinacion apagada no se puede reintentar y las propuestas la rechazan, de modo que el conocimiento perdido lo esta de verdad. La ensenanza exige lenguaje previo (proto_palabras) y proximidad; la imitacion de conformistas no depende del temperamento y tambien sostiene el nodo. Solo las combinaciones tienen habilidad propia: el resto del arbol es practica situacional que cualquier vivo puede ejecutar, y eso mantiene 32/34 activos en una partida larga (limitacion documentada frente a lo que sugiere §6).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 418 passed
+
+$ ensenanza
+ensenar/hablar exigen proto_palabras activo y proximidad; sin lenguaje -> False sin transferir
+aprendiz a 2.5 tiles con PROB_ENSENANZA=100 -> no transfiere (mutar el guard -> FALLA)
+los conformistas imitan: turnos_de_vigilia sigue activo tras morir el modelo
+imitar no mira temperamento (cadena _imitar comprobada)
+
+$ apagado (unico portador muere sin ensenar)
+tick 124 activo, tick 125 apagado con tick_apagado=125 y motivo "sin portadores"
+sigue en el grafo; (origen, autor, tick) = (combinacion, 1, 3) intactos
+ventana de ida y vuelta: se apaga exactamente 120 ticks despues de la ultima perdida
+no se reactiva: _intentar_combinacion filtra ids existentes, propuestas.validar los rechaza
+mutaciones: quitar el gate de lenguaje -> FALLA ; apagar que borra -> 3 FAILED ;
+quitar la ventana de 120 -> FALLA (apagaba en el tick 5)
+
+$ con ensenanza previa: 50 ventanas de 120 ticks sin el maestro, el nodo sigue activo
+
+$ report culture --json (seed 42, 5000 ticks): activos 32, apagados 2, 34 nodos (suma exacta)
+  los apagados con tick 4822 y motivo ; test fija activos/apagados/nodos_por_estado
+  mutacion: borrar ese bloque de cli.py -> FALLA
+$ persistencia: tick_apagado/motivo_apagado en nodos (ALTER TABLE en bases antiguas);
+  round-trip tras cerrar y reabrir, y migracion con test
+
+$ uv run pytest -q
+977 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 78 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 78 files
+```
+
+</details>

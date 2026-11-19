@@ -165,6 +165,8 @@ def test_ensenar_una_habilidad_sube_la_saliencia(
     simulacion = Simulacion(
         _mundo(maestro, aprendiz), SimConfig(seed=0, individuos=2, depredadores=0)
     )
+    simulacion.grafo.descubrir("gestos", autor=1, tick=0)
+    simulacion.grafo.descubrir("proto_palabras", autor=1, tick=0)
 
     simulacion.step()
 

@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.29-green)
+![Version](https://img.shields.io/badge/Version-0.1.30-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -395,8 +395,8 @@ tramo ocioso, no con una recompensa al rasgo. La tabla está en
 | `litica` | comer | bayas o caza al alcance | recupera energía (y exige `recolectar`) |
 | `litica` | tallar | junto a bosque | gasta 0,5 de energía |
 | `fuego` | frotar_madera | junto a bosque | gasta 1,0 de energía |
-| `lenguaje` | hablar | otro individuo a ≤2 tiles | puede transmitir una habilidad |
-| `roles` | enseñar | aprendiz a ≤2 tiles | transmite una habilidad |
+| `lenguaje` | hablar | otro individuo a ≤2 tiles | con `proto_palabras` activo, puede transmitir una habilidad |
+| `roles` | enseñar | aprendiz a ≤2 tiles **y** `proto_palabras` activo | transmite una habilidad |
 | `roles` | cuidar | herido a ≤2 tiles (salud < 100) | +0,5 de salud al atendido, −0,2 al cuidador |
 | `simbolico` | pintar | junto a bosque o agua | consume el tick y 0,2 de energía |
 
@@ -422,7 +422,7 @@ Subir esa cifra por encima del 50 % sigue siendo el trabajo de la Fase 3.
 
 ```bash
 uv run python -m tribal report culture             # legible
-uv run python -m tribal report culture --json      # nodos, aristas y pct_fuera_arbol
+uv run python -m tribal report culture --json      # nodos, activos/apagados y pct_fuera_arbol
 uv run python -m tribal report culture --seed 7 --ticks 900 --crisis
 ```
 
@@ -430,7 +430,29 @@ El JSON incluye `fuera_arbol`: la lista de nodos que no son escalones del árbol
 con su `origen` (`combinacion`, `interaccion` o `llm`), su `autor` y su `tick`.
 El KPI `pct_fuera_arbol` sigue contando solo `combinacion` e `interaccion`, como
 `objetivo.md` §3.2; `llm` se publica aparte porque también es un nodo nacido
-fuera del árbol.
+fuera del árbol. Cada nodo lleva además `estado` (`activo`/`apagado`) y, si se
+apagó, `tick_apagado` y `motivo_apagado`; el informe cuenta `activos`,
+`apagados` y `nodos_por_estado`.
+
+## Transmisión y nodos apagados
+
+Una técnica vive mientras quede alguien vivo que pueda practicarla
+(`tribal/culture/transmision.py`). Las combinaciones exigen la habilidad que
+enseña su descubrimiento (`fabricar`, `fuego`, `cazar`, `ensenar`); el resto del
+árbol son prácticas situacionales —tallar, hablar, cuidar, pintar— que puede
+ejercer cualquier vivo, así que su portador es cualquier superviviente. Cuando
+un nodo pasa `TICKS_SIN_PORTADOR` (120) ticks sin portadores, `Grafo.apagar` lo
+deja en estado `apagado`: **no se borra**, conserva su `origen`, su `autor` y su
+`tick` de nacimiento, y añade el tick y el motivo del apagado. La cultura
+perdida se puede consultar igual que la viva. El apagado se persiste en la
+tabla `nodos` (`tick_apagado`, `motivo_apagado`): cerrar y reabrir la partida
+conserva cuándo y por qué se perdió la técnica.
+
+Enseñar exige proximidad (≤2 tiles) **y** un nodo de lenguaje previo: sin
+`proto_palabras` activo, ni `ensenar` ni `hablar` transfieren una habilidad —
+antes de las palabras se puede señalar, pero no contar un procedimiento. La
+imitación pasiva no depende del lenguaje ni del temperamento: quien ve usar una
+habilidad a ≤2 tiles puede copiarla, y los conformistas también imitan.
 
 Todavía no hay partida persistida, así que el informe sale de simular
 `--ticks` ticks (600 por defecto) en headless con la semilla y el `--config`
@@ -439,7 +461,7 @@ pedidos: mismo seed y mismos ticks, mismo informe. Salida real de
 
 ```
 seed 42  ticks 600
-nodos 30  aristas 27  pct_fuera_arbol 23.3  nivel_max 2
+nodos 30  aristas 27  activos 30  apagados 0  pct_fuera_arbol 23.3  nivel_max 2
   litica    0  Guijarro             (arbol, autor 3, tick 1)
   litica    1  Lasca                (arbol, autor 3, tick 4)
   litica    2  Bifaz                (arbol, autor 3, tick 7)

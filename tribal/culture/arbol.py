@@ -56,6 +56,10 @@ class Nodo:
     #: Individuo que lo descubrió y tick en que nació; 0 = plantilla del árbol.
     autor: int = 0
     tick: int = 0
+    #: Tick y causa del apagado (concepto §9): 0/"" mientras siga activo. El
+    #: nodo no se borra; saber cuándo y por qué se perdió también es cultura.
+    tick_apagado: int = 0
+    motivo_apagado: str = ""
 
 
 _CATALOGO: tuple[Nodo, ...] = (
