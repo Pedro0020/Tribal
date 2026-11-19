@@ -985,3 +985,39 @@ $ git diff tribal/core tribal/agents tribal/culture -> vacio (sin cambios de mec
 ```
 
 </details>
+
+## F2-001 — Cliente LLM HTTP con esquema de acciones
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 286 passed in 151.88s (0:02:31)
+- **Cambios:** tribal/llm/{__init__,esquema,cliente}.py (nuevos: vocabulario derivado, JSON schema, validacion, prompt con few-shot, cliente HTTP con transporte inyectable y backend falso); tribal/cli.py (llm selfcheck); tests/conftest.py (guarda de red de la suite); tests/test_llm_esquema.py y tests/test_llm_cliente.py (nuevos, 31 casos); README (LLM y arranque de Ollama); vault/01_PROYECTO/arquitectura.md (§2.3 contrato, timeout y degradacion)
+- **Decisiones:** El vocabulario de acciones se deriva de tribal.core.acciones (get_args del Literal), no se duplica: un enum copiado a mano es la primera cosa que se desincroniza. El cliente no importa pygame y usa urllib de stdlib con timeout corto; el transporte es inyectable y los tests no abren red (guarda global en conftest). Devolver estado (ok/degradado/error) en vez de lanzar es lo que permite que el bucle siga por instinto; la cola que lo consume es F2-002. Selfcheck informa aunque el servicio este caido y exit 0: no disponible no es un fallo del comando. Deuda anotada: selfcheck no verifica que tribal-llm este en /api/tags, el README cita tribal.Modelfile y ese fichero no esta en el repo, y validar() acepta campos extra que el schema prohibe (se cierran en HARD-2).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 286 passed
+
+$ uv run python -m tribal llm selfcheck --json     (Ollama levantado)
+{"disponible": true, "endpoint": "http://127.0.0.1:11434", "modelo": "tribal-llm",
+ "latencia_ms": 36.3, "error": null}   exit 0
+$ ... --endpoint http://127.0.0.1:9
+{"disponible": false, "error": "conexion rechazada", ...}  exit 0, sin traza
+
+$ esquema: ACCIONES = get_args(NombreAccion)  (derivado del vocabulario real, no duplicado)
+  prueba: accion fuera del vocabulario | campo faltante | tipo erroneo | texto libre (aceptado)
+$ cliente: 7 casos inyectados (ok, JSON roto, timeout, conexion rechazada, 500, sobre no-JSON,
+  sin message) -> ninguno lanza excepcion; timeout=0.5 corta en 0.544 s; no importa pygame
+$ red en tests: guarda global sobre urllib.request.urlopen; un test temporal que la forzaba
+  fue abortado por la guarda (verificado por el reviewer y borrado despues)
+
+$ uv run pytest -q
+842 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 55 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 55 source files
+```
+
+</details>

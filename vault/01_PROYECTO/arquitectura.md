@@ -79,6 +79,17 @@ modelo que puede tardar un segundo.
 - `aplicar.py`: convierte el JSON validado en una `DecisionLLM` aplicable y
   descarta lo que el motor considere implausible.
 
+**Contrato implementado en F2-001.** El cliente no pregunta «qué hacer»: recibe
+un estado serializable y **2–4 acciones candidatas**, y el modelo elige una y la
+justifica (`accion`, `objetivo`, `razon`, `dialogo`). `format` lleva
+`esquema.ESQUEMA_RESPUESTA` con el `enum` del vocabulario de `core.acciones`,
+temperatura 0.3 y `num_predict` acotado. `ClienteLLM.decidir()` devuelve
+`ok | degradado | error` y **nunca lanza**: un timeout (3 s), una conexión
+rechazada o un JSON inválido se convierten en `degradado`/`error`, de modo que
+el bucle sigue por instinto. `disponible()` consulta `/api/tags` para
+`llm selfcheck`. La suite inyecta `backend_falso` y bloquea
+`urllib.request.urlopen`, así que `pytest` no abre red.
+
 ### 2.4 Memoria colectiva — `tribal/culture/`
 
 `grafo.py` mantiene `nodos` + `aristas` en RAM; el espejo en SQLite lo escribe
@@ -374,6 +385,10 @@ bueno. Eso son las puertas de concepto §15 y el líder de la fase.
   `resumen()` determinista que publica `run --json`.
 - `tribal/ui/`: bucle Pygame a 60 fps y render top-down; la UI lee el mundo y
   no lo muta.
+- `tribal/llm/`: `esquema.py` (JSON schema, validación y few-shot) y
+  `cliente.py` (HTTP a Ollama con transporte inyectable y degradación sin
+  excepciones). `uv run python -m tribal llm selfcheck --json` informa del
+  servicio; la cola y la selección por saliencia son F2-002.
 - `tribal/gate_f1.py`: barrido calma/crisis por semilla y veredicto de la
   puerta F1→F2.
 - Puerta del arnés en verde (`harness gate` → `ENTORNO LISTO`) y `pytest -q`
@@ -392,10 +407,10 @@ uv run python -m tribal report gate-f1 --seeds 1-10 --ticks 8000
 
 **No existe todavía (y este documento no implementa):**
 
-- Capa LLM (`tribal/llm/`): cola asíncrona, cliente HTTP de Ollama, esquema
-  JSON y selección por saliencia. Empieza en Fase 2 (`F2-001`). El id del
-  modelo es `tribal-llm` (Modelfile `FROM qwen2.5:3b-instruct-q8_0` con
-  `num_ctx 8192`), fuera del repo.
+- Capa LLM (`tribal/llm/`): cola asíncrona, selección por saliencia y
+  aplicación diferida. Empieza en Fase 2 (`F2-002`); `cliente.py` y
+  `esquema.py` ya existen. El id del modelo es `tribal-llm` (Modelfile
+  `FROM qwen2.5:3b-instruct-q8_0` con `num_ctx 8192`), fuera del repo.
 - Persistencia SQLite (`tribal/store/`), export a Obsidian y telemetría leída
   de una partida guardada. Fase 3 (`F3-001`, `F3-003`, `F3-004`).
 - Diario narrado, memoria colectiva persistida y consulta del grafo. Fase 2–3.

@@ -270,10 +270,13 @@
         "uv run pytest -q no hace ninguna llamada de red (test que monkeypatchea el transporte)",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F1-006"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 0,
+      "closed": "2026-11-19"
     },
     {
       "id": "F2-002",

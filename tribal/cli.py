@@ -26,6 +26,12 @@ from tribal.gate_f1 import (
     medir_barrido,
     parsear_semillas,
 )
+from tribal.llm.cliente import (
+    ENDPOINT_POR_DEFECTO,
+    MODELO_POR_DEFECTO,
+    TIMEOUT_POR_DEFECTO,
+    ClienteLLM,
+)
 from tribal.sim import MS_FRAME, run_muestreado
 from tribal.sim import run as run_sim
 
@@ -186,6 +192,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gate.add_argument("--json", action="store_true", help="Barrido como un único objeto JSON.")
 
+    llm = sub.add_parser("llm", help="Capa LLM local (Ollama).")
+    llm_sub = llm.add_subparsers(dest="llm", required=True)
+    selfcheck = llm_sub.add_parser(
+        "selfcheck",
+        help="Comprueba si el servicio y el modelo responden.",
+        description=(
+            "Hace `GET /api/tags` al endpoint de Ollama y publica disponible, "
+            "latencia y error. Si no hay servicio no es un fallo del comando: "
+            "la tribu funciona sin LLM por diseño."
+        ),
+    )
+    selfcheck.add_argument(
+        "--endpoint",
+        default=ENDPOINT_POR_DEFECTO,
+        help=f"Endpoint de Ollama (default {ENDPOINT_POR_DEFECTO}).",
+    )
+    selfcheck.add_argument(
+        "--modelo",
+        default=MODELO_POR_DEFECTO,
+        help=f"Identificador del modelo (default {MODELO_POR_DEFECTO}).",
+    )
+    selfcheck.add_argument(
+        "--timeout",
+        type=float,
+        default=TIMEOUT_POR_DEFECTO,
+        help=f"Timeout en segundos (default {TIMEOUT_POR_DEFECTO}).",
+    )
+    selfcheck.add_argument("--json", action="store_true", help="Informe como un único objeto JSON.")
+
     return parser
 
 
@@ -206,6 +241,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.report == "telemetry":
             return _report_telemetry(args)
         return _report(args)
+    if args.command == "llm":
+        return _llm_selfcheck(args)
     return 1
 
 
@@ -340,6 +377,27 @@ def _report_gate_f1(args: argparse.Namespace) -> int:
         print(json.dumps(barrido.a_json(), ensure_ascii=True))
     else:
         print(barrido.texto())
+    return 0
+
+
+def _llm_selfcheck(args: argparse.Namespace) -> int:
+    """`llm selfcheck`: informa del servicio sin convertir su ausencia en fallo."""
+    cliente = ClienteLLM(endpoint=args.endpoint, modelo=args.modelo, timeout=args.timeout)
+    servicio = cliente.disponible()
+    informe = {
+        "disponible": servicio.disponible,
+        "endpoint": cliente.endpoint,
+        "modelo": cliente.modelo,
+        "latencia_ms": servicio.latencia_ms,
+        "error": servicio.error,
+    }
+    if args.json:
+        print(json.dumps(informe, ensure_ascii=True))
+    else:
+        estado = "disponible" if servicio.disponible else "no disponible"
+        latencia = "" if servicio.latencia_ms is None else f" ({servicio.latencia_ms} ms)"
+        error = "" if servicio.error is None else f": {servicio.error}"
+        print(f"{cliente.modelo} en {cliente.endpoint}: {estado}{latencia}{error}")
     return 0
 
 

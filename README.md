@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.20-green)
+![Version](https://img.shields.io/badge/Version-0.1.21-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -67,6 +67,32 @@ reglas y del azar de la semilla.
 
 La Fase 2 (LLM) empieza en `F2-001`; hasta entonces, nada de lo anterior
 necesita red ni modelo.
+
+## Capa LLM local (Fase 2)
+
+`tribal/llm/` es la capa aislada que habla con Ollama. Todavía **no** está
+conectada al bucle: la cola asíncrona y la selección por saliencia son F2-002.
+
+El contrato sale de [`viabilidad-modelo.md`](vault/01_PROYECTO/viabilidad-modelo.md):
+el modelo **no genera la acción desde cero**, elige una de las **2–4 candidatas**
+que le pasa el motor, con few-shot y temperatura ~0.3. El campo `format` lleva
+un JSON schema con `accion` (enum del vocabulario real de `core.acciones`),
+`objetivo`, `razon` y `dialogo`; los textos quedan libres.
+
+```bash
+ollama serve                                  # servicio local en 127.0.0.1:11434
+ollama pull qwen2.5:3b-instruct-q8_0          # base del Modelfile
+# tribal.Modelfile hereda de esa base y fija num_ctx 8192
+ollama create tribal-llm -f tribal.Modelfile  # id que usa el cliente
+uv run python -m tribal llm selfcheck --json
+```
+
+`selfcheck` publica `disponible`, `endpoint`, `modelo`, `latencia_ms` y `error`.
+Que no haya servicio **no es un fallo del comando**: la tribu sigue por instinto.
+Un timeout (3 s), una conexión rechazada o un JSON inválido se devuelven como
+`degradado`/`error`; `decidir()` nunca lanza. Los tests inyectan
+`backend_falso(...)` y `tests/conftest.py` bloquea `urllib.request.urlopen`, así
+que `uv run pytest -q` no abre red.
 
 ## Ejecutar (Fase 0)
 
