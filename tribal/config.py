@@ -40,6 +40,7 @@ CAMPOS_ENTEROS = (
     "ticks_migracion",
     "max_pensando",
     "ticks_guardado",
+    "ticks_telemetria",
 )
 #: Campos que el motor multiplica: número real, nunca una cadena.
 CAMPOS_TASA = ("tasa_sed", "tasa_energia", "tasa_salud")
@@ -91,6 +92,10 @@ class SimConfig:
     #: es en lote, no por frame: 60 escrituras/s serían posibles pero gratuitas
     #: de evitar (arquitectura §2.5).
     ticks_guardado: int = 300
+    #: Cada cuántos ticks se añade una fila a la tabla `telemetria` (F3-004):
+    #: 100 muestras en una partida de 6000 ticks, no 6000. Independiente del
+    #: volcado completo, que sigue yendo cada `ticks_guardado` ticks.
+    ticks_telemetria: int = 60
 
     @classmethod
     def desde_json(cls, path: str | Path) -> SimConfig:
@@ -164,6 +169,10 @@ def validar(config: SimConfig, origen: str = "config") -> None:
     if config.ticks_guardado <= 0:
         raise ValueError(
             f"{origen}: ticks_guardado debe ser mayor que 0 (recibido {config.ticks_guardado})"
+        )
+    if config.ticks_telemetria <= 0:
+        raise ValueError(
+            f"{origen}: ticks_telemetria debe ser mayor que 0 (recibido {config.ticks_telemetria})"
         )
     if not isinstance(config.umbral_agotamiento, (int, float)) or isinstance(
         config.umbral_agotamiento, bool

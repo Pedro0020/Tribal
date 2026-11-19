@@ -12,6 +12,8 @@ vuelca el grafo de una partida a Markdown para la bóveda de la tribu.
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import sys
 from collections.abc import Sequence
@@ -49,6 +51,18 @@ from tribal.store.repositorio import BaseInvalida, Repositorio
 TICKS_INFORME = 600
 #: Cada cuántos ticks muestrea `report telemetry`: 10 filas para 600 ticks.
 INTERVALO_TELEMETRIA = 60
+#: Columnas del CSV de telemetría, en el orden en que se escriben.
+CAMPOS_TELEMETRIA = (
+    "tick",
+    "poblacion",
+    "divergentes",
+    "conformistas",
+    "neutros",
+    "nodos",
+    "aristas",
+    "media_energia",
+    "media_sed",
+)
 #: Entradas de diario que publica `report diary` si no se pide otra cosa.
 DIARIO_ULTIMAS = 5
 
@@ -94,7 +108,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Escribe la partida en esa base SQLite (se vuelca al cerrar y cada "
-        "`ticks_guardado` ticks).",
+        "`ticks_guardado` ticks). Si ya existe, hay que pasar `--fresh`.",
+    )
+    run.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Borra la base indicada por --db antes de empezar una partida nueva.",
     )
     run.add_argument("--benchmark", action="store_true", help="Falla si no cabe en 16.67 ms/tick.")
     run.add_argument(
@@ -161,7 +180,9 @@ def build_parser() -> argparse.ArgumentParser:
             "(población, divergentes, conformistas, neutros, nodos, aristas y medias "
             "de energía y sed). Con --llm añade a cada muestra peticiones, aplicadas, "
             "descartadas, fallos y latencia media del LLM. Determinista: mismo seed, "
-            "ticks e intervalo, mismas muestras. Todavía no lee una partida persistida."
+            "ticks e intervalo, mismas muestras. Con --db no simula: lee la tabla "
+            "`telemetria` de una partida guardada; --csv la vuelca en CSV y --json "
+            "devuelve la lista de muestras."
         ),
     )
     telemetria.add_argument(
@@ -206,6 +227,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     telemetria.add_argument(
         "--json", action="store_true", help="Muestras como un único objeto JSON."
+    )
+    telemetria.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="Lee la telemetría de esa base SQLite en vez de simular.",
+    )
+    telemetria.add_argument(
+        "--csv",
+        type=Path,
+        nargs="?",
+        const=Path("-"),
+        default=None,
+        metavar="PATH",
+        help="Escribe CSV con cabecera (sin PATH, a stdout); implica --db.",
     )
 
     diario = informes.add_parser(
@@ -518,6 +554,23 @@ def _run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.db is not None:
+        if args.fresh:
+            try:
+                for sufijo in ("", "-wal", "-shm"):
+                    Path(f"{args.db}{sufijo}").unlink(missing_ok=True)
+            except OSError as exc:
+                print(f"error: no puedo borrar {args.db}: {exc}", file=sys.stderr)
+                return 2
+        elif args.db.exists():
+            print(
+                f"error: la base {args.db} ya existe; usa --fresh para empezar de cero",
+                file=sys.stderr,
+            )
+            return 2
+    elif args.fresh:
+        print("error: --fresh necesita --db", file=sys.stderr)
+        return 2
 
     cola = None
     if args.llm != "off":
@@ -611,10 +664,17 @@ def _report(args: argparse.Namespace) -> int:
 def _report_telemetry(args: argparse.Namespace) -> int:
     """`report telemetry`: una fila por intervalo, no por tick.
 
-    La corrida es la misma que la de `run --headless` con esos `--seed/--ticks`
-    y esa `--config`; la última muestra es el estado final, así que coincide con
-    el resumen de esa partida.
+    Sin `--db` la corrida es la misma que la de `run --headless` con esos
+    `--seed/--ticks` y esa `--config`; la última muestra es el estado final, así
+    que coincide con el resumen de esa partida. Con `--db` no simula: lee la
+    tabla `telemetria` que dejó `run --db` y la publica como tabla, CSV o JSON.
     """
+    if args.db is not None:
+        return _report_telemetry_db(args)
+    if args.csv is not None:
+        print("error: --csv necesita --db", file=sys.stderr)
+        return 2
+
     try:
         base = SimConfig.desde_json(args.config) if args.config else SimConfig()
     except (OSError, ValueError) as exc:
@@ -663,6 +723,96 @@ def _report_telemetry(args: argparse.Namespace) -> int:
     else:
         print(_texto_telemetria(informe))
     return 0
+
+
+def _report_telemetry_db(args: argparse.Namespace) -> int:
+    """`report telemetry --db`: lee la tabla, no resimula.
+
+    Una base sin la tabla `telemetria` o con la tabla vacía sale con 2: no hay
+    nada que publicar y fingir una partida vacía sería engañoso.
+    """
+    if not args.db.exists():
+        print(f"error: no existe la base {args.db}", file=sys.stderr)
+        return 2
+
+    ignorados = [
+        nombre
+        for nombre, activo in (
+            ("--seed", args.seed is not None),
+            ("--ticks", args.ticks != TICKS_INFORME),
+            ("--intervalo", args.intervalo != INTERVALO_TELEMETRIA),
+            ("--config", args.config is not None),
+            ("--crisis", args.crisis),
+            ("--llm", args.llm != "off"),
+            ("--llm-sincrono", args.llm_sincrono),
+        )
+        if activo
+    ]
+    if ignorados:
+        print(
+            f"warning: con --db se ignoran {', '.join(ignorados)}: no se resimula",
+            file=sys.stderr,
+        )
+
+    try:
+        repositorio = Repositorio(args.db, crear=False)
+    except BaseInvalida as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        muestras = repositorio.telemetria()
+    finally:
+        repositorio.cerrar()
+
+    if not muestras:
+        print(f"error: la base {args.db} no tiene telemetria", file=sys.stderr)
+        return 2
+
+    if args.csv is not None:
+        try:
+            _escribir_csv_telemetria(muestras, args.csv)
+        except OSError as exc:
+            print(f"error: no puedo escribir el CSV {args.csv}: {exc}", file=sys.stderr)
+            return 2
+        return 0
+    if args.json:
+        print(json.dumps(muestras, ensure_ascii=True))
+        return 0
+    print(_texto_telemetria_db(args.db, muestras))
+    return 0
+
+
+def _escribir_csv_telemetria(muestras: list[dict[str, Any]], destino: Path) -> None:
+    """CSV UTF-8 con cabecera y LF, una fila por muestra; `-` es stdout.
+
+    Se escribe bytes a propósito: `sys.stdout` en Windows traduce `\n` a CRLF,
+    y el CSV de una muestra por tick no debe cambiar de formato según la consola.
+    """
+    texto = io.StringIO()
+    escritor = csv.writer(texto, lineterminator="\n")
+    escritor.writerow(CAMPOS_TELEMETRIA)
+    escritor.writerows([muestra[campo] for campo in CAMPOS_TELEMETRIA] for muestra in muestras)
+    datos = texto.getvalue().encode("utf-8")
+
+    if str(destino) == "-":
+        sys.stdout.buffer.write(datos)
+        return
+    destino.write_bytes(datos)
+
+
+def _texto_telemetria_db(ruta: Path, muestras: list[dict[str, Any]]) -> str:
+    lineas = [
+        f"db {ruta}  muestras {len(muestras)}  ticks {muestras[0]['tick']}..{muestras[-1]['tick']}",
+        "  tick  pob  div  conf  neut  nodos  aristas  energia  sed",
+    ]
+    lineas.extend(
+        f"  {muestra['tick']:>4}  {muestra['poblacion']:>3}  "
+        f"{muestra['divergentes']:>3}  {muestra['conformistas']:>4}  "
+        f"{muestra['neutros']:>4}  {muestra['nodos']:>5}  "
+        f"{muestra['aristas']:>7}  {muestra['media_energia']:>7}  {muestra['media_sed']:>4}"
+        for muestra in muestras
+    )
+    return "\n".join(lineas)
 
 
 def _report_diary(args: argparse.Namespace) -> int:

@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: telemetria historica consultable y CSV (F3-004)
 - feat: export del grafo a Obsidian con wikilinks (F3-003)
 - feat: transmision intergeneracional y nodos apagados (F3-002)
 - feat: memoria colectiva persistida en SQLite (F3-001)

@@ -13,6 +13,8 @@ practicado; `origen`, `autor` y `tick` son datos de nacimiento (concepto §8b)
 y por eso tienen columna propia: sin ellos el KPI no se puede reconstruir.
 `tick_apagado` y `motivo_apagado` (F3-002) completan el dato de defunción del
 nodo: un nodo apagado no se borra, y su tick y su causa se conservan al reabrir.
+`telemetria` (F3-004) guarda una fila por intervalo —población, temperamentos,
+grafo y medias de energía y sed—, no una por frame.
 """
 
 from __future__ import annotations
@@ -124,8 +126,11 @@ CREATE TABLE IF NOT EXISTS telemetria (
     poblacion INTEGER NOT NULL,
     n_divergentes INTEGER NOT NULL,
     n_conformistas INTEGER NOT NULL,
+    n_neutros INTEGER NOT NULL,
     n_nodos INTEGER NOT NULL,
-    n_aristas INTEGER NOT NULL
+    n_aristas INTEGER NOT NULL,
+    media_energia REAL NOT NULL,
+    media_sed REAL NOT NULL
 );
 """
 

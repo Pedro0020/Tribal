@@ -1474,3 +1474,46 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 82 fi
 ```
 
 </details>
+
+## F3-004 — Telemetria historica consultable
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 435 passed in 225.21s (0:03:45)
+- **Cambios:** tribal/config.py (ticks_telemetria); tribal/sim.py (muestra cada N ticks con db, final si cae fuera de intervalo); tribal/store/{esquema,repositorio}.py (columnas n_neutros/media_energia/media_sed, migracion ALTER en apertura y lector telemetria); tribal/cli.py (report telemetry --db, --csv, --json, --fresh y rechazo de run sobre base existente); tests (100 filas, CSV, BD vieja, flags ignorados); README; arquitectura.md §2.5/§5
+- **Decisiones:** La telemetria historica se conserva: abrir una base vieja migra el esquema con ALTER TABLE y las filas heredadas leen neutros/medias a 0; `run --db` sobre una base existente se rechaza con exit 2 y solo `--fresh` borra, de forma explicita. La alternativa (anexar partidas con un run_id) se descarta hasta SAVE-001, que es quien define la reanudacion. El CSV escribe LF tambien en stdout porque en Windows el modo texto duplicaba CR. Con --db se avisa de que --seed/--ticks/--intervalo se ignoran en vez de fingir que aplican. Limites anotados: una base en solo lectura da un mensaje enganoso (no crash), --csv y --json juntos gana CSV, y --fresh no pide confirmacion (documentado).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 435 passed
+
+$ muestreo por intervalo (6000 ticks, intervalo 60)
+100 filas, ticks 60..6000, sin duplicados; div+conf+neut == poblacion en las 100
+nodos/aristas de la ultima muestra (27/24) == COUNT(*) del grafo
+por frame NO: 6000 ticks no generan 6000 filas
+
+$ report telemetry --db tribu.db --csv
+cabecera de 9 columnas + 100 filas, UTF-8 sin BOM, 0 CR, LF, ordenado, parseable
+stdout en bytes identico al fichero ; --json coincide ; sin PATH va a stdout
+
+$ BD vieja de F3-003 (telemetria sin n_neutros/media_energia/media_sed, 100 filas)
+report telemetry --db vieja.db -> exit 0, 100 filas, poblacion heredada intacta, neutros/medias 0,
+  columnas anadidas por ALTER TABLE; nada perdido
+run --db vieja.db -> exit 2 "usa --fresh para empezar de cero", base intacta (mismo SHA)
+run --db vieja.db --fresh -> exit 0, nueva partida
+report db y export obsidian sobre la base migrada -> exit 0
+tabla vacia / sin tablas / no-SQLite / ruta inexistente -> exit 2 con error, sin traza
+
+Mutaciones verificadas: sin migracion en crear=False -> no such column ; sin rechazo de run
+sobre existente -> la base se pisa. Restaurados con hash identico.
+
+$ uv run pytest -q
+991 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 82 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 82 files
+```
+
+</details>

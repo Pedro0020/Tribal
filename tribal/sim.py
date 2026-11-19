@@ -139,7 +139,8 @@ class Simulacion:
         self.cola = cola
         #: Espejo en SQLite (`run --db`). `None` = partida solo en RAM.
         self._repositorio = Repositorio(db) if db is not None else None
-        #: Muestras de telemetría que se escriben con la partida (una por volcado).
+        #: Muestras de telemetría que se escriben con la partida (una por
+        #: `ticks_telemetria`, más el cierre si cae fuera de intervalo).
         self._telemetria: list[dict[str, Any]] = []
         #: Memoria recuperable por similitud. Solo existe si hay capa LLM: sin
         #: LLM nadie consulta recuerdos y no se paga el coste de indexarlos.
@@ -420,20 +421,20 @@ class Simulacion:
 
         self._ms_acumulados += (time.perf_counter() - inicio) * 1000.0
 
+        if self._repositorio is not None and self.mundo.tick % self.config.ticks_telemetria == 0:
+            self._telemetria.append(self.muestra())
         if self._repositorio is not None and self.mundo.tick % self.config.ticks_guardado == 0:
             self._guardar()
 
     def _guardar(self) -> None:
         """Vuelca la partida entera a SQLite; no-op sin `--db`.
 
-        La telemetría se acumula aquí, una muestra por volcado. Un volcado del
-        mismo tick se salta, así que el cierre tras el último `step` no duplica
-        la fila.
+        Las muestras de telemetría se acumulan en `step` cada
+        `ticks_telemetria` ticks y se escriben con cada volcado; no se muestrea
+        aquí, para que un volcado no añada una fila fuera de intervalo.
         """
         if self._repositorio is None:
             return
-        if not self._telemetria or self._telemetria[-1]["tick"] != self.mundo.tick:
-            self._telemetria.append(self.muestra())
         self._repositorio.guardar(
             self.mundo, self.grafo, self.diario, self._telemetria, config=self.config
         )
@@ -442,6 +443,10 @@ class Simulacion:
         """Vuelca el estado final y cierra la base. Sin `--db` no hace nada."""
         if self._repositorio is None:
             return
+        # Si la partida termina fuera de intervalo, el estado final se conserva
+        # como última muestra; si el tick ya está muestreado, no se duplica.
+        if not self._telemetria or self._telemetria[-1]["tick"] != self.mundo.tick:
+            self._telemetria.append(self.muestra())
         try:
             self._guardar()
         finally:

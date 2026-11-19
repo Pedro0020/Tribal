@@ -240,6 +240,20 @@ codificación (UTF-8 sin BOM, LF) son fijos, así que el export es idempotente
 byte a byte. No borra `.md` viejos —el vault puede tener notas humanas—;
 `index.md` se reescribe siempre y resume nodos por origen y estado.
 
+**Telemetría histórica (F3-004).** El motor añade a `telemetria` una fila cada
+`config.ticks_telemetria` ticks (60 por defecto), no por frame: 100 filas para
+6000 ticks. Cada fila guarda `tick`, `poblacion`, `n_divergentes`,
+`n_conformistas`, `n_neutros`, `n_nodos`, `n_aristas`, `media_energia` y
+`media_sed`. Las filas se acumulan en el motor y viajan con cada volcado
+completo; si la partida termina fuera de intervalo, el estado final se añade al
+cerrar. `Repositorio.telemetria()` las lee ordenadas y `report telemetry --db`
+publica tabla, lista JSON o CSV (UTF-8, LF, cabecera), sin resimular. Abrir una
+base anterior a F3-004 —también en lectura— añade las columnas nuevas con
+`ALTER TABLE` sin borrar filas, así que las muestras heredadas leen sus tres
+campos nuevos a cero. Sobre una base existente `run --db` se niega a continuar
+(exit 2) para no sustituir el histórico; `--fresh` es la única vía que borra y
+empieza de cero.
+
 ### 2.6 Observación — `tribal/ui/`
 
 `render.py` dibuja el mapa top-down con sprites; `telemetria.py` muestrea por

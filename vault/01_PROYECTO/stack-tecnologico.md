@@ -166,10 +166,10 @@ recuerdos(id_individuo, tipo, texto, embedding BLOB, tick, saliencia)
 
 -- Narración y observación
 diario(tick, tipo_evento, narracion)
-telemetria(tick, poblacion, n_divergentes, n_conformistas, n_nodos, n_aristas)
+telemetria(tick, poblacion, n_divergentes, n_conformistas, n_neutros, n_nodos, n_aristas, media_energia, media_sed)
 ```
 
-- **`tick`** = nº de frame desde el inicio; el tiempo continuo se deriva (`seg_simulado = tick / fps * velocidad_reloj`). La `telemetria` muestrea por **intervalo**, no por frame.
+- **`tick`** = nº de frame desde el inicio; el tiempo continuo se deriva (`seg_simulado = tick / fps * velocidad_reloj`). La `telemetria` muestrea por **intervalo** (`ticks_telemetria`, 60 por defecto), no por frame.
 - **Flexible donde importa**: `genoma`, `habilidades`, `personalidad`, `contenido` y `texto` son JSON/texto libre.
 - **Export a Obsidian**: `nodos` + `aristas` se vuelcan a `.md` con `[[wikilinks]]` para ver la cultura en la vista de grafo de Obsidian.
 - **Guardado (concepto §17):** un único `data/world.db` es todo el estado. Cerrar = `COMMIT` + `save_meta.json` (seed, fecha, población, nº de nodos) + estado del RNG. `data/saves/` (opcional) archiva partidas antes de "nuevo mundo".

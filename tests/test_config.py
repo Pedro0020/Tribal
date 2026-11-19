@@ -34,6 +34,7 @@ CLAVES = {
     "ticks_migracion",
     "max_pensando",
     "ticks_guardado",
+    "ticks_telemetria",
 }
 
 
@@ -72,6 +73,7 @@ def test_los_defaults_son_los_documentados() -> None:
         "ticks_migracion": 3000,
         "max_pensando": 4,
         "ticks_guardado": 300,
+        "ticks_telemetria": 60,
     }
     assert set(config.a_json()) == CLAVES
 

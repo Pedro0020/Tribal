@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.31-green)
+![Version](https://img.shields.io/badge/Version-0.1.32-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -63,7 +63,8 @@ reglas y del azar de la semilla.
 - **Puerta F1→F2 medida en la descendencia**: `report gate-f1` compara calma y
   crisis sobre 10 semillas. Veredicto publicado: `S_fec > 0` en crisis 7/10 y
   `S_fec < 0` en calma 7/10 (primaria); el `div%` secundario (4/10) no decide.
-- **Telemetría**: `report telemetry` muestrea por intervalo, no por tick.
+- **Telemetría**: `report telemetry` muestrea por intervalo, no por tick; con
+  `--db` lee la tabla `telemetria` de una partida guardada y `--csv` la vuelca.
 
 La Fase 2 (LLM) empieza en `F2-001`; hasta entonces, nada de lo anterior
 necesita red ni modelo.
@@ -549,16 +550,42 @@ En JSON es un objeto con `seed`, `ticks`, `intervalo`, `crisis`, `llm` y `muestr
 ```
 
 `report telemetry` sigue simulando; la telemetría de una partida ya escrita se
-cuenta con `report db` (siguiente apartado), que lee la tabla `telemetria`.
+lee con `--db` (siguiente apartado), que consulta la tabla `telemetria`.
+
+### Telemetría de una partida guardada (F3-004)
+
+`run --db` escribe una fila en `telemetria` cada `ticks_telemetria` ticks (60
+por defecto) —100 filas para 6000 ticks, no 6000— con `tick`, `poblacion`,
+`n_divergentes`, `n_conformistas`, `n_neutros`, `n_nodos`, `n_aristas`,
+`media_energia` y `media_sed`. El muestreo es independiente del volcado
+completo: este sigue yendo cada `ticks_guardado` ticks.
+
+`report telemetry --db` **no simula**: lee esa tabla y la publica. `--csv`
+escribe UTF-8 con LF, cabecera y una fila por muestra ordenada por tick (sin
+PATH vuelca a stdout, también con LF); `--json` devuelve la lista; sin ninguno
+de los dos, imprime una tabla legible. Una base sin la tabla `telemetria` o con
+la tabla vacía sale con **2**. Abrir una base anterior a F3-004 migra las tres
+columnas nuevas sin borrar filas: las muestras heredadas leen `neutros`,
+`media_energia` y `media_sed` a 0. Si con `--db` se pasan `--seed`, `--ticks`,
+`--intervalo` u otras opciones de simulación, se ignoran con un `warning`.
+
+```bash
+uv run python -m tribal report telemetry --db tribu.db               # tabla
+uv run python -m tribal report telemetry --db tribu.db --json        # lista
+uv run python -m tribal report telemetry --db tribu.db --csv         # CSV a stdout
+uv run python -m tribal report telemetry --db tribu.db --csv out/telemetria.csv
+```
 
 ## Persistencia: la partida en SQLite (F3-001)
 
 `run --db tribu.db` escribe la partida en una base SQLite (stdlib, sin
 dependencias). El volcado es en lote —cada `ticks_guardado` ticks (300 por
 defecto) y al cerrar—, no una fila por frame, y es una foto completa del estado:
-sustituye lo anterior dentro de una transacción. `tribal/store/` es el **único**
-módulo que importa `sqlite3`; el resto del producto trabaja contra
-`Repositorio` (`guardar`, `cargar`, `instantanea`, `cerrar`).
+sustituye lo anterior dentro de una transacción. La tabla `telemetria` se
+muestrea aparte, cada `ticks_telemetria` ticks (60 por defecto): 10 filas para
+600 ticks. `tribal/store/` es el **único** módulo que importa `sqlite3`; el
+resto del producto trabaja contra `Repositorio` (`guardar`, `cargar`,
+`instantanea`, `cerrar`).
 
 El esquema es el de stack §5 (`tribal/store/esquema.py`): `individuos`,
 `relaciones`, `recursos`, `mundo`, `nodos`, `aristas`, `recuerdos`, `diario` y
@@ -573,12 +600,17 @@ uv run python -m tribal report db --db tribu.db          # legible
 uv run python -m tribal report db --db tribu.db --json   # recuentos
 ```
 
+`run --db` **no pisa una partida existente**: si el fichero ya está, sale con
+**2** y pide `--fresh`. `--fresh` borra esa base y empieza de cero; es la única
+vía destructiva y hay que pedirla explícitamente. Así el histórico de
+`telemetria` no desaparece por relanzar una simulación.
+
 Salida real de `report db` sobre la partida de 600 ticks:
 
 ```
 seed 42  tick 600  poblacion 16  estacion sin estacion
 nodos 30  aristas 27  arbol 23  combinacion 0  interaccion 7  llm 0
-diario 5  telemetria 2  recursos 89  recuerdos 0
+diario 5  telemetria 10  recursos 89  recuerdos 0
 ```
 
 `report db` no simula ni escribe: abre la base y cuenta. Sale con **2** si el

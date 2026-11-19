@@ -13,10 +13,10 @@ es lo que el KPI necesita, y con su `tick_apagado`/`motivo_apagado` si la
 técnica se perdió (F3-002). **No** se reanuda la simulación: este módulo deja el
 estado consultable para `report db` y los tests; reanudar es SAVE-001.
 
-Una base creada antes de F3-002 no tiene las columnas de apagado: al abrirla con
-`crear=True` se añaden con `ALTER TABLE` (`_migrar_apagado`), y al abrirla en
-solo lectura se leen como activas. Así la partida vieja no se rechaza ni se
-recrea.
+Una base creada antes de F3-002 no tiene las columnas de apagado: al abrirla se
+añaden con `ALTER TABLE` (`_migrar_apagado`), tanto en lectura como en escritura,
+y las filas existentes conservan su estado. Lo mismo hace `_migrar_telemetria`
+con las columnas de F3-004. Así la partida vieja no se rechaza ni se recrea.
 """
 
 from __future__ import annotations
@@ -99,9 +99,15 @@ class Repositorio:
                     conexion.execute(pragma)
                 conexion.executescript(ESQUEMA)
                 _migrar_apagado(conexion)
+                _migrar_telemetria(conexion)
                 conexion.commit()
             else:
                 self._comprobar_esquema(conexion)
+                # Abrir una partida vieja para leer también la pone al día: las
+                # columnas nuevas se añaden sin tocar las filas existentes.
+                _migrar_apagado(conexion)
+                _migrar_telemetria(conexion)
+                conexion.commit()
         except sqlite3.DatabaseError as exc:
             conexion.close()
             raise BaseInvalida(f"{self.ruta}: no es una base SQLite válida ({exc})") from exc
@@ -192,15 +198,19 @@ class Repositorio:
             )
             conexion.executemany(
                 "INSERT INTO telemetria (tick, poblacion, n_divergentes, n_conformistas, "
-                "n_nodos, n_aristas) VALUES (?, ?, ?, ?, ?, ?)",
+                "n_neutros, n_nodos, n_aristas, media_energia, media_sed) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         muestra["tick"],
                         muestra["poblacion"],
                         muestra["divergentes"],
                         muestra["conformistas"],
+                        muestra["neutros"],
                         muestra["nodos"],
                         muestra["aristas"],
+                        muestra["media_energia"],
+                        muestra["media_sed"],
                     )
                     for muestra in telemetria
                 ],
@@ -244,6 +254,26 @@ class Repositorio:
             "recuerdos": _contar(conexion, "recuerdos"),
         }
 
+    def telemetria(self) -> list[dict[str, Any]]:
+        """Muestras guardadas, ordenadas por tick y con los nombres de `muestra()`."""
+        return [
+            {
+                "tick": int(fila["tick"]),
+                "poblacion": int(fila["poblacion"]),
+                "divergentes": int(fila["n_divergentes"]),
+                "conformistas": int(fila["n_conformistas"]),
+                "neutros": int(fila["n_neutros"]),
+                "nodos": int(fila["n_nodos"]),
+                "aristas": int(fila["n_aristas"]),
+                "media_energia": float(fila["media_energia"]),
+                "media_sed": float(fila["media_sed"]),
+            }
+            for fila in self._conexion().execute(
+                "SELECT tick, poblacion, n_divergentes, n_conformistas, n_neutros, "
+                "n_nodos, n_aristas, media_energia, media_sed FROM telemetria ORDER BY tick"
+            )
+        ]
+
     def cerrar(self) -> None:
         """`COMMIT` + cierre. Idempotente: llamarlo dos veces no falla."""
         if self._con is None:
@@ -255,7 +285,11 @@ class Repositorio:
             self._con = None
 
     def _comprobar_esquema(self, conexion: sqlite3.Connection) -> None:
-        """Una base sin las tablas de la tribu no es una partida: error, no DDL."""
+        """Una base sin las tablas de la tribu no es una partida: error, no DDL.
+
+        Las tablas son obligatorias; las columnas nuevas de una tabla existente
+        se migran después con `ALTER TABLE`, que no borra filas.
+        """
         existentes = {
             str(fila[0])
             for fila in conexion.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -382,6 +416,23 @@ def _migrar_apagado(conexion: sqlite3.Connection) -> None:
     for nombre, tipo in _COLUMNAS_APAGADO:
         if nombre not in columnas:
             conexion.execute(f"ALTER TABLE nodos ADD COLUMN {nombre} {tipo}")
+
+
+#: Columnas de telemetría que llegaron en F3-004. Una base anterior las recibe
+#: con cero: las muestras viejas se conservan y las nuevas traen el dato.
+_COLUMNAS_TELEMETRIA: tuple[tuple[str, str], ...] = (
+    ("n_neutros", "INTEGER NOT NULL DEFAULT 0"),
+    ("media_energia", "REAL NOT NULL DEFAULT 0"),
+    ("media_sed", "REAL NOT NULL DEFAULT 0"),
+)
+
+
+def _migrar_telemetria(conexion: sqlite3.Connection) -> None:
+    """Añade las columnas de telemetría si la partida se creó antes de F3-004."""
+    columnas = {str(fila[1]) for fila in conexion.execute("PRAGMA table_info(telemetria)")}
+    for nombre, tipo in _COLUMNAS_TELEMETRIA:
+        if nombre not in columnas:
+            conexion.execute(f"ALTER TABLE telemetria ADD COLUMN {nombre} {tipo}")
 
 
 def _contar(conexion: sqlite3.Connection, tabla: str, donde: str | None = None) -> int:

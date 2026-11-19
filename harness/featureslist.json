@@ -463,10 +463,13 @@
         "test: el numero de muestras es el esperado para 6000 ticks e intervalo 60, y no hay una fila por frame",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F3-001"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 1,
+      "closed": "2026-11-19"
     },
     {
       "id": "F3-005",

@@ -41,12 +41,26 @@ def test_el_esquema_crea_las_tablas_de_stack5(tmp_path: Path) -> None:
             for fila in conexion.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
         columnas_nodos = {fila[1] for fila in conexion.execute("PRAGMA table_info(nodos)")}
+        columnas_telemetria = {
+            fila[1] for fila in conexion.execute("PRAGMA table_info(telemetria)")
+        }
         journal = str(conexion.execute("PRAGMA journal_mode").fetchone()[0]).lower()
 
     assert set(TABLAS) <= tablas
     assert {"id", "tipo", "titulo", "contenido", "popularidad", "estado"} <= columnas_nodos
     assert {"origen", "autor", "tick"} <= columnas_nodos
     assert {"tick_apagado", "motivo_apagado"} <= columnas_nodos
+    assert {
+        "tick",
+        "poblacion",
+        "n_divergentes",
+        "n_conformistas",
+        "n_neutros",
+        "n_nodos",
+        "n_aristas",
+        "media_energia",
+        "media_sed",
+    } <= columnas_telemetria
     assert journal == "wal"
 
 
@@ -102,8 +116,8 @@ def test_run_db_escribe_la_partida_y_report_db_coincide(
     assert informe["aristas"] == len(resumen["aristas"])
     assert informe["diario"] == resumen["diario"]["entradas"]
     assert informe["recursos"] > 0
-    # Un volcado por intervalo (300 y 600) y ninguno duplicado al cerrar.
-    assert informe["telemetria"] == 2
+    # Una muestra por intervalo de telemetría (60 ticks), no una por volcado.
+    assert informe["telemetria"] == 10
 
 
 def test_la_telemetria_se_escribe_por_intervalo_y_al_cerrar(tmp_path: Path) -> None:
@@ -112,7 +126,8 @@ def test_la_telemetria_se_escribe_por_intervalo_y_al_cerrar(tmp_path: Path) -> N
 
     repositorio = _estado(ruta)
     try:
-        assert repositorio.instantanea()["telemetria"] == 3  # 300, 600 y el cierre
+        # 60, 120, ..., 660 y el cierre en 700: el tick final se conserva.
+        assert repositorio.instantanea()["telemetria"] == 12
     finally:
         repositorio.cerrar()
 
@@ -198,6 +213,23 @@ def test_una_base_sin_columnas_de_apagado_se_migra_al_abrirla(tmp_path: Path) ->
     with sqlite3.connect(ruta) as conexion:
         columnas = {fila[1] for fila in conexion.execute("PRAGMA table_info(nodos)")}
     assert {"tick_apagado", "motivo_apagado"} <= columnas
+
+
+def test_una_base_sin_columnas_de_telemetria_se_migra_al_abrirla(tmp_path: Path) -> None:
+    ruta = tmp_path / "telemetria-vieja.db"
+    with sqlite3.connect(ruta) as conexion:
+        conexion.execute(
+            "CREATE TABLE telemetria (tick INTEGER PRIMARY KEY, poblacion INTEGER NOT NULL, "
+            "n_divergentes INTEGER NOT NULL, n_conformistas INTEGER NOT NULL, "
+            "n_nodos INTEGER NOT NULL, n_aristas INTEGER NOT NULL)"
+        )
+        conexion.execute("INSERT INTO telemetria VALUES (60, 12, 3, 7, 15, 12)")
+
+    Repositorio(ruta).cerrar()
+
+    with sqlite3.connect(ruta) as conexion:
+        columnas = {fila[1] for fila in conexion.execute("PRAGMA table_info(telemetria)")}
+    assert {"n_neutros", "media_energia", "media_sed"} <= columnas
 
 
 def test_solo_el_repositorio_importa_sqlite3() -> None:
