@@ -86,6 +86,15 @@ class Individuo:
     #: Destino del paseo ocioso. Se recuerda para que el deambular tenga
     #: dirección: el radio del paseo depende del temperamento, no del tick.
     paseo: tuple[float, float] | None = None
+    #: Último parche de comida visto (o usado) dentro del radio de percepción.
+    #: Es memoria de conducta: no cambia lo que rinde comer, solo a dónde ir
+    #: cuando el recurso local se agota.
+    ultimo_recurso: tuple[float, float] | None = None
+    #: Parche del que salió esa memoria y su `tick_migracion` al recordarla.
+    #: Si el parche migra, la memoria queda obsoleta; si no, sigue siendo cierta
+    #: aunque el consumo lo deje temporalmente vacío.
+    ultimo_parche: int | None = None
+    ultimo_parche_migracion: int = -1
 
 
 @dataclass(slots=True)

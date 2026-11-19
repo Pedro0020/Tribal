@@ -10,12 +10,18 @@ practica lo que el lugar permite (enseñar, cuidar, hablar, pintar, tallar,
 frotar madera): esa práctica es la que conecta las ramas del árbol con la
 conducta que las hace avanzar.
 
-El temperamento (`divergencia`) cambia **el paseo ocioso**, no la urgencia: el
-divergente explora un radio grande y se aparta del vecino, el conformista se
-queda cerca del grupo y tiende a él. Ese es el único efecto del rasgo en calma,
-y es conducta: no toca comer, beber, criar ni el genoma.
+El temperamento (`divergencia`) cambia **la conducta**, no la aptitud. En el
+tramo ocioso cambia el paseo: el divergente explora un radio grande y se aparta
+del vecino, el conformista se queda cerca del grupo y tiende a él. Y cuando el
+hambre aprieta cambia **lo que ve**: el conformista busca comida en un radio
+corto y, si no hay, vuelve al último parche que conoce; el neutro mira más
+lejos; el divergente mira más lejos todavía y, si no ve nada, explora el parche
+migrado más reciente (o la zona menos visitada). Esa búsqueda cuesta energía de
+más, porque es viaje y no comida. Ninguno de esos efectos toca el bocado, la
+sed, la cría ni el genoma.
 
-La decisión no aplica nada: eso lo hace el motor.
+La decisión no aplica nada al mundo: eso lo hace el motor. Lo único que
+actualiza es la memoria del último parche de comida visto.
 """
 
 from __future__ import annotations
@@ -25,7 +31,16 @@ import math
 from tribal.agents import necesidades as nec
 from tribal.core import acciones, recursos
 from tribal.core.acciones import Accion, NombreAccion
-from tribal.core.modelos import Depredador, Individuo, Mundo, Recurso, TipoRecurso, TipoTile
+from tribal.core.genoma import temperamento
+from tribal.core.modelos import (
+    Depredador,
+    Individuo,
+    Mundo,
+    Parche,
+    Recurso,
+    TipoRecurso,
+    TipoTile,
+)
 
 #: Radio en el que el depredador deja de ser paisaje y pasa a ser urgencia.
 UMBRAL_HUIDA = 4.0
@@ -41,6 +56,17 @@ DIVERGENCIA_NEUTRA = 0.5
 RADIO_DEAMBULAR_CONFORMISTA = 3.0
 RADIO_DEAMBULAR_NEUTRO = 5.0
 RADIO_DEAMBULAR_DIVERGENTE = 10.0
+#: Radio (tiles) en el que cada temperamento **ve** un parche de comida. El
+#: agua no entra: es terreno y se ve desde lejos. La diferencia no es un premio,
+#: es información: quien mira más lejos encuentra antes el parche que migró.
+RADIO_PERCEPCION_CONFORMISTA = 4.0
+RADIO_PERCEPCION_NEUTRO = 8.0
+RADIO_PERCEPCION_DIVERGENTE = 14.0
+#: Radio en el que un conformista copia el parche recordado de un vecino. La
+#: información es del vecino, no del mapa: si el parche migró, la copia está
+#: vieja y lleva a una zona agotada. Copiar mal es la desventaja del
+#: conformismo bajo cambio ambiental, no una penalización al rasgo.
+RADIO_IMITACION_VECINO = 8.0
 #: Se considera llegado el paseo a esta distancia del destino, en tiles.
 TOLERANCIA_PASEO = 0.5
 
@@ -51,8 +77,17 @@ def elegir(individuo: Individuo, mundo: Mundo) -> Accion:
     if amenaza is not None and not nec.agotado(individuo.necesidades):
         return Accion("huir", amenaza=(amenaza.x, amenaza.y))
 
+    # El agua es terreno: se ve desde lejos. La comida se busca en el radio del
+    # temperamento, y lo que se ve se recuerda para cuando el parche se agote.
     agua = recursos.mas_cercano(mundo, individuo, (TipoRecurso.AGUA,))
-    comida = recursos.mas_cercano(mundo, individuo, (TipoRecurso.BAYAS, TipoRecurso.CAZA))
+    comida = recursos.mas_cercano_en_radio(
+        mundo,
+        individuo,
+        (TipoRecurso.BAYAS, TipoRecurso.CAZA),
+        radio_percepcion(individuo),
+    )
+    if comida is not None:
+        _recordar(individuo, mundo, comida)
 
     if nec.sed_critica(individuo.necesidades) and _al_alcance(individuo, agua):
         return Accion("beber")
@@ -68,6 +103,12 @@ def elegir(individuo: Individuo, mundo: Mundo) -> Accion:
 
     if nec.energia_baja(individuo.necesidades) and comida is not None:
         return Accion("moverse", destino=(float(comida.x), float(comida.y)))
+
+    if nec.energia_baja(individuo.necesidades):
+        destino = _buscar_comida(individuo, mundo)
+        if destino is not None:
+            punto, explora = destino
+            return Accion("moverse", destino=punto, explora=explora)
 
     # Con la salud por los suelos y las necesidades cubiertas, se aparta del grupo.
     if nec.salud_critica(individuo.necesidades):
@@ -92,6 +133,142 @@ def elegir(individuo: Individuo, mundo: Mundo) -> Accion:
             return Accion(disponibles[(individuo.id + mundo.tick) % len(disponibles)])
 
     return deambular(individuo, mundo)
+
+
+def radio_percepcion(individuo: Individuo) -> float:
+    """Radio (tiles) en el que el temperamento ve un parche de comida.
+
+    Es conducta: cambia **qué sabe** el individuo, no lo que rinde comérselo.
+    Dos individuos con la misma hambre y el mismo recurso al alcance comen
+    exactamente igual; lo que cambia es a dónde van cuando no hay nada cerca.
+    """
+    tramo = temperamento(individuo.genoma)
+    if tramo == "divergente":
+        return RADIO_PERCEPCION_DIVERGENTE
+    if tramo == "conformista":
+        return RADIO_PERCEPCION_CONFORMISTA
+    return RADIO_PERCEPCION_NEUTRO
+
+
+def _buscar_comida(individuo: Individuo, mundo: Mundo) -> tuple[tuple[float, float], bool] | None:
+    """A dónde ir con hambre y sin comida a la vista.
+
+    El conformista (y el neutro, con más radio) vuelve a su última memoria
+    **mientras su parche no haya migrado**: si no ha migrado, la copia sigue
+    siendo cierta aunque el consumo lo haya dejado vacío, y puede esperar la
+    regeneración. Si el parche migró, la memoria está obsoleta y copia la del
+    vecino con más energía (que puede ser igual de vieja): es copiar mal, no
+    una penalización al rasgo. El divergente, si no ve nada, rastrea el parche
+    migrado más reciente o el menos visitado. `None` si no hay a dónde ir.
+    """
+    if temperamento(individuo.genoma) == "divergente":
+        destino = _destino_explorar(mundo, individuo)
+        if destino is not None:
+            return destino, True
+    if _memoria_vigente(mundo, individuo) and individuo.ultimo_recurso is not None:
+        return individuo.ultimo_recurso, False
+    # Memoria obsoleta: copia la del vecino con más energía, no su posición. Si
+    # el parche migró, el viaje lleva a una zona agotada; ese es el coste de
+    # copiar información vieja.
+    referente = _vecino_con_mas_energia(mundo, individuo)
+    if referente is not None and referente.ultimo_recurso is not None:
+        destino = referente.ultimo_recurso
+        if recursos.distancia(individuo.x, individuo.y, destino[0], destino[1]) > TOLERANCIA_PASEO:
+            _copiar_memoria(individuo, referente)
+            return destino, False
+    vecino = _mas_cercano(mundo, individuo)
+    if vecino is not None:
+        return (vecino.x, vecino.y), False
+    return None
+
+
+def _recordar(individuo: Individuo, mundo: Mundo, recurso: Recurso) -> None:
+    """Guarda el sitio y el estado de migración del parche al verlo o usarlo."""
+    parche = recursos.parche_de(mundo, recurso)
+    individuo.ultimo_recurso = (float(recurso.x), float(recurso.y))
+    individuo.ultimo_parche = parche.id if parche is not None else None
+    individuo.ultimo_parche_migracion = parche.tick_migracion if parche is not None else -1
+
+
+def _copiar_memoria(destino: Individuo, fuente: Individuo) -> None:
+    """Copia la memoria de otra persona, con su marca de migración incluida."""
+    destino.ultimo_recurso = fuente.ultimo_recurso
+    destino.ultimo_parche = fuente.ultimo_parche
+    destino.ultimo_parche_migracion = fuente.ultimo_parche_migracion
+
+
+def _memoria_vigente(mundo: Mundo, individuo: Individuo) -> bool:
+    """True si el parche recordado no ha migrado desde que se guardó la memoria.
+
+    El consumo puede vaciarlo un rato: la ubicación sigue siendo correcta y el
+    conformista puede volver y esperar la regeneración. Lo que invalida la copia
+    es que el parche se haya mudado.
+    """
+    if individuo.ultimo_recurso is None or individuo.ultimo_parche is None:
+        return False
+    parche = next(
+        (candidato for candidato in mundo.parches if candidato.id == individuo.ultimo_parche),
+        None,
+    )
+    return parche is not None and parche.tick_migracion == individuo.ultimo_parche_migracion
+
+
+def _vecino_con_mas_energia(mundo: Mundo, individuo: Individuo) -> Individuo | None:
+    """El vecino con más energía dentro del radio de imitación; empata por cercanía."""
+    mejor: Individuo | None = None
+    mejor_clave = (0.0, math.inf, 0)
+    for otro in mundo.individuos:
+        if otro.id == individuo.id:
+            continue
+        distancia = recursos.distancia(individuo.x, individuo.y, otro.x, otro.y)
+        if distancia > RADIO_IMITACION_VECINO:
+            continue
+        clave = (otro.necesidades.energia, -distancia, -otro.id)
+        if clave > mejor_clave:
+            mejor = otro
+            mejor_clave = clave
+    return mejor
+
+
+def _destino_explorar(mundo: Mundo, individuo: Individuo) -> tuple[float, float] | None:
+    """Parche de comida al que ir cuando no se ve ninguno desde donde está.
+
+    Prioridad: el último que migró (la comida se ha mudado y el conformista no
+    lo sabe) y, si no ha migrado ninguno todavía, el menos visitado —el que
+    menos individuos tiene alrededor—. Solo parches con comida: mandar a
+    alguien a un parche vacío no es explorar, es un paseo.
+    """
+    parches = [
+        parche
+        for parche in mundo.parches
+        if parche.tipo != TipoRecurso.AGUA
+        and recursos.abundancia(mundo, parche) > 0.0
+        and recursos.distancia(individuo.x, individuo.y, parche.x, parche.y) > TOLERANCIA_PASEO
+    ]
+    if not parches:
+        return None
+    migrados = [parche for parche in parches if parche.tick_migracion > 0]
+    if migrados:
+        reciente = max(migrados, key=lambda parche: (parche.tick_migracion, parche.id))
+        return (reciente.x, reciente.y)
+    menos_visitado = min(
+        parches,
+        key=lambda parche: (
+            _vecinos_en_parche(mundo, parche),
+            recursos.distancia(individuo.x, individuo.y, parche.x, parche.y),
+            parche.id,
+        ),
+    )
+    return (menos_visitado.x, menos_visitado.y)
+
+
+def _vecinos_en_parche(mundo: Mundo, parche: Parche) -> int:
+    """Cuántos individuos hay alrededor del parche."""
+    return sum(
+        1
+        for individuo in mundo.individuos
+        if recursos.distancia(individuo.x, individuo.y, parche.x, parche.y) <= recursos.RADIO_PARCHE
+    )
 
 
 def _urgente(individuo: Individuo) -> bool:

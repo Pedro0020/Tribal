@@ -25,21 +25,39 @@ from tribal.core.modelos import (
 )
 
 CAPACIDAD = {TipoRecurso.AGUA: 40, TipoRecurso.BAYAS: 4, TipoRecurso.CAZA: 2}
-REGENERACION = {TipoRecurso.AGUA: 10, TipoRecurso.BAYAS: 420, TipoRecurso.CAZA: 1500}
+#: Regeneración en ticks por unidad. Las bayas se reponen en 300 ticks (antes
+#: 420): con el mapa más denso, la tribu puede sostener la población base; la
+#: crisis recorta la capacidad a la mitad y vuelve a apretar sin secar el mundo.
+REGENERACION = {TipoRecurso.AGUA: 10, TipoRecurso.BAYAS: 300, TipoRecurso.CAZA: 1500}
 #: Margen de uso: para el agua, lo que se suma al radio del lago (beber desde la orilla).
 ALCANCE = {TipoRecurso.AGUA: 1.5, TipoRecurso.BAYAS: 1.5, TipoRecurso.CAZA: 1.5}
 #: Cuántas piezas de caza se reparten por el mapa.
 N_CAZA = 8
 #: Radio (en tiles) dentro del que dos fuentes del mismo tipo son el mismo parche.
 RADIO_PARCHE = 4.0
-#: Ticks mínimos entre dos migraciones del mismo parche: el mundo no es un carrusel.
-TICKS_ENTRE_MIGRACIONES = 240
-#: Una migración no es un paso al lado: la zona vieja se queda vacía.
-DISTANCIA_MINIMA_MIGRACION = 6.0
+#: Ticks mínimos entre dos migraciones del mismo parche: el mundo no es un
+#: carrusel. `migrar` lo usa como espera máxima (parche lleno) y la acorta de
+#: forma continua según la abundancia: un parche agotado espera 1/5. No hay
+#: salto por régimen; la escasez es la que acelera el entorno.
+TICKS_ENTRE_MIGRACIONES = 600
+#: Una migración no es un paso al lado: la zona vieja se queda vacía y el
+#: parche nuevo cae **fuera del horizonte del conformista** (4 tiles) y dentro
+#: del divergente (14). Con 11, quien solo mira cerca no puede verlo; quien
+#: explora, sí. Si un mapa no tiene casilla válida a esa distancia, `_reubicar`
+#: no migra ese parche (no se fuerza un salto imposible).
+DISTANCIA_MINIMA_MIGRACION = 11.0
 #: Dos fuentes del mismo tipo no pueden acabar en la misma casilla. A 1.0 el
 #: filtro deja pasar las vecinas y prohíbe el apilamiento: es lo que hacía
 #: viable la migración de las bayas en el bosque.
 DISTANCIA_ENTRE_FUENTES = 1.0
+
+
+def parche_de(mundo: Mundo, recurso: Recurso) -> Parche | None:
+    """Parche al que pertenece una fuente; `None` si no está en ninguno."""
+    for parche in mundo.parches:
+        if recurso.id in parche.fuentes:
+            return parche
+    return None
 
 
 def sembrar(mundo: Mundo) -> None:
@@ -61,6 +79,8 @@ def sembrar(mundo: Mundo) -> None:
         if tipo == TipoTile.BOSQUE
     ]
     for indice, (x, y) in enumerate(bosques):
+        # Una mata por tile de bosque par: la densidad sostiene la tribu y deja
+        # bosque libre para que los parches agotados puedan migrar.
         if indice % 2 == 0:
             mundo.recursos.append(_nuevo(siguiente_id, TipoRecurso.BAYAS, x, y))
             siguiente_id += 1
@@ -116,27 +136,39 @@ def abundancia(mundo: Mundo, parche: Parche) -> float:
     return min(1.0, max(0.0, cantidad / capacidad))
 
 
-def migrar(mundo: Mundo, *, umbral: float, cooldown: int = TICKS_ENTRE_MIGRACIONES) -> list[Parche]:
+def migrar(
+    mundo: Mundo,
+    *,
+    umbral: float,
+    cooldown: int | None = None,
+    cooldown_min: int | None = None,
+    cooldown_max: int | None = None,
+) -> list[Parche]:
     """Reubica los parches de comida agotados; devuelve los que migraron este tick.
 
     Un parche está agotado cuando su abundancia cae por debajo de `umbral`: la
-    zona ya no da para mantener a nadie. Tras `cooldown` ticks desde la última
-    migración, la comida se muda a una zona nueva elegida con `Mundo.azar`
-    —determinista por semilla— y el parche vuelve a estar lleno, conservando
-    tipo y capacidad de cada fuente.
+    zona ya no da para mantener a nadie. La espera desde la última migración
+    **depende de la abundancia**: lleno espera `cooldown_max`, agotado
+    `cooldown_min`, y en medio interpola linealmente. Así la escasez acelera el
+    entorno de forma gradual, sin un salto binario por régimen. `cooldown`
+    fija la espera para tests y llamadas puntuales.
 
-    Por qué migra (la estación cambia la vegetación, la manada se desplaza) es
-    la excusa narrativa. El mecanismo es un **andamiaje**: existe para que
-    «dónde estás» sea una decisión con consecuencias, no una ley del mundo.
-    El agua no migra: es terreno.
+    La zona nueva es del tipo de terreno que le toca a la comida —bosque para
+    las bayas, hierba para la caza—, está a `DISTANCIA_MINIMA_MIGRACION` o más
+    del centro viejo, tiene que caer en casillas pisables y no puede apilar una
+    fuente sobre otra del mismo tipo (`DISTANCIA_ENTRE_FUENTES`).
     """
+    maximo = cooldown_max if cooldown_max is not None else TICKS_ENTRE_MIGRACIONES
+    minimo = cooldown_min if cooldown_min is not None else max(1, maximo // 5)
     migrados: list[Parche] = []
     for parche in mundo.parches:
         if parche.tipo == TipoRecurso.AGUA:
             continue
-        if mundo.tick - parche.tick_migracion < cooldown:
+        disponible = abundancia(mundo, parche)
+        espera = cooldown if cooldown is not None else minimo + (maximo - minimo) * disponible
+        if mundo.tick - parche.tick_migracion < espera:
             continue
-        if abundancia(mundo, parche) >= umbral:
+        if disponible >= umbral:
             continue
         miembros = _miembros(mundo, parche)
         if not miembros or not _reubicar(mundo, parche, miembros):
@@ -167,12 +199,33 @@ def mas_cercano(
     mundo: Mundo, individuo: Individuo, tipos: tuple[TipoRecurso, ...]
 ) -> Recurso | None:
     """Recurso con existencias más próximo. Desempata por id para no depender del orden."""
+    return mas_cercano_en_radio(mundo, individuo, tipos, math.inf)
+
+
+def mas_cercano_en_radio(
+    mundo: Mundo,
+    individuo: Individuo,
+    tipos: tuple[TipoRecurso, ...],
+    radio: float,
+) -> Recurso | None:
+    """Como `mas_cercano`, pero solo ve lo que cae dentro de `radio` tiles.
+
+    La percepción es conducta: un conformista busca cerca de donde está y un
+    divergente mira más lejos. El radio no cambia lo que aporta el recurso, solo
+    si el individuo sabe que está ahí.
+    """
     mejor: Recurso | None = None
     mejor_clave = (math.inf, 0)
+    radio2 = radio * radio
     for recurso in mundo.recursos:
         if recurso.tipo not in tipos or recurso.cantidad <= 0:
             continue
-        clave = (distancia(individuo.x, individuo.y, recurso.x, recurso.y), recurso.id)
+        dx = individuo.x - recurso.x
+        dy = individuo.y - recurso.y
+        distancia2 = dx * dx + dy * dy
+        if distancia2 > radio2:
+            continue
+        clave = (distancia2, recurso.id)
         if clave < mejor_clave:
             mejor = recurso
             mejor_clave = clave

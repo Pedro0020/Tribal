@@ -31,6 +31,7 @@ CLAVES = {
     "migracion",
     "ticks_por_estacion",
     "umbral_agotamiento",
+    "ticks_migracion",
 }
 
 
@@ -66,6 +67,7 @@ def test_los_defaults_son_los_documentados() -> None:
         "migracion": True,
         "ticks_por_estacion": 0,
         "umbral_agotamiento": 0.25,
+        "ticks_migracion": 3000,
     }
     assert set(config.a_json()) == CLAVES
 
@@ -106,6 +108,8 @@ def test_config_sin_claves_toma_los_defaults(tmp_path: Path) -> None:
         ({"cooldown_reproduccion": 0}, "cooldown_reproduccion"),
         ({"depredador_activo": 1}, "depredador_activo"),
         ({"ticks_por_estacion": -5}, "ticks_por_estacion"),
+        ({"ticks_migracion": 0}, "ticks_migracion"),
+        ({"ticks_migracion": -10}, "ticks_migracion"),
         ({"umbral_agotamiento": 0.0}, "umbral_agotamiento"),
         ({"umbral_agotamiento": 1.5}, "umbral_agotamiento"),
         ({"umbral_agotamiento": "0.2"}, "umbral_agotamiento"),

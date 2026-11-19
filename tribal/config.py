@@ -37,6 +37,7 @@ CAMPOS_ENTEROS = (
     "cooldown_reproduccion",
     "sequia_ticks",
     "ticks_por_estacion",
+    "ticks_migracion",
 )
 #: Campos que el motor multiplica: número real, nunca una cadena.
 CAMPOS_TASA = ("tasa_sed", "tasa_energia", "tasa_salud")
@@ -69,13 +70,17 @@ class SimConfig:
     #: su duración; 0 significa que dura toda la partida.
     crisis: bool = False
     sequia_ticks: int = 0
-    #: Gradiente ambiental (eje 3): los parches de comida agotados se reubican
-    #: (`migracion`) y la estación cicla cada `ticks_por_estacion` ticks
-    #: (0 = sin estaciones, el mundo de la Fase 0). `umbral_agotamiento` es la
-    #: abundancia por debajo de la cual un parche cuenta como agotado.
+    #: Gradiente ambiental (eje 3): la estación cicla cada `ticks_por_estacion`
+    #: ticks (0 = sin estaciones, el mundo de la Fase 0). `umbral_agotamiento`
+    #: es la abundancia por debajo de la cual un parche cuenta como agotado.
+    #: La migración de parches agotados **solo ocurre en crisis**; en calma el
+    #: parche se regenera en el sitio. `migracion=false` la apaga en los dos
+    #: regímenes. En crisis, `ticks_migracion` es la espera máxima (parche
+    #: lleno) y la escasez la acorta de forma gradual hasta 1/5.
     migracion: bool = True
     ticks_por_estacion: int = 0
     umbral_agotamiento: float = 0.25
+    ticks_migracion: int = 3000
 
     @classmethod
     def desde_json(cls, path: str | Path) -> SimConfig:
@@ -137,6 +142,10 @@ def validar(config: SimConfig, origen: str = "config") -> None:
         raise ValueError(
             f"{origen}: ticks_por_estacion no puede ser negativo "
             f"(recibido {config.ticks_por_estacion})"
+        )
+    if config.ticks_migracion <= 0:
+        raise ValueError(
+            f"{origen}: ticks_migracion debe ser mayor que 0 (recibido {config.ticks_migracion})"
         )
     if not isinstance(config.umbral_agotamiento, (int, float)) or isinstance(
         config.umbral_agotamiento, bool

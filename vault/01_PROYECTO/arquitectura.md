@@ -414,7 +414,7 @@ los primeros ticks; roles cuando aparece una cría o un herido. Con eso,
 experimenta en crisis.
 
 Lo que esta fase **no** hace es medir la puerta completa: la proporción de
-divergentes que reacciona a la crisis es de DIVERGENCIA-002/EMER-001, y el
+divergentes que reacciona a la crisis se mide en §9.3 (F1-005), y el
 `pct_fuera_arbol` de `objetivo.md` §3.2 (por encima del 50 %) es de Fase 3.
 
 ### 9.2 La divergencia como conducta (DIVERGENCIA-002)
@@ -446,6 +446,86 @@ publica `descubridores` (ids que descubrieron una combinación),
 `diferencial_seleccion` (la resta). La ventaja, cuando aparece, es de la
 habilidad que el autor aprende al descubrir; el informe de 10 semillas de
 DIVERGENCIA-002 está en el README.
+
+### 9.3 La puerta F1→F2, medida (F1-005)
+
+La puerta de concepto §15 no se decide con una corrida afortunada: se mide con
+`python -m tribal report gate-f1 --seeds 1-10 --ticks 8000` (`--json` para el
+informe). La herramienta corre **dos brazos por semilla**, calma y crisis, con
+la misma `SimConfig` salvo `crisis`, y publica:
+
+| Columna | Qué es |
+|---|---|
+| `nac_div` | media de `divergencia` de **todos los nacidos** acumulados (medida primaria) |
+| `S_fec` | reproductores (una vez por individuo) − población inicial del brazo (fecundidad) |
+| `S_via` | vivos al terminar − población inicial (viabilidad; 0 si no hay vivos) |
+| `desc/d`, `desc/c` | combinaciones descubiertas por divergente / conformista registrado |
+| `imit/desc` | imitaciones totales / combinaciones descubiertas (0 si no hay) |
+| `long_d`, `long_c` | edad media al morir de descubridores / conformistas |
+| `div%` | divergentes vivos / vivos al terminar (secundaria) |
+| media / σ | distribución de `divergencia` entre los vivos al terminar |
+| nacidos / nodos | crías y `combinacion` + `interaccion` |
+| población / extinciones | vivos al terminar y corridas que acaban en cero |
+
+El porcentaje de vivos es binomial con 12 fundadores; por eso la medida
+primaria es la respuesta en la descendencia. `S_fec` usa como base la población
+inicial del brazo (tick 0, común a calma y crisis; la sequía se aplica desde el
+primer tick) y se publica `mean_divergencia_inicial`. Sin reproductores no hay S
+y esa fila no cuenta.
+
+**Criterio corregido (ronda 6):** `senal` (alias `primaria`) es el **veredicto
+de la puerta**: `S_fec > 0` en crisis en ≥6/10 y **`S_fec < 0` en calma en
+≥6/10**. En estabilidad manda la tradición (concepto §15); la neutralidad
+(|S| ≤ 0.01) era un **error de criterio**, no una propiedad del mundo. La clave
+antigua `pasa` se llama ahora `secundaria` (cuatro criterios de `div%`) y **no
+decide**; se publica solo como información.
+
+El mecanismo que se mide es **percepción → conducta → aptitud**:
+
+- El temperamento decide el radio en el que se ve la comida: 4 / 8 / 14 tiles
+  para conformista / neutro / divergente (`instinto.RADIO_PERCEPCION_*`). El
+  agua es terreno y se ve desde lejos; lo que se busca a ciegas es el parche.
+- **La memoria social es condicional a la migración**: si el parche recordado
+  no ha migrado desde que se formó/copió, la copia es precisa aunque el consumo
+  lo deje temporalmente vacío; si migró, está obsoleta y el conformista copia
+  la memoria —también vieja— del vecino con más energía. Es una propiedad
+  física de la memoria (adaptativa en estabilidad, maladaptativa en cambio), no
+  una bonificación. Tests:
+  `test_la_informacion_del_conformista_es_precisa_si_el_parche_no_migra` y
+  `test_la_migracion_se_acelera_con_la_escasez`.
+- El divergente, sin comida en su radio, va al parche migrado más reciente o al
+  menos visitado. Explorar solo se activa cuando no hay comida en el radio y
+  cuesta `COSTE_EXPLORAR` por tick, pagado por el motor.
+- **La migración solo ocurre en crisis**: en calma un parche agotado se
+  regenera en el sitio (la memoria del conformista sigue siendo válida); en
+  crisis el agotamiento dispara la migración, con espera proporcional a la
+  escasez (`ticks_migracion` = 3000 con parche lleno, 1/5 = 600 agotado) y una
+  reubicación de **≥11 tiles** (`DISTANCIA_MINIMA_MIGRACION`): fuera del
+  horizonte del conformista (4) y dentro del divergente (14). Si no hay casilla
+  válida, ese parche no migra. `migracion=false` apaga la migración en ambos
+  regímenes. Tests:
+  `test_en_calma_el_parche_se_regenera_en_el_sitio_y_en_crisis_migra` y
+  `test_la_migracion_en_crisis_deja_el_parche_fuera_del_horizonte_conformista`.
+- Umbrales 0.55 / 0.45 (media 0.5, σ≈0.04; el 0.6 dejaba la cola a ~3σ). La
+  utilidad situacional de las combinaciones sigue pagando solo a quien tiene el
+  nodo y su recurso escasea.
+
+No hay canal que lea el rasgo para dar comida, sed, crías ni para editar el
+genoma: lo vigilan `tests/test_divergencia_calma.py` y, con snapshots alrededor
+de `_intentar_combinacion`, `_practicar` y `_punto_errante` y una lista blanca
+de llamadas a `temperamento()`, `tests/test_puerta_f1.py`.
+
+**Resultado del barrido (10 × 8000, 12 individuos):** la tabla completa está en
+el README. Con el horizonte de 11 tiles, **la puerta cumple la medida primaria
+a N=12**: `S_fec > 0` en crisis en 7/10, `S_fec < 0` en calma en 7/10, crisis ≤
+calma y extinciones crisis ≤ calma. El `div%` secundario sigue sin pasar (4/10)
+y no decide. La confirmación con N=50 refuerza la señal S (crisis 9/10, calma
+6/10) pero **no replica crisis ≤ calma** (4/10) ni la igualdad de extinciones:
+la condición de régimen favorable es dependiente de escala. El default del
+juego sigue en 12 (concepto §1b); la salvedad queda documentada. `desc/c` = 0
+por construcción (los conformistas no experimentan) y `long_d` = 0 porque
+ningún descubridor murió dentro de la ventana. El diagnóstico completo está en
+`harness/progress/implementer-F1-005.md`.
 
 ---
 

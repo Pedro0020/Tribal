@@ -439,11 +439,16 @@ def test_el_divergente_que_descubre_aprende_la_habilidad(monkeypatch: pytest.Mon
 
 
 def test_la_crisis_no_es_el_regimen_favorable() -> None:
-    def nacimientos_por_1000(config: SimConfig) -> float:
-        simulacion = run(ticks=4000, seed=3, headless=True, config=config)
-        return simulacion.nacimientos / simulacion.mundo.tick * 1000.0
+    """La crisis no puede ser el régimen favorable: población y extinciones.
 
-    calma = nacimientos_por_1000(SimConfig(seed=3, individuos=12))
-    crisis = nacimientos_por_1000(SimConfig(seed=3, individuos=12, crisis=True))
+    Se mide con el criterio de la puerta sobre 5 semillas (el proxy de
+    nacimientos de una sola semilla es demasiado ruidoso cuando la calma ya no
+    migra). Umbral: crisis ≤ calma en ≥3/5 y no más extinciones en crisis.
+    """
+    from tribal.gate_f1 import medir_barrido
 
-    assert crisis <= calma, f"la crisis cría más ({crisis:.2f} vs {calma:.2f} por 1000 ticks)"
+    barrido = medir_barrido((1, 2, 3, 4, 5), ticks=8000)
+    filas = barrido.filas
+
+    assert sum(1 for fila in filas if fila.crisis.poblacion <= fila.calma.poblacion) >= 3
+    assert barrido.extinciones_crisis <= barrido.extinciones_calma

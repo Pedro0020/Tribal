@@ -52,6 +52,15 @@ COSTE_TALLAR = 0.5
 COSTE_FROTAR_MADERA = 1.0
 COSTE_PINTAR = 0.2
 COSTE_CUIDAR = 0.2
+#: Coste por tick de buscar comida fuera de lo que se ve: explorar es viaje, y
+#: el viaje gasta. Pequeño a propósito: un explorador debe poder volver con
+#: comida, no morir en el intento (si el coste mata, la selección va al revés).
+COSTE_EXPLORAR = 0.05
+#: Radio en el que un individuo que come enseña el sitio a quien lo ve. Es
+#: transmisión local de lugar (no de habilidad): el grupo aprende dónde hay
+#: comida si está cerca, no porque el mapa sea transparente. En crisis, el
+#: parche nuevo suele estar fuera de ese radio y el descubridor saca ventaja.
+RADIO_APRENDIZAJE_SITIO = 6.0
 #: Salud que recupera quien recibe cuidados en un tick.
 CUIDADO_SALUD = 0.5
 #: Por debajo de esta salud el individuo cuenta como herido y admite cuidados.
@@ -84,6 +93,9 @@ class Accion:
     amenaza: tuple[float, float] | None = None
     #: Individuo al que se dirige una acción social (enseñar).
     objetivo: int | None = None
+    #: True si el destino es una búsqueda activa (no se ve el recurso desde
+    #: donde está). El motor cobra `COSTE_EXPLORAR` por tick de viaje.
+    explora: bool = False
 
 
 def beber(individuo: Individuo, mundo: Mundo) -> bool:
@@ -125,6 +137,21 @@ def comer(
         aporte *= 1.0 + BONUS_HABILIDAD
         _imitar(individuo, habilidad, mundo)
     individuo.necesidades.energia = min(100.0, individuo.necesidades.energia + aporte)
+    # El sitio se comparte con quien está cerca: es imitación de lugar, no un
+    # mapa transparente. Un parche agotado no se enseña; uno con comida, sí.
+    if comida.cantidad * 2 >= comida.capacidad:
+        sitio = (float(comida.x), float(comida.y))
+        parche = recursos.parche_de(mundo, comida)
+        for observador in mundo.individuos:
+            if (
+                recursos.distancia(observador.x, observador.y, comida.x, comida.y)
+                <= RADIO_APRENDIZAJE_SITIO
+            ):
+                observador.ultimo_recurso = sitio
+                observador.ultimo_parche = parche.id if parche is not None else None
+                observador.ultimo_parche_migracion = (
+                    parche.tick_migracion if parche is not None else -1
+                )
     return True
 
 

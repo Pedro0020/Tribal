@@ -860,3 +860,49 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 45 so
 ```
 
 </details>
+
+## F1-006 — Puerta F1 a F2 medida en la descendencia
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 241 passed in 134.32s (0:02:14)
+- **Cambios:** tribal/agents/instinto.py (memoria condicional al entorno y copia del vecino con mas energia); tribal/core/recursos.py (en calma se regenera en el sitio; en crisis migra a >=10 tiles; horizonte); tribal/core/{modelos,mundo}.py (estado de memoria/parche); tribal/config.py (ticks_migracion, balance del mundo); tribal/sim.py (S_fecundidad, S_viabilidad, nacidos, descubrimientos por temperamento, imitaciones, longevidades, media/sigma); tribal/gate_f1.py (barrido 1..10, tabla y veredicto primaria/secundaria); tribal/cli.py (report gate-f1); tests/test_puerta_f1.py (nuevo) y ajustes en test_cli_run/test_config/test_divergencia_calma; README; vault/01_PROYECTO/arquitectura.md (§9.3)
+- **Decisiones:** La medida primaria de la puerta es la respuesta en la descendencia: S_fecundidad = media del rasgo de los reproductores - media inicial del brazo. Con 12 fundadores el porcentaje de vivos es binomial y ruidoso (un desplazamiento pequeño de la media lo mueve de 0 a 100), asi que se publica como secundario y no decide. El criterio corregido por el usuario es S>0 en crisis (el cambio selecciona divergentes) y S<0 en calma (manda la tradicion): 7/10 y 7/10. La memoria del conformista solo envejece si el entorno cambia: en calma el parche agotado se regenera en el sitio y la copia sigue siendo valida; en crisis migra fuera del horizonte de 4 tiles. N=50 confirma la senal (9/10 y 6/10) pero pierde crisis<=calma; se documenta como salvedad de escala. F1-005 queda bloqueada y sustituida por esta feature; F1-004 y EMER-001 siguen bloqueadas como historia del diagnostico.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 241 passed
+
+$ uv run python -m tribal report gate-f1 --seeds 1-10 --ticks 8000
+VEREDICTO PRIMARIO (S): S crisis>0 7/10 | S calma<0 7/10 | PRIMARIA True
+SECUNDARIO (div%, no decide): sube 4/10 | empata 3/10 | baja 3/10 |
+  crisis<=calma>=6/10 True | extinciones crisis<=calma True
+columnas por semilla y brazo: div%, nac_div, S_fec, S_via, desc/divergente, desc/conformista,
+  imit/desc, long_divergente, long_conformista, media, sigma, nacidos, nodos, poblacion, ext
+
+Aritmetica comprobada a mano (seed 1): inicial 0.460245; calma 37 reproductores media 0.421055
+-> S = -0.0392 ; crisis 38 reproductores media 0.463637 -> S = +0.0034
+S sale de REPRODUCTORES, no de vivos, y contra la media inicial del brazo.
+
+Mutaciones que caen (hash restaurado):
+  _memoria_vigente -> True | quitar habilidades.aprender | leer .divergencia en comer |
+  DISTANCIA_MINIMA_MIGRACION = 4 | migrar tambien en calma
+
+$ memoria condicional al entorno
+calma: parche agotado se regenera en el sitio (memoria valida, conformista compite)
+crisis: el parche migra a >=10 tiles (fuera del radio 4 del conformista, dentro del 14 del divergente)
+
+$ N=50 (salvedad documentada): S crisis 9/10 y calma 6/10 confirman la senal,
+  pero crisis<=calma cae a 4/10 y hay una extincion en crisis. La puerta se mide a N=12,
+  el default del juego (concepto §1b); la salvedad queda escrita, no oculta.
+
+$ uv run pytest -q
+770 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 49 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 49 source files
+```
+
+</details>

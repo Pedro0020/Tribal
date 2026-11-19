@@ -20,12 +20,18 @@ from tribal.core.modelos import (
     Individuo,
     Mundo,
     Necesidades,
+    Recurso,
+    TipoRecurso,
     TipoTile,
 )
 
-#: Lagos y manchas de bosque por mapa; el resto es hierba.
-N_LAGOS = 3
-N_BOSQUES = 6
+#: Lagos y manchas de bosque por mapa; el resto es hierba. La densidad sube
+#: respecto a Fase 0 porque la percepción es local: con seis bosques, un
+#: conformista que solo ve cuatro tiles se moría de hambre en un mapa donde la
+#: comida estaba lejos. Doce bosques hacen que «en calma el recurso esté cerca»,
+#: y el recorte de capacidad de la crisis vuelve a hacer que no lo esté.
+N_LAGOS = 4
+N_BOSQUES = 12
 RADIO_LAGO = 2
 RADIO_BOSQUE = 2
 
@@ -70,6 +76,34 @@ def crear(seed: int, individuos: int = 12, *, config: SimConfig | None = None) -
     return mundo
 
 
+def _fuente_mas_cercana(mundo: Mundo, x: float, y: float) -> Recurso | None:
+    """La fuente de comida más cercana a un punto, sin mirar el radio de nadie.
+
+    Se usa una sola vez, al nacer: cada individuo conoce su parche de origen.
+    A partir de ahí la memoria se actualiza con lo que ve, no con el mapa.
+    """
+    fuentes = [
+        recurso
+        for recurso in mundo.recursos
+        if recurso.tipo == TipoRecurso.BAYAS and recurso.cantidad > 0
+    ]
+    if not fuentes:
+        fuentes = [
+            recurso
+            for recurso in mundo.recursos
+            if recurso.tipo == TipoRecurso.CAZA and recurso.cantidad > 0
+        ]
+    if not fuentes:
+        return None
+    return min(
+        fuentes,
+        key=lambda recurso: (
+            recursos.distancia(x, y, recurso.x, recurso.y),
+            recurso.id,
+        ),
+    )
+
+
 def _mancha(
     tiles: list[list[TipoTile]],
     azar: random.Random,
@@ -107,33 +141,40 @@ def _poblar(mundo: Mundo, cuantos: int) -> None:
     for id_ in range(1, cuantos + 1):
         x, y = _casilla_libre(mundo.azar, libres, usados)
         usados.append((x, y))
-        mundo.individuos.append(
-            Individuo(
-                id=id_,
-                sexo="m" if id_ % 2 else "f",
-                genoma=Genoma(
-                    velocidad=mundo.azar.uniform(0.85, 1.15),
-                    metabolismo=mundo.azar.uniform(0.85, 1.20),
-                    longevidad=mundo.azar.uniform(0.85, 1.20),
-                    fuerza=mundo.azar.uniform(0.85, 1.15),
-                    resistencia=mundo.azar.uniform(0.85, 1.15),
-                    inteligencia=mundo.azar.uniform(0.85, 1.15),
-                    salud=mundo.azar.uniform(0.85, 1.15),
-                    divergencia=mundo.azar.uniform(0.2, 0.8),
-                ),
-                necesidades=Necesidades(
-                    energia=mundo.azar.uniform(80.0, 100.0),
-                    sed=mundo.azar.uniform(0.0, 15.0),
-                ),
-                x=float(x),
-                y=float(y),
-                # La generación fundadora llega adulta, pero con un periodo de
-                # asentamiento: la partida no empieza con un baby boom.
-                edad=mundo.azar.randint(MADUREZ_TICKS, MADUREZ_TICKS + 600),
-                cooldown_reproduccion=MADUREZ_TICKS,
-                habilidades=Habilidades.iniciales(),
-            )
+        individuo = Individuo(
+            id=id_,
+            sexo="m" if id_ % 2 else "f",
+            genoma=Genoma(
+                velocidad=mundo.azar.uniform(0.85, 1.15),
+                metabolismo=mundo.azar.uniform(0.85, 1.20),
+                longevidad=mundo.azar.uniform(0.85, 1.20),
+                fuerza=mundo.azar.uniform(0.85, 1.15),
+                resistencia=mundo.azar.uniform(0.85, 1.15),
+                inteligencia=mundo.azar.uniform(0.85, 1.15),
+                salud=mundo.azar.uniform(0.85, 1.15),
+                divergencia=mundo.azar.uniform(0.2, 0.8),
+            ),
+            necesidades=Necesidades(
+                energia=mundo.azar.uniform(80.0, 100.0),
+                sed=mundo.azar.uniform(0.0, 15.0),
+            ),
+            x=float(x),
+            y=float(y),
+            # La generación fundadora llega adulta, pero con un periodo de
+            # asentamiento: la partida no empieza con un baby boom.
+            edad=mundo.azar.randint(MADUREZ_TICKS, MADUREZ_TICKS + 600),
+            cooldown_reproduccion=MADUREZ_TICKS,
+            habilidades=Habilidades.iniciales(),
         )
+        # Cada fundador conoce el parche de comida más cercano a donde nace: su
+        # zona. No es un mapa transparente, es la memoria de su territorio.
+        fuente = _fuente_mas_cercana(mundo, individuo.x, individuo.y)
+        if fuente is not None:
+            parche = recursos.parche_de(mundo, fuente)
+            individuo.ultimo_recurso = (float(fuente.x), float(fuente.y))
+            individuo.ultimo_parche = parche.id if parche is not None else None
+            individuo.ultimo_parche_migracion = parche.tick_migracion if parche is not None else -1
+        mundo.individuos.append(individuo)
     mundo.individuos.sort(key=lambda individuo: individuo.id)
 
 

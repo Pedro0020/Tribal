@@ -2,8 +2,9 @@
 tribal.cli — punto de entrada del proyecto: `python -m tribal` o `make run`.
 
 argparse de la stdlib. `hello` se mantiene como humo del renombrado; `run`
-arranca la simulación en ventana o en modo headless, y `report culture` resume
-el árbol de conocimiento de una corrida headless corta.
+arranca la simulación en ventana o en modo headless, `report culture` resume
+el árbol de conocimiento de una corrida headless corta y `report gate-f1`
+publica el barrido de la puerta F1→F2 con su veredicto.
 """
 
 from __future__ import annotations
@@ -18,6 +19,13 @@ from typing import Any
 
 from tribal import __version__
 from tribal.config import MAX_INDIVIDUOS, MIN_INDIVIDUOS, SimConfig
+from tribal.gate_f1 import (
+    MAX_INDIVIDUOS_BARRIDO,
+    SEMILLAS_PUERTA,
+    TICKS_PUERTA,
+    medir_barrido,
+    parsear_semillas,
+)
 from tribal.sim import MS_FRAME
 from tribal.sim import run as run_sim
 
@@ -101,6 +109,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     culture.add_argument("--json", action="store_true", help="Informe como un único objeto JSON.")
 
+    gate = informes.add_parser(
+        "gate-f1",
+        help="Barrido de la puerta F1→F2: proporción divergente en calma y en crisis.",
+        description=(
+            "Corre las dos ramas (calma y crisis, la misma configuración salvo `crisis`) "
+            "sobre las semillas pedidas y publica div%, media y sigma, nacidos, nodos "
+            "nuevos, población y extinciones, con un veredicto booleano por criterio. "
+            "Los valores por defecto son el barrido que publica la puerta: 1-10 x 8000."
+        ),
+    )
+    gate.add_argument(
+        "--seeds",
+        default=f"{SEMILLAS_PUERTA[0]}-{SEMILLAS_PUERTA[-1]}",
+        help=f"Semillas a correr: `1-10`, `1,3,5` o una mezcla (default {SEMILLAS_PUERTA[0]}-{SEMILLAS_PUERTA[-1]}).",
+    )
+    gate.add_argument(
+        "--ticks",
+        type=int,
+        default=TICKS_PUERTA,
+        help=f"Ticks por corrida (default {TICKS_PUERTA}).",
+    )
+    gate.add_argument(
+        "--individuos",
+        type=int,
+        default=12,
+        help=(
+            f"Población inicial del barrido, {MIN_INDIVIDUOS}-{MAX_INDIVIDUOS_BARRIDO} "
+            "(el juego sigue 8-15; default 12)."
+        ),
+    )
+    gate.add_argument("--json", action="store_true", help="Barrido como un único objeto JSON.")
+
     return parser
 
 
@@ -116,6 +156,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "run":
         return _run(args)
     if args.command == "report":
+        if args.report == "gate-f1":
+            return _report_gate_f1(args)
         return _report(args)
     return 1
 
@@ -188,6 +230,26 @@ def _report(args: argparse.Namespace) -> int:
         print(json.dumps(informe, ensure_ascii=True))
     else:
         print(_texto_cultura(informe))
+    return 0
+
+
+def _report_gate_f1(args: argparse.Namespace) -> int:
+    """`report gate-f1`: los dos brazos sobre las mismas semillas y su veredicto.
+
+    No es un test: es la herramienta con la que el barrido se publica entero.
+    Misma semilla y misma config salvo `crisis`; el barrido no elige semillas.
+    """
+    try:
+        semillas = parsear_semillas(args.seeds)
+        barrido = medir_barrido(semillas, ticks=args.ticks, individuos=args.individuos)
+    except (ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(barrido.a_json(), ensure_ascii=True))
+    else:
+        print(barrido.texto())
     return 0
 
 

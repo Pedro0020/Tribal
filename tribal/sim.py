@@ -75,10 +75,13 @@ PRACTICAS: dict[str, Practica] = {
     "pintar": Practica("simbolico"),
 }
 #: Sequía de concepto §13: el agua y las bayas reducen su capacidad de carga a
-#: la mitad y regeneran al mismo ritmo relativo; la sed sube para todos. En
-#: calma el factor es 1.0 y nada cambia respecto a Fase 0.
+#: la mitad **y** su regeneración se espacia. Sin lo segundo, la capacidad
+#: recortada no cambia el flujo de comida a largo plazo (la regeneración manda)
+#: y la sequía no llega a vaciar los parches ni a hacerlos migrar; con lo
+#: segundo, la comida local se agota de verdad y buscarla lejos paga.
 PENALIZACION_SEQUIA = 2.0
-FACTOR_SED_SEQUIA = 1.25
+FACTOR_REGENERACION_SEQUIA = 0.75
+FACTOR_SED_SEQUIA = 1.1
 #: Gradiente ambiental (eje 3): ciclo de estaciones y su efecto. En invierno la
 #: regeneración baja a la mitad; con `ticks_por_estacion=0` no hay estaciones y
 #: el mundo es el de la Fase 0.
@@ -122,6 +125,25 @@ class Simulacion:
         #: (eje 6: no se puede refinar lo que no se mide).
         self._descubridores: set[int] = set()
         self._registrados: set[int] = {individuo.id for individuo in mundo.individuos}
+        #: Respuesta en la descendencia: el rasgo de todos los nacidos y el de
+        #: los individuos que se reprodujeron (una vez por individuo). `S` es la
+        #: media de los reproductores menos la media de la población inicial, que
+        #: es el mismo punto de partida en calma y en crisis (los fundadores).
+        self._div_inicial = _media_divergencia_inicial(mundo)
+        self._div_nacidos: list[float] = []
+        self._div_reproductores: dict[int, float] = {}
+        #: Telemetría de la ronda 6: inventos por temperamento, imitaciones,
+        #: longevidad de descubridores y conformistas. No decide nada.
+        self._tramo_registrados: dict[str, int] = {"divergente": 0, "conformista": 0, "neutro": 0}
+        for individuo in mundo.individuos:
+            self._tramo_registrados[_tramo(individuo)] += 1
+        self._descubrimientos_tramo: dict[str, int] = {
+            "divergente": 0,
+            "conformista": 0,
+            "neutro": 0,
+        }
+        self._longevidad_descubridores: list[int] = []
+        self._longevidad_conformistas: list[int] = []
         #: Utilidad situacional aplicada a cada nodo (eje 1): suma y número de
         #: ticks con el nodo activo, para publicar `utilidad_media` en `resumen`.
         self._utilidad_suma: dict[str, float] = {}
@@ -155,9 +177,19 @@ class Simulacion:
         )
         #: El gradiente ambiental va antes de decidir: quien mire el mundo este
         #: tick ya ve la comida donde está, no donde estaba.
-        if self.config.migracion:
+        if self.config.migracion and en_crisis:
+            # En calma el parche agotado se regenera **en el sitio**: la memoria
+            # del conformista sigue siendo válida porque el recurso vuelve donde
+            # estaba. Solo la sequía muda la comida, y entonces la copia envejece.
+            # `migracion=false` apaga la migración en los dos regímenes.
+            minimo, maximo = self._cooldowns_migracion()
             self.migraciones += len(
-                recursos.migrar(self.mundo, umbral=self.config.umbral_agotamiento)
+                recursos.migrar(
+                    self.mundo,
+                    umbral=self.config.umbral_agotamiento,
+                    cooldown_min=minimo,
+                    cooldown_max=maximo,
+                )
             )
 
         #: La utilidad de cada técnica depende del mundo de este tick (escasez
@@ -213,6 +245,13 @@ class Simulacion:
                 bonus_bayas=efecto.bayas,
                 bonus_caza=efecto.caza,
             )
+            # Explorar es viaje: el tick de búsqueda cuesta energía de más. Lo
+            # paga la conducta, no el rasgo: un conformista que se ve obligado a
+            # buscar lejos paga lo mismo.
+            if aplicada and accion.explora:
+                individuo.necesidades.energia = max(
+                    0.0, individuo.necesidades.energia - acciones.COSTE_EXPLORAR
+                )
             # Una enseñanza que no prende no debe clavar al individuo: deambula.
             if not aplicada and accion.nombre == "ensenar":
                 acciones.aplicar(
@@ -257,6 +296,10 @@ class Simulacion:
             if individuo.necesidades.salud <= 0.0 or individuo.edad >= _longevidad(individuo):
                 individuo.vivo = False
                 self.muertes += 1
+                if individuo.id in self._descubridores:
+                    self._longevidad_descubridores.append(individuo.edad)
+                elif _tramo(individuo) == "conformista":
+                    self._longevidad_conformistas.append(individuo.edad)
             else:
                 vivos.append(individuo)
         self.mundo.individuos = vivos
@@ -307,11 +350,22 @@ class Simulacion:
             y=y,
             # Las habilidades no se heredan: la cría solo trae lo de la tribu.
             habilidades=Habilidades.iniciales(),
+            # El parche de la madre es el territorio que la cría conoce al nacer;
+            # no es un rasgo, es la memoria del sitio donde creció.
+            ultimo_recurso=madre.ultimo_recurso,
+            ultimo_parche=madre.ultimo_parche,
+            ultimo_parche_migracion=madre.ultimo_parche_migracion,
         )
         madre.cooldown_reproduccion = self.config.cooldown_reproduccion
         padre.cooldown_reproduccion = self.config.cooldown_reproduccion
         self.mundo.individuos.append(hijo)
         self._registrados.add(hijo.id)
+        # Respuesta en la descendencia: rasgo del nacido y de quien lo tuvo.
+        # Una vez por individuo reproductor, no por cría.
+        self._div_nacidos.append(hijo.genoma.divergencia)
+        self._tramo_registrados[_tramo(hijo)] += 1
+        self._div_reproductores[madre.id] = madre.genoma.divergencia
+        self._div_reproductores[padre.id] = padre.genoma.divergencia
         self.nacimientos += 1
 
     def _junto_al_agua(self) -> int:
@@ -328,6 +382,16 @@ class Simulacion:
             return False
         return self.config.sequia_ticks <= 0 or self.mundo.tick <= self.config.sequia_ticks
 
+    def _cooldowns_migracion(self) -> tuple[int, int]:
+        """Espera (mínima, máxima) entre migraciones de un mismo parche.
+
+        El máximo es `ticks_migracion` con el parche lleno; el mínimo, una
+        quinta parte con el parche agotado. `recursos.migrar` interpola según la
+        abundancia: no hay salto por régimen, la escasez acelera el entorno.
+        """
+        maximo = self.config.ticks_migracion
+        return max(1, maximo // 5), maximo
+
     def _estacion(self) -> str | None:
         """Estación del tick, o `None` si la partida no tiene estaciones.
 
@@ -340,8 +404,17 @@ class Simulacion:
         return ESTACIONES[(self.mundo.tick // self.config.ticks_por_estacion) % len(ESTACIONES)]
 
     def _factor_regeneracion(self) -> float:
-        """Ritmo de regeneración del tick: la mitad en invierno, normal el resto."""
-        return REGENERACION_INVIERNO if self.mundo.estacion == "invierno" else 1.0
+        """Ritmo de regeneración del tick: invierno y sequía lo espacian.
+
+        En invierno la mitad (estación), y en crisis otro tanto sobre lo que
+        quede: la sequía no solo recorta el techo, también hace que la reserva
+        se rellene más despacio. Es el acoplamiento que convierte «buscar lejos»
+        en una decisión con consecuencia.
+        """
+        factor = REGENERACION_INVIERNO if self.mundo.estacion == "invierno" else 1.0
+        if self._en_crisis():
+            factor *= FACTOR_REGENERACION_SEQUIA
+        return factor
 
     def _supervivencia(self, ids: set[int]) -> float:
         """Fracción de esos ids —que alguna vez vivieron— que sigue viva."""
@@ -409,6 +482,7 @@ class Simulacion:
             )
             self.combinaciones_logradas += 1
             self._descubridores.add(individuo.id)
+            self._descubrimientos_tramo[_tramo(individuo)] += 1
         return True
 
     def _practicar(self, individuo: Individuo, accion: str, *, descubrir: bool) -> bool:
@@ -469,6 +543,35 @@ class Simulacion:
         habilidades = {individuo.id: sorted(individuo.habilidades.conocidas) for individuo in vivos}
         temperamentos = [modulo_genoma.temperamento(individuo.genoma) for individuo in vivos]
         estado = modulo_beneficios.situacion(self.mundo, estacion=self.mundo.estacion)
+        div_nacidos = sum(self._div_nacidos) / len(self._div_nacidos) if self._div_nacidos else 0.0
+        div_reproductores = (
+            sum(self._div_reproductores.values()) / len(self._div_reproductores)
+            if self._div_reproductores
+            else 0.0
+        )
+        seleccion_s = div_reproductores - self._div_inicial if self._div_reproductores else 0.0
+        div_media_vivos = (
+            sum(individuo.genoma.divergencia for individuo in vivos) / len(vivos) if vivos else 0.0
+        )
+        descubrimientos = sum(
+            1 for nodo in self.grafo.nodos.values() if nodo.origen == "combinacion"
+        )
+        imitaciones = sum(self.grafo.imitado.values())
+        tasa_imitacion = imitaciones / descubrimientos if descubrimientos else 0.0
+        registrados_div = self._tramo_registrados["divergente"]
+        registrados_conf = self._tramo_registrados["conformista"]
+        desc_div = self._descubrimientos_tramo["divergente"]
+        desc_conf = self._descubrimientos_tramo["conformista"]
+        longevidad_div = (
+            sum(self._longevidad_descubridores) / len(self._longevidad_descubridores)
+            if self._longevidad_descubridores
+            else 0.0
+        )
+        longevidad_conf = (
+            sum(self._longevidad_conformistas) / len(self._longevidad_conformistas)
+            if self._longevidad_conformistas
+            else 0.0
+        )
         return {
             "seed": self.mundo.seed,
             "ticks": self.mundo.tick,
@@ -493,6 +596,30 @@ class Simulacion:
             "n_divergentes": temperamentos.count("divergente"),
             "n_conformistas": temperamentos.count("conformista"),
             "n_neutros": temperamentos.count("neutro"),
+            #: Respuesta en la descendencia (medida primaria de F1-005): rasgo
+            #: medio de los nacidos, de los reproductores y diferencial S contra
+            #: la población inicial del brazo.
+            "mean_divergencia_inicial": round(self._div_inicial, 4),
+            "mean_divergencia_nacidos": round(div_nacidos, 4),
+            "mean_divergencia_reproductores": round(div_reproductores, 4),
+            "reproductores": len(self._div_reproductores),
+            "S": round(seleccion_s, 4),
+            "S_fecundidad": round(seleccion_s, 4),
+            "S_viabilidad": round(div_media_vivos - self._div_inicial, 4) if vivos else 0.0,
+            #: Telemetría de la ronda 6: invención e imitación por temperamento y
+            #: longevidad. Las tasas se publican por individuo registrado.
+            "descubrimientos": descubrimientos,
+            "descubrimientos_divergentes": desc_div,
+            "descubrimientos_conformistas": desc_conf,
+            "divergentes_registrados": registrados_div,
+            "conformistas_registrados": registrados_conf,
+            "tasa_descubrimiento_divergente": round(desc_div / max(1, registrados_div), 4),
+            "tasa_descubrimiento_conformista": round(desc_conf / max(1, registrados_conf), 4),
+            "tasa_imitacion": round(tasa_imitacion, 4),
+            "longevidad_media_descubridores": round(longevidad_div, 1),
+            "longevidad_media_conformistas": round(longevidad_conf, 1),
+            "muertes_descubridores": len(self._longevidad_descubridores),
+            "muertes_conformistas": len(self._longevidad_conformistas),
             "intentos_divergentes": self.intentos_divergentes,
             "combinaciones_logradas": self.combinaciones_logradas,
             "descubridores": sorted(self._descubridores),
@@ -502,7 +629,7 @@ class Simulacion:
             ),
             "diferencial_seleccion": round(self._diferencial_seleccion(), 3),
             "tradiciones": self.tradiciones,
-            "imitaciones": sum(self.grafo.imitado.values()),
+            "imitaciones": imitaciones,
             "beneficios": modulo_beneficios.activos(self.grafo, self.mundo, estado).a_json(),
             "utilidad_media": self._utilidad_media(),
             **estado.a_json(),
@@ -563,6 +690,20 @@ def run(
 
     app.bucle(simulacion, ticks)
     return simulacion
+
+
+def _tramo(individuo: Individuo) -> str:
+    """Temperamento para telemetría (no decide nada del motor)."""
+    return modulo_genoma.temperamento(individuo.genoma)
+
+
+def _media_divergencia_inicial(mundo: Mundo) -> float:
+    """Media del rasgo en los fundadores: línea base de S (medición, no conducta)."""
+    if not mundo.individuos:
+        return 0.0
+    return sum(individuo.genoma.divergencia for individuo in mundo.individuos) / len(
+        mundo.individuos
+    )
 
 
 def _longevidad(individuo: Individuo) -> int:

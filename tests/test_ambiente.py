@@ -257,9 +257,79 @@ def test_no_se_migra_a_una_zona_con_fuentes_en_agua() -> None:
     assert [(recurso.x, recurso.y) for recurso in caza] == [(6, 5), (7, 5)]
 
 
-def test_una_partida_normal_acaba_migrando_bayas_y_caza() -> None:
-    """Sin tocar nada a mano, la comida agotada se muda con los dos tipos."""
-    simulacion = Simulacion(modulo_mundo.crear(seed=42, individuos=12))
+def test_en_calma_el_parche_se_regenera_en_el_sitio_y_en_crisis_migra() -> None:
+    """Sin cambio ambiental no hay migración: el recurso vuelve donde estaba."""
+
+    def escenario(crisis: bool) -> tuple[Simulacion, Recurso]:
+        caza = Recurso(
+            id=1,
+            tipo=TipoRecurso.CAZA,
+            x=4,
+            y=4,
+            cantidad=0,
+            capacidad=2,
+            regeneracion=1500,
+            alcance=1.5,
+        )
+        mundo = Mundo(
+            ancho=30,
+            alto=20,
+            tiles=[[TipoTile.HIERBA for _ in range(30)] for _ in range(20)],
+            recursos=[caza],
+            individuos=[],
+            azar=random.Random(0),
+        )
+        mundo.parches = [Parche(id=1, tipo=TipoRecurso.CAZA, x=4.0, y=4.0, radio=0.0, fuentes=[1])]
+        config = SimConfig(seed=0, individuos=1, crisis=crisis, ticks_migracion=3000)
+        return Simulacion(mundo, config), caza
+
+    calma, caza = escenario(False)
+    for _ in range(1600):
+        calma.step()
+    assert calma.migraciones == 0
+    assert (caza.x, caza.y) == (4, 4), "en calma el recurso no se muda"
+    assert caza.cantidad > 0, "en calma el parche se regenera en el sitio"
+
+    crisis, caza = escenario(True)
+    for _ in range(700):
+        crisis.step()
+    assert crisis.migraciones > 0
+    assert (caza.x, caza.y) != (4, 4), "en crisis el agotamiento dispara la migración"
+
+
+def test_la_migracion_en_crisis_deja_el_parche_fuera_del_horizonte_conformista() -> None:
+    """El parche nuevo cae a ≥10 tiles: el conformista (4) no lo ve, el divergente (14) sí."""
+    caza = Recurso(
+        id=1,
+        tipo=TipoRecurso.CAZA,
+        x=10,
+        y=10,
+        cantidad=0,
+        capacidad=2,
+        regeneracion=1500,
+        alcance=1.5,
+    )
+    mundo = Mundo(
+        ancho=60,
+        alto=34,
+        tiles=[[TipoTile.HIERBA for _ in range(60)] for _ in range(34)],
+        recursos=[caza],
+        individuos=[],
+        azar=random.Random(2),
+    )
+    mundo.parches = [Parche(id=1, tipo=TipoRecurso.CAZA, x=10.0, y=10.0, radio=0.0, fuentes=[1])]
+    mundo.tick = 1
+
+    assert recursos.migrar(mundo, umbral=0.5, cooldown=0)
+
+    assert mundo.parches[0].migraciones == 1
+    assert recursos.distancia(10.0, 10.0, mundo.parches[0].x, mundo.parches[0].y) >= 10.0
+
+
+def test_una_partida_en_crisis_acaba_migrando_bayas_y_caza() -> None:
+    """En crisis, la comida agotada se muda con los dos tipos."""
+    config = SimConfig(seed=42, individuos=12, crisis=True, ticks_migracion=600)
+    simulacion = Simulacion(modulo_mundo.crear(seed=42, individuos=12), config)
 
     for _ in range(1500):
         simulacion.step()
@@ -280,6 +350,47 @@ def test_la_migracion_respeta_el_cooldown() -> None:
     assert recursos.migrar(mundo, umbral=UMBRAL, cooldown=10) == []
     mundo.tick = 20
     assert recursos.migrar(mundo, umbral=UMBRAL, cooldown=10)
+
+
+def test_la_migracion_se_acelera_con_la_escasez() -> None:
+    """La espera interpola por abundancia: lleno 3000, agotado 600, medio 1800."""
+
+    def escenario(abundancia: float, tick: int) -> Simulacion:
+        caza = Recurso(
+            id=1,
+            tipo=TipoRecurso.CAZA,
+            x=4,
+            y=4,
+            cantidad=round(2 * abundancia),
+            capacidad=2,
+            regeneracion=1500,
+            alcance=1.5,
+        )
+        mundo = Mundo(
+            ancho=30,
+            alto=20,
+            tiles=[[TipoTile.HIERBA for _ in range(30)] for _ in range(20)],
+            recursos=[caza],
+            individuos=[],
+            azar=random.Random(0),
+        )
+        mundo.parches = [Parche(id=1, tipo=TipoRecurso.CAZA, x=4.0, y=4.0, radio=0.0, fuentes=[1])]
+        mundo.tick = tick
+        return Simulacion(mundo, SimConfig(seed=0, individuos=1, ticks_migracion=3000))
+
+    for abundancia, migra_a_600 in ((0.0, True), (0.5, False), (1.0, False)):
+        simulacion = escenario(abundancia, 600)
+        minimo, maximo = simulacion._cooldowns_migracion()
+        assert (minimo, maximo) == (600, 3000)
+        migrados = recursos.migrar(
+            simulacion.mundo, umbral=0.75, cooldown_min=minimo, cooldown_max=maximo
+        )
+        assert bool(migrados) is migra_a_600
+
+    # El medio lleno ya migra a los 1800: la escasez acelera de forma gradual.
+    simulacion = escenario(0.5, 1800)
+    minimo, maximo = simulacion._cooldowns_migracion()
+    assert recursos.migrar(simulacion.mundo, umbral=0.75, cooldown_min=minimo, cooldown_max=maximo)
 
 
 def test_la_migracion_es_determinista_y_depende_de_la_semilla() -> None:
@@ -360,17 +471,19 @@ def test_la_utilidad_sube_en_invierno_solo_para_el_recurso_estacional() -> None:
 
 
 def test_el_resumen_expone_estacion_parches_y_migraciones() -> None:
-    config = SimConfig(seed=42, individuos=12, ticks_por_estacion=100)
-    resumen = run(ticks=600, seed=42, headless=True, config=config).resumen()
+    config = SimConfig(
+        seed=42, individuos=12, crisis=True, ticks_por_estacion=100, ticks_migracion=600
+    )
+    resumen = run(ticks=1500, seed=42, headless=True, config=config).resumen()
 
-    assert resumen["estacion"] == ESTACIONES[(600 // 100) % len(ESTACIONES)]
+    assert resumen["estacion"] == ESTACIONES[(1500 // 100) % len(ESTACIONES)]
     assert resumen["parches"]
     for parche in resumen["parches"]:
         assert set(parche) == {"id", "tipo", "activo", "abundancia", "x", "y"}
         assert parche["tipo"] in {tipo.name.lower() for tipo in TipoRecurso}
         assert 0.0 <= parche["abundancia"] <= 1.0
     assert isinstance(resumen["migraciones"], int)
-    assert resumen["migraciones"] > 0, "en 600 ticks el mundo ya tiene un parche agotado"
+    assert resumen["migraciones"] > 0, "en 1500 ticks el mundo ya tiene un parche agotado"
 
 
 # --- 4. Mecanismo: seguir el parche paga ----------------------------------
@@ -484,13 +597,18 @@ def _resumen_cli(config: SimConfig, tmp_path: Path) -> dict[str, Any]:
 
 
 def test_dos_procesos_iguales_y_otra_semilla_migra_a_otro_sitio(tmp_path: Path) -> None:
-    config = SimConfig(seed=1, individuos=12, ticks_por_estacion=100)
+    config = SimConfig(
+        seed=1, individuos=12, crisis=True, ticks_por_estacion=100, ticks_migracion=600
+    )
 
     primera = _resumen_cli(config, tmp_path)
     segunda = _resumen_cli(config, tmp_path)
     assert primera == segunda
 
-    otra = _resumen_cli(SimConfig(seed=2, individuos=12, ticks_por_estacion=100), tmp_path)
+    otra = _resumen_cli(
+        SimConfig(seed=2, individuos=12, crisis=True, ticks_por_estacion=100, ticks_migracion=600),
+        tmp_path,
+    )
     assert primera["estacion"] in ESTACIONES
     assert primera["migraciones"] > 0, "con la semilla 1 no migró nada en 1000 ticks"
     assert otra["migraciones"] > 0, "con la semilla 2 no migró nada en 1000 ticks"

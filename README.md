@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.17-green)
+![Version](https://img.shields.io/badge/Version-0.1.18-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -517,9 +517,134 @@ Desde CONNECT-001 las cinco ramas tienen práctica y los cinco cruces son
 alcanzables en una partida corta con crisis —incluido `canto_ritual`, que exige
 `proto_palabras` (lenguaje) y `ritual` (símbolo)—. Desde DIVERGENCIA-002 la
 divergencia también cambia la conducta en calma y el resumen trae
-`descubridores` y `diferencial_seleccion`, así que la puerta F1→F2 ya se puede
-medir en vez de discutir: la tabla de la sección anterior dice que el mecanismo
-existe y que la proporción todavía no reacciona de forma sistemática.
+`descubridores` y `diferencial_seleccion`, y el barrido de F1-005 (abajo) mide
+la puerta entera con el mecanismo corregido.
+
+### Puerta F1→F2 (F1-005): el barrido actual
+
+`python -m tribal report gate-f1` corre los dos brazos —calma y crisis, la
+misma configuración salvo `crisis`— sobre las semillas pedidas y publica la
+tabla completa con un veredicto booleano por criterio. Los valores por defecto
+son los de la puerta: 10 semillas × 8000 ticks.
+
+```bash
+uv run python -m tribal report gate-f1 --seeds 1-10 --ticks 8000
+uv run python -m tribal report gate-f1 --seeds 1-10 --ticks 8000 --json
+```
+
+La **medida primaria es la respuesta en la descendencia**, no el porcentaje de
+vivos: con 12 fundadores ese porcentaje es binomial por construcción. El
+barrido publica:
+
+- `nac_div`: media de `divergencia` de **todos los nacidos** acumulados.
+- `S_fec` (`S`): fecundidad = media de los reproductores (una vez por individuo)
+  menos la media de la población **inicial** del brazo. Base: tick 0, común a
+  calma y crisis.
+- `S_via`: viabilidad = media de los vivos al terminar menos la media inicial;
+  0 si no queda población (no es medible).
+- `desc/d` y `desc/c`: combinaciones descubiertas por individuo registrado
+  divergente / conformista. Los conformistas no experimentan por diseño, así
+  que `desc/c` vale 0; es un dato, no un fallo.
+- `imit/desc`: imitaciones totales / combinaciones descubiertas; 0 si no hubo
+  descubrimientos (la razón no existe).
+- `long_d` y `long_c`: edad media al morir (ticks vividos) de descubridores y
+  conformistas.
+- `media` / `sigma`: distribución de `divergencia` entre los vivos al terminar,
+  no solo el corte 0.55.
+- `div%`: proporción de divergentes vivos, **secundaria**.
+
+**Criterio corregido (ronda 6):** en crisis `S_fec > 0` en ≥6/10 (rastrear el
+parche migrado gana); en calma **`S_fec < 0`** en ≥6/10 (en estabilidad manda
+la tradición, concepto §15). La neutralidad (|S| ≤ 0.01) era un **error de
+criterio**: no es una propiedad del mundo, y pedirla convertía una selección
+normal en un fallo. El `div%` sigue publicado pero no decide.
+
+El mecanismo es percepción → conducta → aptitud: el temperamento decide **qué
+radio de comida ve** (4 / 8 / 14 tiles para conformista / neutro / divergente;
+el agua es terreno y se ve desde lejos). La **memoria social es condicional a la
+migración**: si el parche recordado no ha migrado desde que se formó/copió, la
+memoria es precisa aunque el consumo lo deje temporalmente vacío (el
+conformista vuelve y espera la regeneración); si el parche migró, la copia está
+obsoleta y el conformista copia la memoria —también vieja— del vecino con más
+energía. El divergente rastrea el parche migrado más reciente o el menos
+visitado. Explorar solo se activa cuando no hay comida en el radio y cuesta
+0.05 por tick; no hay bonificación al rasgo. Umbrales 0.55 / 0.45.
+
+**La migración solo ocurre en crisis.** En calma un parche agotado se regenera
+**en el sitio**: el recurso vuelve donde estaba y la memoria del conformista
+sigue siendo válida. En crisis el agotamiento dispara la migración, con espera
+proporcional a la escasez (lleno `ticks_migracion` = 3000, agotado 1/5 = 600) y
+una reubicación de **≥11 tiles** (`DISTANCIA_MINIMA_MIGRACION`): fuera del
+horizonte del conformista (4) y dentro del divergente (14). Si un mapa no tiene
+casilla válida a esa distancia, ese parche no migra. `migracion=false` apaga la
+migración en los dos regímenes. Así la memoria se degrada con el **cambio
+ambiental**, no con el tiempo: calma = sin cambio, crisis = cambio.
+
+```
+seed | div% c->x | nac_div c/x | S_fec c/x | S_via c/x | desc/d c/x | desc/c c/x | imit/desc c/x | long_d c/x | long_c c/x | media c/x | sigma c/x | nac c/x | nodos c/x | pob c/x | ext
+   1 |   0.0->  0.0 | 0.415/0.458 | -0.039/+0.003 | -0.053/-0.012 | 0.000/1.250 | 0.000/0.000 | 0.00/3103.00 | 0/3480 | 3040/3195 | 0.407/0.448 | 0.029/0.027 | 40/38 | 6/11 | 18/ 8 | 0/0
+   2 |  26.3->  0.0 | 0.508/0.412 | +0.022/-0.042 | +0.011/-0.139 | 0.000/0.714 | 0.000/0.000 | 0.00/2660.80 | 0/2861 | 3046/2940 | 0.496/0.346 | 0.075/0.017 | 46/15 | 5/11 | 19/ 3 | 0/0
+   3 |   0.0-> 10.0 | 0.504/0.529 | -0.053/-0.035 | -0.065/-0.044 | 0.000/0.278 | 0.000/0.000 | 0.00/2447.60 | 0/2839 | 2996/3010 | 0.504/0.524 | 0.026/0.051 | 20/42 | 2/10 |  4/10 | 0/0
+   4 |   0.0-> 100.0 | 0.377/0.590 | -0.038/+0.129 | +0.000/+0.150 | 0.000/0.294 | 0.000/0.000 | 0.00/691.20 | 0/2778 | 2657/2717 | 0.000/0.595 | 0.000/0.024 | 10/14 | 6/10 |  0/ 6 | 1/0
+   5 |   0.0-> 71.4 | 0.383/0.534 | -0.072/+0.064 | -0.120/+0.090 | 0.000/0.278 | 0.000/0.000 | 0.00/1393.40 | 0/2261 | 3239/2780 | 0.352/0.562 | 0.036/0.034 | 58/24 | 5/10 | 24/ 7 | 0/0
+   6 |   3.1->  0.0 | 0.469/0.461 | -0.039/-0.026 | -0.050/+0.000 | 0.000/0.714 | 0.000/0.000 | 0.00/1437.40 | 0/2814 | 2788/2959 | 0.453/0.000 | 0.050/0.000 | 82/14 | 6/11 | 32/ 0 | 0/1
+   7 | 100.0-> 93.3 | 0.617/0.603 | +0.018/+0.013 | +0.013/-0.005 | 0.000/0.122 | 0.000/0.000 | 0.00/504.20 | 0/2969 | 2740/2740 | 0.613/0.594 | 0.030/0.037 | 89/41 | 4/9 | 43/15 | 0/0
+   8 |   0.0-> 88.9 | 0.000/0.519 | +0.000/+0.019 | +0.000/+0.111 | 0.000/0.312 | 0.000/0.000 | 0.00/1465.00 | 0/2940 | 3077/2898 | 0.000/0.612 | 0.000/0.054 | 0/26 | 4/10 |  0/ 9 | 1/0
+   9 |   0.0->  0.0 | 0.362/0.381 | -0.014/+0.005 | -0.069/+0.001 | 0.000/2.500 | 0.000/0.000 | 0.00/9228.60 | 0/2607 | 2938/2915 | 0.311/0.380 | 0.020/0.050 | 29/51 | 9/14 |  8/21 | 0/0
+  10 |   0.0->  0.0 | 0.372/0.443 | -0.032/+0.030 | -0.056/+0.073 | 0.000/1.000 | 0.000/0.000 | 0.00/2791.40 | 0/2994 | 2932/2890 | 0.355/0.484 | 0.015/0.022 | 25/28 | 5/11 |  9/ 6 | 0/0
+
+VEREDICTO PRIMARIO (S): S crisis>0 7/10 | S calma<0 7/10 | PRIMARIA True
+SECUNDARIO (div%, no decide): sube 4/10 | empata 3/10 | baja 3/10 | sube>=8/10 False | no baja False | crisis<=calma>=6/10 True | extinciones crisis<=calma True | SECUNDARIA False
+```
+
+**La puerta cumple a N=12 con la medida primaria:** `S_fec > 0` en crisis en
+7/10, `S_fec < 0` en calma en 7/10, crisis ≤ calma y extinciones en crisis ≤
+calma. `senal` (alias `primaria`) es el **veredicto de la puerta**; el antiguo
+`pasa` se llama ahora `secundaria` y **no decide**. El `div%` secundario sigue
+sin pasar (4/10) y no cambia el resultado. La calma es estable (parche se
+regenera en el sitio, memoria válida); en crisis el parche nuevo cae a ≥11
+tiles, fuera del horizonte del conformista y dentro del divergente, así que la
+copia vieja cuesta.
+
+**Confirmación N=50:** el motor admite `--individuos` hasta 100 como parámetro
+de medición; el default del juego sigue en 12 (concepto §1b). La señal S se
+refuerza (`S_fec > 0` en 9/10, `S_fec < 0` en 6/10), pero **crisis ≤ calma no
+se replica** (4/10) y hay una extinción en crisis: la condición de régimen
+favorable es dependiente de escala. Se publica como límite, no se oculta; la
+puerta se cierra con el N=12 del juego y esta salvedad documentada.
+
+```
+--individuos 50 (confirmación)
+seed | div% c->x | nac_div c/x | S_fec c/x | S_via c/x | desc/d c/x | desc/c c/x | imit/desc c/x | long_d c/x | long_c c/x | media c/x | sigma c/x | nac c/x | nodos c/x | pob c/x | ext
+   1 |  14.8-> 25.7 | 0.469/0.505 | +0.002/+0.031 | -0.005/+0.049 | 0.000/0.070 | 0.000/0.000 | 0.00/7957.60 | 0/3030 | 3024/2811 | 0.469/0.522 | 0.083/0.047 | 172/187 | 19/24 | 61/70 | 0/0
+   2 |  66.0-> 52.4 | 0.539/0.542 | +0.011/+0.013 | +0.036/+0.019 | 0.000/0.049 | 0.000/0.000 | 0.00/5847.20 | 0/3190 | 2963/2706 | 0.561/0.544 | 0.109/0.057 | 139/165 | 9/14 | 50/63 | 0/0
+   3 |   5.3-> 34.8 | 0.477/0.525 | -0.034/+0.001 | -0.073/+0.003 | 0.000/0.053 | 0.000/0.000 | 0.00/7751.20 | 0/3242 | 3016/2878 | 0.447/0.523 | 0.053/0.076 | 194/199 | 8/13 | 75/69 | 0/0
+   4 |   0.0-> 41.3 | 0.470/0.526 | -0.049/+0.004 | -0.096/+0.008 | 0.000/0.058 | 0.000/0.000 | 0.00/8135.60 | 0/2991 | 3064/2876 | 0.430/0.534 | 0.053/0.092 | 108/149 | 13/18 | 30/46 | 0/0
+   5 |  10.0->  0.0 | 0.470/0.503 | -0.012/+0.024 | -0.068/+0.000 | 0.000/0.128 | 0.000/0.000 | 0.00/3085.80 | 0/3251 | 3069/2704 | 0.418/0.000 | 0.089/0.000 | 103/58 | 11/16 | 30/ 0 | 0/1
+   6 |  32.9-> 28.3 | 0.495/0.514 | +0.014/+0.025 | +0.010/+0.039 | 0.000/0.075 | 0.000/0.000 | 0.00/9809.00 | 0/3137 | 2906/2673 | 0.494/0.523 | 0.096/0.051 | 209/154 | 17/21 | 82/46 | 0/0
+   7 |  55.9-> 56.4 | 0.559/0.569 | +0.005/+0.006 | -0.026/-0.003 | 0.000/0.025 | 0.000/0.000 | 0.00/5835.60 | 0/3085 | 3063/2875 | 0.536/0.559 | 0.115/0.062 | 174/280 | 9/14 | 59/78 | 0/0
+   8 |   8.5-> 70.6 | 0.456/0.547 | -0.037/+0.029 | -0.076/+0.059 | 0.000/0.056 | 0.000/0.000 | 0.00/3458.60 | 0/2809 | 3052/2987 | 0.439/0.574 | 0.071/0.057 | 147/124 | 19/24 | 59/34 | 0/0
+   9 |   9.8-> 23.1 | 0.426/0.420 | -0.010/-0.016 | +0.001/-0.008 | 0.000/0.083 | 0.000/0.000 | 0.00/23803.40 | 0/2780 | 3013/2927 | 0.437/0.429 | 0.099/0.110 | 159/237 | 17/23 | 51/104 | 0/0
+  10 |   4.5-> 35.3 | 0.439/0.513 | -0.047/+0.015 | -0.072/+0.034 | 0.000/0.053 | 0.000/0.000 | 0.00/10484.60 | 0/2932 | 2957/2791 | 0.422/0.528 | 0.077/0.055 | 196/218 | 16/21 | 66/85 | 0/0
+
+VEREDICTO PRIMARIO (S): S crisis>0 9/10 | S calma<0 6/10 | PRIMARIA True
+SECUNDARIO (div%, no decide): crisis<=calma>=6/10 False | extinciones crisis<=calma False | SECUNDARIA False
+```
+
+No se tocaron canales prohibidos: sin penalización al comer, la sed o la cría
+por temperamento, sin ventaja reproductiva, sin editar el genoma y sin umbrales
+por régimen. El conformismo pierde por **copiar información vieja**, que es una
+desventaja de conducta, no un decreto. Los tests
+`test_la_informacion_del_conformista_es_precisa_si_el_parche_no_migra`,
+`test_en_calma_el_parche_se_regenera_en_el_sitio_y_en_crisis_migra`,
+`test_la_migracion_en_crisis_deja_el_parche_fuera_del_horizonte_conformista`,
+`test_la_migracion_se_acelera_con_la_escasez` y
+`test_sin_crisis_explorar_no_mejora_la_energia_media` fijan el mecanismo; los
+de `Simulacion` fijan nacidos, reproductores, descubrimientos por temperamento,
+imitaciones y longevidad.
+
+
+
 
 ## Principios
 

@@ -664,13 +664,16 @@
         "vault/01_PROYECTO/arquitectura.md y README documentan el mecanismo real de la puerta y el resultado del barrido",
         "uv run pytest -q en verde y harness gate success=true"
       ],
-      "status": "pending",
+      "status": "blocked",
       "depends_on": [
         "UTIL-001",
         "AMB-001",
         "DIVERGENCIA-002",
         "FIX-ENERGIA"
-      ]
+      ],
+      "started": "2026-11-18",
+      "review_rounds": 0,
+      "blocked_reason": "Criterio de la puerta corregido por el usuario: la medida primaria es la respuesta en la descendencia (S_fecundidad), no el porcentaje de vivos, que es binomial y ruidoso con 12 fundadores. Con el criterio corregido el mecanismo da S crisis>0 7/10 y S calma<0 7/10, pero el texto de F1-005 exige el porcentaje >=8/10; se sustituye por F1-006 con los criterios corregidos. El trabajo (memoria condicional a la migracion, metrica S, valoracion) queda en el arbol como base de F1-006."
     },
     {
       "id": "EMER-002",
@@ -712,6 +715,46 @@
       ],
       "status": "pending",
       "depends_on": []
+    },
+    {
+      "id": "HARNESS-MODELOS",
+      "title": "Reparto de modelos por subagente en opencode.json",
+      "description": "Cada subagente LLM declara su modelo: flash-free para los ligeros y pro solo para reviewer.",
+      "acceptance_criteria": [
+        "opencode.json declara model por subagente: lider, orquestador, explorer, implementer y doc en opencode/deepseek-v4.1-flash-free, y reviewer en opencode-go/deepseek-v4-pro",
+        "el model global queda en opencode/deepseek-v4.1-flash-free",
+        "opencode models lista ambos IDs y OpenCode arranca sin error",
+        "el cambio queda commiteado para sobrevivir a git checkout (no solo en working tree)"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "HARD-3"
+      ]
+    },
+    {
+      "id": "F1-006",
+      "title": "Puerta F1 a F2 medida en la descendencia",
+      "description": "Sustituye a F1-005. El porcentaje de vivos es binomial y ruidoso con 12 fundadores; la medida primaria pasa a ser la respuesta a la seleccion en la descendencia (S_fecundidad): media del rasgo de los reproductores menos media inicial. Concepto §15: en calma manda la tradicion (S<0, conformistas), en crisis el cambio manda (S>0, divergentes).",
+      "acceptance_criteria": [
+        "report gate-f1 publica por semilla y brazo: S_fecundidad, S_viabilidad, media de divergencia de los nacidos, tasa de descubrimiento por temperamento, tasa de imitacion, longevidad de descubridor y conformista, y media/sigma de la poblacion",
+        "S_fecundidad > 0 en crisis en >=6/10 semillas y S_fecundidad < 0 en calma en >=6/10 (concepto §15: en calma manda la tradicion)",
+        "la crisis no es el regimen favorable: poblacion final en crisis <= calma en >=6/10 semillas y no hay mas extinciones en crisis que en calma",
+        "test de mecanismo: quien descubre una combinacion sobrevive/energeticamente mejor bajo escasez con independencia de su divergencia, y un divergente que no descubre nada rinde igual que un conformista",
+        "ningun canal premia el rasgo (guard AST y snapshots) y la memoria del conformista solo envejece si el entorno cambia (calma: se regenera en el sitio",
+        "crisis: migra fuera del horizonte)",
+        "el barrido 1..10 completo se publica en el informe, README y arquitectura, con el porcentaje de vivos como columna secundaria y explicando por que no decide",
+        "uv run pytest -q en verde y harness gate success=true"
+      ],
+      "status": "done",
+      "depends_on": [
+        "UTIL-001",
+        "AMB-001",
+        "DIVERGENCIA-002",
+        "FIX-ENERGIA"
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 0,
+      "closed": "2026-11-19"
     }
   ]
 }

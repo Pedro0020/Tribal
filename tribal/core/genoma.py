@@ -30,9 +30,13 @@ RASGO_MAX = 1.5
 DIVERGENCIA_MIN = 0.0
 DIVERGENCIA_MAX = 1.0
 #: Fronteras del temperamento de concepto §9b: por encima experimenta, por
-#: debajo imita, y en medio no destaca en ninguna de las dos cosas.
-UMBRAL_DIVERGENTE = 0.6
-UMBRAL_CONFORMISTA = 0.4
+#: debajo imita, y en medio no destaca en ninguna de las dos cosas. Con la
+#: herencia promediando hacia 0.5 (σ ≈ 0.03–0.04), las fronteras 0.6/0.4
+#: dejaban la cola divergente a tres sigmas: casi nadie era divergente y la
+#: proporción era un cuchillo. 0.55/0.45 reparte la distribución real en dos
+#: colas medibles sin tocar el criterio de la puerta.
+UMBRAL_DIVERGENTE = 0.55
+UMBRAL_CONFORMISTA = 0.45
 
 Temperamento = Literal["divergente", "neutro", "conformista"]
 

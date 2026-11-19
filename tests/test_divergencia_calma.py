@@ -253,6 +253,17 @@ SITIOS_CON_DIVERGENCIA = {
     ("tribal/agents/instinto.py", "_punto_errante"),
     # Conducta en crisis: quién gasta el tick experimentando un cruce.
     ("tribal/sim.py", "_intentar_combinacion"),
+    # Medición (eje 6): línea base de S y acumulación del rasgo en nacidos y
+    # reproductores. Leen el dato para publicarlo; ningún efecto del motor
+    # depende de estas lecturas.
+    ("tribal/sim.py", "_media_divergencia_inicial"),
+    ("tribal/sim.py", "_nacer"),
+    # Medición (eje 6): S_viabilidad y media/σ de los vivos en el resumen.
+    ("tribal/sim.py", "resumen"),
+    # Medición (eje 6): media y sigma para la tabla del barrido. Lee el rasgo
+    # para publicarlo, no para decidir nada: ningún efecto del motor depende de
+    # esta función.
+    ("tribal/gate_f1.py", "medir_brazo"),
 }
 
 

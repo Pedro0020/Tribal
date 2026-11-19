@@ -8,6 +8,12 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ---
 
+## [Unreleased] — 2026-11-19
+
+### Añadido
+
+- feat: puerta F1 medida en la descendencia (F1-006)
+
 ## [Unreleased] — 2026-11-18
 
 ### Añadido
