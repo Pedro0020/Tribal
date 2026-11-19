@@ -906,3 +906,40 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 49 so
 ```
 
 </details>
+
+## HARNESS-EDIT — Anadir accion edit al agente harness
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 241 passed in 134.99s (0:02:14)
+- **Cambios:** agents/agents/harness_agent.py (accion edit: validacion de tipos, title/description/criteria/depends_on, deteccion de ciclos, diff before/after, sin tocar status/blocked_reason); agents/contracts.py (describe de harness); agents/prompts/harness_agent.md (accion, precedente y flags sin valor en PowerShell); agents/tests/test_harness_edit.py (nuevo, 27 casos); .claude/agents/reviewer.md (regenerado por prompts_sync desde la fuente)
+- **Decisiones:** edit no es un atajo para maquillar criterios: solo toca features pending, devuelve el diff before/after, rechaza status/blocked_reason y no reescribe si no hay cambio. La validacion de tipos existe porque PowerShell convierte '--flag' sin valor en True y '--depends_on ""' en True: los campos de texto se rechazan y depends_on=True se interpreta como limpiar, documentado. Es la herramienta que faltaba para corregir criterios y dependencias sin editar el JSON a mano; se usa para reapuntar HARD-1 y F2-001 a F1-006 (el gate real) en una decision del lider posterior a este cierre, no dentro de esta feature. INCIDENCIA: durante la revision el implementer ejecuto una prueba contra el repo real y muto HARD-1; se detecto por el audit, se restauro y el informe se corrigio. El aislamiento en %TEMP% no aislaba porque la raiz del contexto sale del paquete instalado, no del cwd: queda anotado.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 241 passed
+
+$ harness edit --id EMER-002 --title "..." --description "..." --criteria "a;b"
+success=true ; data.changes {before, after} ; solo cambia esa feature (md5 del resto intacto)
+
+$ rechazos (success=false, fichero byte-identico)
+id inexistente | feature in_progress (HARNESS-EDIT) | done (F1-006) | blocked (F1-004) |
+dep inexistente | ciclo A->B->A | autodependencia | status/blocked_reason |
+title/description/criteria sin valor (True) | criteria ";" | tipos no-str
+
+$ depends_on
+--depends_on "" (PowerShell) -> limpia con diff {before:["F2-002"], after:[]}
+--depends_on "A;B" valida existencia y ciclos ; "" limpia ; no-op no reescribe bytes
+
+$ 27 tests en agents/tests/test_harness_edit.py (9 via run()/CLI)
+$ uv run python -m agents.prompts_sync  -> exit 0 (prompt y contrato de harness con edit)
+$ uv run pytest -q
+797 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 49 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 47 source files
+```
+
+</details>

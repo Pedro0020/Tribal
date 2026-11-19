@@ -591,8 +591,11 @@
         "Hay tests del nuevo comando en agents/tests",
         "init.sh termina en ENTORNO LISTO"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-19",
+      "review_rounds": 2,
+      "closed": "2026-11-19"
     },
     {
       "id": "REFINE-001",

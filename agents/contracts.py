@@ -439,6 +439,8 @@ CONTRACTS: dict[str, Contract] = {
         role="Dueño mecánico del arnés: mantiene el backlog y el progreso, y ejecuta la puerta init.sh.",
         can=(
             "leer y actualizar harness/featureslist.json (abrir, cerrar, bloquear y añadir features)",
+            "corregir título, descripción, criterios y dependencias de una feature pending (edit), "
+            "devolviendo el diff antes/después en data",
             "escribir harness/progress/current.md y añadir entradas a harness/progress/history.md",
             "guardar los informes de los subagentes en harness/progress/<agente>-<FEATURE-ID>.md",
             "ejecutar ./init.sh y devolver el veredicto estructurado",

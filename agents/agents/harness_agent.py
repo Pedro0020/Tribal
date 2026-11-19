@@ -150,6 +150,7 @@ class HarnessAgent(BaseAgent):
             "record": self.record,
             "gate": self.gate,
             "add": self.add,
+            "edit": self.edit,
         }
 
     # -- rutas ---------------------------------------------------------------
@@ -220,6 +221,44 @@ class HarnessAgent(BaseAgent):
 
     def _fail(self, action: str, message: str, **kw: Any) -> AgentResult:
         return AgentResult(success=False, agent=self.name, action=action, message=message, **kw)
+
+    @staticmethod
+    def _cycle(doc: dict, feature_id: str, deps: list[str]) -> list[str] | None:
+        """El ciclo que aparecería si `feature_id` pasara a depender de `deps`.
+
+        Se recorre el grafo completo, no solo las dependencias nuevas: un
+        cambio en una arista puede cerrar un bucle que pasaba por cualquier
+        otra feature. Devuelve los ids del ciclo (A → B → A) o None.
+        """
+        graph = {
+            f["id"]: list(deps if f["id"] == feature_id else f.get("depends_on", []))
+            for f in doc["features"]
+            if isinstance(f, dict) and f.get("id")
+        }
+        state: dict[str, int] = {}  # 1 = en la pila, 2 = cerrado
+
+        def visit(node: str, path: list[str]) -> list[str] | None:
+            state[node] = 1
+            for dep in graph.get(node, []):
+                if state.get(dep) == 1:
+                    # Solo el bucle, no el camino que lleva hasta él: el
+                    # mensaje es para una persona, y `F2 → SAVE → SAVE` no
+                    # explica nada que `SAVE → SAVE` no diga mejor.
+                    camino = path + [node]
+                    return camino[camino.index(dep) :] + [dep]
+                if state.get(dep) is None:
+                    found = visit(dep, path + [node])
+                    if found:
+                        return found
+            state[node] = 2
+            return None
+
+        for node in graph:
+            if state.get(node) is None:
+                found = visit(node, [])
+                if found:
+                    return found
+        return None
 
     # -- acciones ------------------------------------------------------------
     def status(self) -> AgentResult:
@@ -703,4 +742,160 @@ class HarnessAgent(BaseAgent):
             action="add",
             message=f"{id} añadida al backlog ({len(feature['acceptance_criteria'])} criterios).",
             data=feature,
+        )
+
+    def edit(
+        self,
+        *,
+        id: str = "",
+        title: str = "",
+        description: str = "",
+        criteria: str = "",
+        depends_on: str | None = None,
+        **campos: Any,
+    ) -> AgentResult:
+        """Corrige título, descripción, criterios o dependencias de una feature pending.
+
+        El criterio de una feature **se puede corregir**: un backlog que se
+        atasca porque una dependencia ya la cerró otra feature, o porque el
+        criterio estaba mal escrito, tiene que poder arreglarse sin editar el
+        JSON a mano. Pero el cambio no se esconde — queda en `data` como
+        campo → antes/después, y el líder lo pega en el informe de la feature.
+
+        Solo features `pending`: lo que está abierto o cerrado se toca con
+        `start`, `block` y `finish`, no aquí. `--depends_on ""` limpia las
+        dependencias; una dependencia inexistente o un ciclo se rechazan para
+        que el grafo no quede inconsistente.
+
+        Cuidado con los flags sin valor: el CLI los entrega como `True`, no
+        como texto. En PowerShell el shell descarta el argumento vacío, así
+        que `--depends_on ""` llega como `depends_on=True` — se interpreta
+        como «limpiar», la única lectura posible de ese flag. Los demás
+        (`--title true`, `--description true`, `--criteria true`) se rechazan:
+        un flag olvidado no es un texto, y escribir `"title": true` en el
+        backlog lo corrompe en silencio.
+        """
+        if not id:
+            return self._fail(
+                "edit",
+                "Falta el id de la feature.",
+                needs=["¿Qué feature corrijo? Usa su id de featureslist.json."],
+            )
+        if campos:
+            return self._fail(
+                "edit",
+                f"'edit' no cambia {', '.join(sorted(campos))}: solo title, description, "
+                "acceptance_criteria y depends_on. status y blocked_reason son de start/block/finish.",
+                data={"rejected": sorted(campos)},
+            )
+
+        # `--depends_on ""` en PowerShell llega como True (el shell se come el
+        # argumento vacío). Ahí la intención es inequívoca —limpiar—, así que
+        # se acepta. Para los campos de texto no hay interpretación posible.
+        if depends_on is True:
+            depends_on = ""
+
+        no_textuales = [
+            nombre
+            for nombre, valor in (
+                ("title", title),
+                ("description", description),
+                ("criteria", criteria),
+                ("depends_on", depends_on),
+            )
+            if valor is not None and not isinstance(valor, str)
+        ]
+        if no_textuales:
+            return self._fail(
+                "edit",
+                f"Valor no textual en {', '.join(no_textuales)}: un flag sin valor llega como "
+                f"True y eso no es un texto. No se escribe nada.",
+                data={"rejected": no_textuales},
+                needs=[
+                    'Pásale el texto a cada campo: --title "...", --description "...", '
+                    '--criteria "a;b".',
+                    'Para limpiar dependencias en PowerShell usa --depends_on "" (llega como '
+                    'flag sin valor y `edit` lo interpreta como vacío) o, en bash, --depends_on "".',
+                ],
+            )
+
+        if not (title or description or criteria or depends_on is not None):
+            return self._fail(
+                "edit",
+                "Nada que editar.",
+                needs=[
+                    "¿Qué cambio? --title, --description, --criteria 'a;b' o "
+                    "--depends_on 'A;B' ('' las limpia)."
+                ],
+            )
+
+        doc, error = self._load()
+        if doc is None:
+            return self._fail("edit", error)
+
+        feat = self._find(doc, id)
+        if feat is None:
+            return self._fail("edit", f"No existe la feature '{id}' en el backlog.")
+        status = feat.get("status")
+        if status != "pending":
+            return self._fail(
+                "edit",
+                f"'{id}' está {status}: solo se editan features pending. "
+                f"Ciérrala, bloquéala o reábrela antes de cambiar sus criterios.",
+                data={"id": id, "status": status},
+            )
+
+        changes: dict[str, dict[str, Any]] = {}
+
+        def _set(field: str, value: Any) -> None:
+            before = feat.get(field)
+            if before != value:
+                changes[field] = {"before": before, "after": value}
+                feat[field] = value
+
+        if title:
+            _set("title", title)
+        if description:
+            _set("description", description)
+        if criteria:
+            nuevos = [c.strip() for c in criteria.split(";") if c.strip()]
+            if not nuevos:
+                return self._fail(
+                    "edit",
+                    "Los criterios no pueden quedar vacíos: una feature sin criterios pasa la "
+                    "puerta por vacuidad.",
+                    needs=['Escribe al menos uno: --criteria "lo que demuestra que está hecha".'],
+                )
+            _set("acceptance_criteria", nuevos)
+        if depends_on is not None:
+            deps = [d.strip() for d in depends_on.split(";") if d.strip()]
+            unknown = [d for d in deps if self._find(doc, d) is None]
+            if unknown:
+                return self._fail(
+                    "edit",
+                    f"depends_on apunta a features que no existen: {', '.join(unknown)}.",
+                )
+            cycle = self._cycle(doc, id, deps)
+            if cycle:
+                return self._fail(
+                    "edit", f"'{id}' con depends_on {deps} crea un ciclo: {' → '.join(cycle)}."
+                )
+            _set("depends_on", deps)
+
+        if not changes:
+            return AgentResult(
+                success=True,
+                agent=self.name,
+                action="edit",
+                message=f"'{id}' sin cambios: los valores ya eran esos.",
+                data={"id": id, "changes": {}},
+            )
+
+        self._save(doc)
+        return AgentResult(
+            success=True,
+            agent=self.name,
+            action="edit",
+            message=f"'{id}' corregida ({', '.join(changes)}). El diff va en data para el informe.",
+            data={"id": id, "changes": changes},
         )

@@ -15,13 +15,42 @@ Ejecuta la parte mecánica del arnés. No decide nada: los agentes markdown
 | `block --id <ID> --reason "<motivo>"` | Marca bloqueada |
 | `record --agent <a> --id <ID> --content "<informe>"` o `--content-file <ruta>` | Guarda `progress/<a>-<ID>.md` (el fichero, UTF-8, evita los truncados de PowerShell) |
 | `add --id <ID> --title "<t>" --criteria "a;b;c"` | Añade feature al backlog |
+| `edit --id <ID> [--title "<t>"] [--description "<d>"] [--criteria "a;b"] [--depends_on "A;B"]` | Corrige una feature `pending` sin tocar el JSON; `--depends_on ""` limpia las dependencias |
 
 ```bash
 uv run python -m agents --json run harness next
 uv run python -m agents --json run harness start --id DATA-001
 uv run python -m agents --json run harness gate
 uv run python -m agents --json run harness finish --id DATA-001 --evidence "$(make test 2>&1 | tail -5)"
+uv run python -m agents --json run harness edit --id F2-001 --depends_on "F1-006"
 ```
+
+## Corregir una feature: el precedente
+
+El criterio de una feature **se puede corregir** — un backlog que se atasca
+porque una dependencia la cerró otra feature, o porque el criterio estaba mal
+escrito, no se arregla editando `featureslist.json` a mano. Pero el cambio no
+se esconde: `edit` lo devuelve en `data` como campo → antes/después, y el líder
+tiene que pegarlo en el informe de la feature. Si el cambio no queda escrito en
+ningún sitio, no ha pasado.
+
+`edit` solo toca `title`, `description`, `acceptance_criteria` y `depends_on`
+de features `pending`. `status` y `blocked_reason` son de `start`, `block` y
+`finish`: cambiar un estado por aquí sería cerrar una feature sin puerta.
+
+### Flags sin valor (PowerShell)
+
+PowerShell descarta los argumentos vacíos al llamar a un ejecutable: `--depends_on ""`
+llega al CLI como un flag sin valor, que `_parse_kwargs` entrega como `True`.
+`edit` lo interpreta como «limpiar» — es la única lectura posible de ese flag —
+y así `--depends_on ""` funciona igual en bash (cadena vacía) que en PowerShell
+(`True`). No uses `--depends_on=`: el parser no parte por `=` y lo rechaza como
+campo desconocido.
+
+En los campos de texto no hay interpretación posible: `--title`, `--description`
+o `--criteria` sin valor llegan como `True` y `edit` **rechaza** con `needs`,
+sin escribir nada. Escribir `"title": true` en el backlog lo corrompe en
+silencio, y el arnés existe justo para que un flag mal escrito no lo haga.
 
 ## Lo que rechaza
 
@@ -31,6 +60,16 @@ uv run python -m agents --json run harness finish --id DATA-001 --evidence "$(ma
 - **`start` con otra feature abierta** → una cosa a la vez.
 - **`start` con `depends_on` sin cerrar** → primero las dependencias.
 - **`add` con `depends_on` inexistente** → el backlog no se corrompe.
+- **`edit` de un id inexistente o de una feature que no está `pending`** →
+  `success=false`: lo abierto o cerrado no se reescribe.
+- **`edit --depends_on` con una dependencia inexistente o que crea un ciclo** →
+  el grafo queda como estaba.
+- **`edit` intentando cambiar `status` o `blocked_reason`** → esos los cambian
+  `start`, `block` y `finish`, no una edición de texto.
+- **`edit --title`, `--description` o `--criteria` sin valor** (llegan como
+  `True`) → `needs` y el backlog intacto: un flag olvidado no es un texto.
+- **`edit --criteria ";"`** → lista vacía tras el split; una feature sin
+  criterios pasa la puerta por vacuidad.
 
 ## Por qué existe
 
@@ -54,6 +93,7 @@ Ver el ciclo completo: `skill harness_workflow`.
 | `run harness record` | `--agent`, `--id`, `--content`, `--content_file`, `--verdict` |
 | `run harness gate` | `--quick` |
 | `run harness add` | `--id`, `--title`, `--description`, `--criteria`, `--depends_on` |
+| `run harness edit` | `--id`, `--title`, `--description`, `--criteria`, `--depends_on` |
 
 ## Límites
 

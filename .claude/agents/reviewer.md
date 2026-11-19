@@ -43,9 +43,9 @@ Complementa con los agentes del proyecto en vez de revisar a ojo:
 
 ```bash
 uv run python -m agents --json run review review_package     # funciones largas, except desnudos, duplicación
-uv run python -m agents --json run test coverage_summary     # cobertura por módulo
+uv run python -m agents --json run test coverage_report      # cobertura por módulo
 uv run python -m agents --json run secrets scan              # secretos hardcodeados
-uv run python -m agents --json run doctor                    # diagnóstico integral
+uv run python -m agents --json run doctor checkup             # diagnóstico integral
 ```
 
 ## Veredicto
