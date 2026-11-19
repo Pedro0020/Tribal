@@ -98,6 +98,9 @@ class Individuo:
     #: Intención forzada por el LLM: `(acción, tick en que caduca)`. Se consume
     #: al usarse; si el tick ya pasó, el instinto manda (ventana de §3).
     intencion_llm: tuple[str, int] | None = None
+    #: Peso narrativo ganado por hitos (concepto §10b); no se hereda y no
+    #: depende del genoma. Sube en `tribal.agents.saliencia` y decae por tick.
+    saliencia: float = 0.0
 
 
 @dataclass(slots=True)

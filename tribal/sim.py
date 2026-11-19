@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
-from tribal.agents import instinto, necesidades
+from tribal.agents import instinto, necesidades, saliencia
 from tribal.config import SimConfig
 from tribal.core import acciones, recursos
 from tribal.core import depredador as modulo_depredador
@@ -169,6 +169,15 @@ class Simulacion:
         self._utilidad_cuenta: dict[str, int] = {}
         #: Beneficios de cada vivo en el tick en curso; los usa el depredador.
         self._beneficios_tick: dict[int, modulo_beneficios.Beneficios] = {}
+        #: Peticiones LLM aceptadas por individuo y máximos observados del
+        #: presupuesto de pensamiento: cuántos pensaron en un tick y cuántas
+        #: había en vuelo a la vez (concepto §10b).
+        self._pensamientos: dict[int, int] = {}
+        self._max_pensando_visto = 0
+        self._max_en_vuelo_visto = 0
+        #: Ticks de crisis seguidos; al llegar a `saliencia.TICKS_CRISIS` los
+        #: supervivientes ganan el hito y el contador vuelve a cero.
+        self._crisis_ticks = 0
         self._agua_tiles = {
             (x, y)
             for y, fila in enumerate(mundo.tiles)
@@ -188,6 +197,10 @@ class Simulacion:
 
         self.mundo.tick += 1
         self.mundo.estacion = self._estacion()
+        #: El protagonismo se gasta: un tick de olvido por individuo antes de
+        #: que los hitos de este tick vuelvan a sumar. Determinista y sin azar.
+        for individuo in self.mundo.individuos:
+            saliencia.decaer(individuo)
         en_crisis = self._en_crisis()
         recursos.regenerar(
             self.mundo,
@@ -243,6 +256,7 @@ class Simulacion:
         self._beneficios_tick = beneficios
         modulo_depredador.mover(self.mundo, self._factor_dano)
         self._enterrar()
+        self._hito_crisis(en_crisis)
 
         self._encolar_dilema()
 
@@ -299,6 +313,13 @@ class Simulacion:
                 )
             if individuo.movido and not ya_se_movio:
                 self._movidos += 1
+            # Hitos narrativos (§10b): enseñar una técnica y sacar a un herido
+            # del pozo suman saliencia a quien los hace. El que la recibe no
+            # gana peso por que le ayuden.
+            if aplicada and accion.nombre == "ensenar":
+                saliencia.subir(individuo, "ensenanza")
+            elif aplicada and accion.nombre == "cuidar":
+                saliencia.subir(individuo, "rescate")
             # Un nodo nuevo como mucho por tick: el árbol avanza al ritmo de la
             # tribu, no de golpe en el primer tick en que alguien come. Practicar
             # se cuenta siempre, descubra nodo o no: así se mide la imitación.
@@ -308,6 +329,16 @@ class Simulacion:
         tradicion = tradiciones.evaluar(self.grafo, self.mundo.tick)
         if tradicion is not None:
             self.tradiciones += 1
+            autor = next(
+                (
+                    individuo
+                    for individuo in self.mundo.individuos
+                    if individuo.id == tradicion.autor
+                ),
+                None,
+            )
+            if autor is not None:
+                saliencia.subir(autor, "tradicion")
             self._registrar_recuerdo(
                 tradicion.id,
                 f"tradicion {tradicion.rama} {tradicion.id} {tradicion.titulo}",
@@ -320,20 +351,30 @@ class Simulacion:
         self._ms_acumulados += (time.perf_counter() - inicio) * 1000.0
 
     def _encolar_dilema(self) -> None:
-        """Como mucho una petición por tick, y solo con dilema real y hueco.
+        """Hasta `max_pensando` peticiones por tick, por saliencia (concepto §10b).
 
         Un dilema es un conflicto de necesidades (sed y energía a la vez) o la
-        salud por los suelos. Si la cola está llena, no se encola: el individuo
-        sigue por instinto y el dilema se reevalúa el tick siguiente (§3).
+        salud por los suelos. Los individuos con dilema se ordenan por
+        `(-saliencia, id)`: los de más peso narrativo piensan primero y, si el
+        presupuesto se agota, los demás siguen por instinto y se reevalúan el
+        tick siguiente (§3). El otro tope es el de la cola: `encolar` devuelve
+        `False` cuando ya hay `max_en_vuelo` peticiones sin respuesta y ese tick
+        no se ofrece ninguna más.
         """
         if self.cola is None:
             return
+        con_dilema: list[tuple[Individuo, list[Accion]]] = []
         for individuo in self.mundo.individuos:
             opciones = modulo_candidatas.candidatas(individuo, self.mundo)
-            if not _hay_dilema(individuo, self.mundo, opciones):
-                continue
+            if _hay_dilema(individuo, self.mundo, opciones):
+                con_dilema.append((individuo, opciones))
+        con_dilema.sort(key=lambda par: (-par[0].saliencia, par[0].id))
+
+        encoladas = 0
+        for individuo, opciones in con_dilema:
+            if encoladas >= self.config.max_pensando:
+                break
             nombres = tuple(opcion.nombre for opcion in opciones)
-            self._peticion_id += 1
             contexto = modulo_candidatas.estado_para(individuo, self.mundo)
             #: GraphRAG ligero: los recuerdos relevantes viajan como datos del
             #: contexto, nunca dentro del hilo del LLM ni del render.
@@ -342,15 +383,22 @@ class Simulacion:
                 for recuerdo_id, score in self._recuperar_memoria(individuo, nombres)
             ]
             peticion = Peticion(
-                id=self._peticion_id,
+                id=self._peticion_id + 1,
                 tick=self.mundo.tick,
                 individuo_id=individuo.id,
                 contexto=contexto,
                 candidatas=nombres,
                 valida_hasta=self.mundo.tick + self.cola.ventana,
             )
-            self.cola.encolar(peticion)
-            return
+            if not self.cola.encolar(peticion):
+                break
+            self._peticion_id += 1
+            self._pensamientos[individuo.id] = self._pensamientos.get(individuo.id, 0) + 1
+            encoladas += 1
+            self._max_en_vuelo_visto = max(
+                self._max_en_vuelo_visto, self.cola.estadisticas["en_vuelo"]
+            )
+        self._max_pensando_visto = max(self._max_pensando_visto, encoladas)
 
     def _recuperar_memoria(
         self, individuo: Individuo, acciones: tuple[str, ...]
@@ -444,6 +492,23 @@ class Simulacion:
             else:
                 vivos.append(individuo)
         self.mundo.individuos = vivos
+
+    def _hito_crisis(self, en_crisis: bool) -> None:
+        """Sobrevivir `TICKS_CRISIS` ticks de sequía seguidos suma saliencia.
+
+        El hito es de bloque: lo ganan los vivos que llegaron al final del
+        tramo, no cada uno por su cuenta, y el contador vuelve a cero. Fuera de
+        crisis el contador se reinicia, así que hacen falta ticks seguidos.
+        """
+        if not en_crisis:
+            self._crisis_ticks = 0
+            return
+        self._crisis_ticks += 1
+        if self._crisis_ticks < saliencia.TICKS_CRISIS:
+            return
+        for individuo in self.mundo.individuos:
+            saliencia.subir(individuo, "crisis")
+        self._crisis_ticks = 0
 
     def _reproducir(self) -> None:
         """Una cría por pareja disponible y tick; el cooldown evita la explosión."""
@@ -624,6 +689,10 @@ class Simulacion:
             self.combinaciones_logradas += 1
             self._descubridores.add(individuo.id)
             self._descubrimientos_tramo[_tramo(individuo)] += 1
+            # Hito narrativo: el cruce es de la tribu, pero el peso es de quien
+            # lo hizo (concepto §10b). No depende de su divergencia: la
+            # experimentación sí, la saliencia no.
+            saliencia.subir(individuo, "combinacion")
             self._registrar_recuerdo(
                 candidata.id, f"combinacion {candidata.rama} {candidata.id} {candidata.titulo}"
             )
@@ -660,6 +729,9 @@ class Simulacion:
         nodo = self.grafo.avanzar(rama, autor=individuo.id, tick=self.mundo.tick)
         if nodo is None:
             return False
+        # Hito narrativo: ser el primero de la tribu en un escalón de la rama
+        # —el primer fuego, la primera palabra, el primer líder— (concepto §10b).
+        saliencia.subir(individuo, "primer_nodo")
         self._registrar_recuerdo(
             nodo.id, f"{nodo.rama} {nodo.id} {nodo.titulo} practicando {accion}"
         )
@@ -821,6 +893,11 @@ class Simulacion:
                 "recuerdos": 0 if self.recuerdos is None else len(self.recuerdos),
                 "recuperaciones": self._recuperaciones,
             },
+            #: Protagonismo emergente (concepto §10b): quién ha ganado peso
+            #: narrativo y cuántas veces ha pensado. Se publica siempre porque
+            #: la saliencia no depende de que haya LLM; sin cola, `pensamientos`
+            #: está vacío. Los `max_*` acotan el presupuesto de pensamiento.
+            "saliencia": self._saliencia_json(),
             "config": self.config.a_json(),
         }
         if self.cola is not None:
@@ -834,6 +911,27 @@ class Simulacion:
                 "en_vuelo": estadisticas["en_vuelo"],
             }
         return datos
+
+    def _saliencia_json(self) -> dict[str, Any]:
+        """Top-3 de peso narrativo y peticiones pensadas por individuo (§10b).
+
+        `top` sale de los vivos con saliencia positiva, ordenado por valor y, a
+        igualdad, por id. `pensamientos` acumula las peticiones aceptadas —vacío
+        sin capa LLM— y los dos `max_*` son la cota observada del presupuesto:
+        individuos que pensaron en un mismo tick y peticiones en vuelo (este
+        último solo puede ser > 0 con la cola asíncrona; la síncrona resuelve
+        dentro de `encolar`).
+        """
+        con_peso = sorted(
+            (individuo for individuo in self.mundo.individuos if individuo.saliencia > 0.0),
+            key=lambda individuo: (-individuo.saliencia, individuo.id),
+        )
+        return {
+            "top": [(individuo.id, round(individuo.saliencia, 3)) for individuo in con_peso[:3]],
+            "pensamientos": dict(sorted(self._pensamientos.items())),
+            "max_pensando": self._max_pensando_visto,
+            "max_en_vuelo": self._max_en_vuelo_visto,
+        }
 
     def _parches(self) -> list[dict[str, Any]]:
         """Cada parche con su tipo, su abundancia y si está activo (da de comer)."""

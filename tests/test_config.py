@@ -32,6 +32,7 @@ CLAVES = {
     "ticks_por_estacion",
     "umbral_agotamiento",
     "ticks_migracion",
+    "max_pensando",
 }
 
 
@@ -68,6 +69,7 @@ def test_los_defaults_son_los_documentados() -> None:
         "ticks_por_estacion": 0,
         "umbral_agotamiento": 0.25,
         "ticks_migracion": 3000,
+        "max_pensando": 4,
     }
     assert set(config.a_json()) == CLAVES
 

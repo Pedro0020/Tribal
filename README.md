@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.24-green)
+![Version](https://img.shields.io/badge/Version-0.1.25-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -73,13 +73,16 @@ necesita red ni modelo.
 `tribal/llm/` es la capa aislada que habla con Ollama. `cola.py` es la cola
 asíncrona: un hilo daemon (`tribal-llm`) consume una `queue.Queue` acotada,
 llama al cliente y deposita la respuesta en otra cola acotada. **El LLM nunca se
-llama desde el hilo del bucle**: el tick encola como mucho una petición por tick
-—solo si hay dilema real (sed y energía en conflicto, o salud crítica)— y
-recoge al final lo que haya llegado.
+llama desde el hilo del bucle**: el tick encola hasta `max_pensando` peticiones
+(4 por defecto, por saliencia) —solo si hay dilema real (sed y energía en
+conflicto, o salud crítica)— y recoge al final lo que haya llegado.
 
 El presupuesto son dos cosas: como mucho `--llm-max-en-vuelo` peticiones
 aceptadas sin respuesta (4 por defecto; si está lleno, el individuo sigue por
-instinto) y una sola inferencia a la vez, porque el hilo es único. Una decisión
+instinto) y una sola inferencia a la vez, porque el hilo es único. En modo
+síncrono la respuesta se resuelve dentro de `encolar`: nunca hay nada en vuelo,
+así que ese tope —y el campo `max_en_vuelo` del resumen— solo miden con la cola
+asíncrona. Una decisión
 vale una **ventana** de 180 ticks (~3 s a 60 fps): si llega más tarde se
 descarta en silencio y el individuo sigue por instinto. Una decisión vigente
 manda ese tick; si la acción elegida no se puede hacer, el instinto recupera el
@@ -110,6 +113,46 @@ del cierre—, así que `en_vuelo` queda a 0 y no hay hilos vivos. Si el LLM no
 responde —Ollama caído, timeout de 3 s, JSON inválido— no hay excepción: el
 fallo se cuenta en `fallos` y la tribu sigue por instinto indefinidamente. **No
 hay backoff**: el presupuesto de peticiones en vuelo es el único freno.
+
+### Saliencia y pensamiento selectivo (concepto §9b y §10b)
+
+**Divergencia no es saliencia.** `divergencia` (§9b) es temperamento heredado:
+cuánto se desvía alguien del grupo. La **saliencia** (§10b) es peso narrativo
+**ganado**: cuánto protagonismo ha acumulado por sus actos. Un conformista que
+guarda la tradición puede ser más saliente que un divergente cuyas ideas nunca
+cuajaron. El motor sube saliencia por hitos —ser el primero en un escalón de
+una rama (el primer fuego, la primera palabra, el primer líder), descubrir una
+combinación, crear la primera tradición, enseñar una habilidad, sacar a un
+herido del pozo o sobrevivir 600 ticks de crisis— y la deja decaer
+`0.999` por tick, con techo `SALIENCIA_MAX = 10`. Nunca se calcula desde el
+genoma, así que dos historias iguales dan la misma saliencia con cualquier
+divergencia (`tribal/agents/saliencia.py`).
+
+Cuando hay más dilemas que presupuesto, `_encolar_dilema` ordena a los
+individuos con dilema por `(-saliencia, id)` y encola hasta `max_pensando`
+(config, 4 por defecto) y hasta `max_en_vuelo`; los demás siguen por instinto y
+se reevalúan el tick siguiente. Así el LLM atiende primero a los protagonistas
+emergentes sin que nadie se congele ni el tick se bloquee.
+
+```bash
+uv run python -m tribal run --headless --json --llm stub --llm-sincrono --ticks 1200
+# ... "saliencia": {"top": [[5, 0.657], [2, 0.455], [8, 0.304]],
+#                   "pensamientos": {"2": 1, "3": 287, "5": 173, "9": 307, ...},
+#                   "max_pensando": 4, "max_en_vuelo": 0}, ...
+```
+
+El modo `--llm-sincrono` es el reproducible: misma semilla, mismo JSON. Con
+`--llm stub` **asíncrono** los contadores de `pensamientos`, `llm` y
+`max_en_vuelo` varían entre corridas porque el instante en que aterriza cada
+respuesta depende del reloj; el top de saliencia puede moverse con ellos. Sin
+`--llm-sincrono`, no compares números exactos.
+
+`resumen()["saliencia"]` publica el **top 3** de los vivos con saliencia
+positiva, las peticiones aceptadas por individuo (`pensamientos`) y los máximos
+observados de individuos que pensaron en un tick y de peticiones en vuelo (este
+último, solo con la cola asíncrona; en síncrono vale 0). El
+bloque sale también sin LLM —la saliencia se gana igual—, con `pensamientos`
+vacío; `sum(pensamientos) == llm.peticiones` siempre.
 
 El contrato sale de [`viabilidad-modelo.md`](vault/01_PROYECTO/viabilidad-modelo.md)
 y está implementado en `tribal/llm/candidatas.py` + `decision.py`: el modelo

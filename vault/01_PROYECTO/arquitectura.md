@@ -58,6 +58,15 @@ un orden de iteración estable (lista de individuos ordenada por `id`). Nada de
 `instinto.py` (política por defecto, sin LLM, concepto §10b nivel 1),
 `saliencia.py` (acumulación y decaimiento del peso narrativo).
 
+**Implementado en F2-004.** `saliencia.py` es la única fuente del peso
+narrativo: `SUBIDA` fija cuánto vale cada hito (primer nodo de una rama,
+combinación, tradición, enseñanza, rescate y crisis sobrevivida), `DECAIMIENTO`
+= 0.999 por tick y `SALIENCIA_MAX` = 10. `Individuo.saliencia` nace a 0, no se
+hereda y no se calcula desde el genoma: sube cuando el motor llama
+`saliencia.subir(individuo, motivo)` en el punto del hito y baja un tick de
+olvido por paso. Es, por tanto, independiente de `divergencia` (§9b): un
+conformista y un divergente con la misma historia acaban con el mismo peso.
+
 Un individuo tiene siempre una **intención** (`Instinto | DecisionLLM`). La
 intención LLM, si llega, tiene prioridad durante N ticks; si caduca, se vuelve
 al instinto. Esto es lo que impide que un agente se congele esperando a un
@@ -105,6 +114,15 @@ modelo que puede tardar un segundo.
   hay hueco en la cola; a igualdad de dilema, gana más saliencia.
 - `aplicar.py`: convierte el JSON validado en una `DecisionLLM` aplicable y
   descarta lo que el motor considere implausible.
+
+**Selección por saliencia implementada en F2-004.** No hay módulo aparte: la
+selección vive en `Simulacion._encolar_dilema`. Cada tick reúne a los
+individuos con dilema, los ordena por `(-saliencia, id)` y encola hasta
+`SimConfig.max_pensando` (4 por defecto) y hasta `max_en_vuelo` de la cola; el
+resto sigue por instinto y se reevalúa al tick siguiente. `resumen()` publica
+`saliencia: {top, pensamientos, max_pensando, max_en_vuelo}` —el top 3 de los
+vivos, las peticiones aceptadas por individuo y los máximos observados del
+presupuesto—; sin capa LLM el bloque sale igual con `pensamientos` vacío.
 
 **Contrato implementado en F2-001.** El cliente no pregunta «qué hacer»: recibe
 un estado serializable y **2–4 acciones candidatas**, y el modelo elige una y la

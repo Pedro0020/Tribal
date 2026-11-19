@@ -38,6 +38,7 @@ CAMPOS_ENTEROS = (
     "sequia_ticks",
     "ticks_por_estacion",
     "ticks_migracion",
+    "max_pensando",
 )
 #: Campos que el motor multiplica: número real, nunca una cadena.
 CAMPOS_TASA = ("tasa_sed", "tasa_energia", "tasa_salud")
@@ -81,6 +82,10 @@ class SimConfig:
     ticks_por_estacion: int = 0
     umbral_agotamiento: float = 0.25
     ticks_migracion: int = 3000
+    #: Modelo de pensamiento por saliencia (§10b): cuántos individuos con
+    #: dilema pueden lanzar una petición LLM en el mismo tick. El instinto
+    #: cubre a los demás; el presupuesto en vuelo de la cola es otro tope.
+    max_pensando: int = 4
 
     @classmethod
     def desde_json(cls, path: str | Path) -> SimConfig:
@@ -146,6 +151,10 @@ def validar(config: SimConfig, origen: str = "config") -> None:
     if config.ticks_migracion <= 0:
         raise ValueError(
             f"{origen}: ticks_migracion debe ser mayor que 0 (recibido {config.ticks_migracion})"
+        )
+    if config.max_pensando <= 0:
+        raise ValueError(
+            f"{origen}: max_pensando debe ser mayor que 0 (recibido {config.max_pensando})"
         )
     if not isinstance(config.umbral_agotamiento, (int, float)) or isinstance(
         config.umbral_agotamiento, bool

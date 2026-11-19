@@ -331,10 +331,13 @@
         "uv run python -m tribal run --headless --json --llm stub reporta top de saliencia y pensamientos por individuo",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F2-003"
-      ]
+      ],
+      "started": "2026-11-19",
+      "review_rounds": 1,
+      "closed": "2026-11-19"
     },
     {
       "id": "F2-005",

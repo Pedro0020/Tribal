@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: saliencia y pensamiento selectivo (F2-004)
 - feat: embeddings en CPU y recuperacion de memoria (F2-003)
 - feat: contrato de decision entre candidatas viables (F2-CONTRATO)
 - feat: cola asincrona de inferencia sin frenar el bucle (F2-002)

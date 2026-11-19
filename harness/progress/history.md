@@ -1155,3 +1155,49 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 66 so
 ```
 
 </details>
+
+## F2-004 — Saliencia y pensamiento selectivo
+
+- **Cerrada:** 2026-11-19
+- **Verificación:** ./init.sh en verde · 351 passed in 166.74s (0:02:46)
+- **Cambios:** tribal/agents/saliencia.py (nuevo: SUBIDA por hito, decaimiento por tick, tope); tribal/core/modelos.py (Individuo.saliencia); tribal/sim.py (hitos conectados, decaimiento, seleccion por saliencia con topes, bloque saliencia en el resumen); tribal/config.py (max_pensando); tribal/cli.py; tests/test_saliencia.py (nuevo, 16 casos) y test_cli_run.py; README (saliencia vs divergencia y ejemplo sincrono); arquitectura.md §2.2/§2.3
+- **Decisiones:** La saliencia es peso narrativo ganado, no temperamento: sube por hitos reales conectados en el motor (primer nodo de cada rama, combinacion, tradicion, ensenar, cuidar, crisis sostenida) y decae 0.999 por tick hasta un tope; no lee divergencia ni genoma. Los hitos se cubrieron con tests que mueren si se desconectan (el reviewer tumbo tres mutaciones que antes sobrevivian). La seleccion ordena por (-saliencia, id) y respeta max_pensando y max_en_vuelo: los no elegidos siguen por instinto, que es el gradiente de §10b. En sincrono el resumen es reproducible; en asincrono varia por el tick de llegada y el README lo dice.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 351 passed
+
+$ saliencia
+SUBIDA por hito | DECAIMIENTO 0.999/tick | SALIENCIA_MAX 10 ; nace a 0 y no se calcula desde el genoma
+hitos conectados en el motor: primer nodo de rama, combinacion, tradicion, ensenar, cuidar, crisis 600
+decay motor tras 50 steps = 0.999**50 ; independencia: div 0.95 vs 0.05 con la misma historia -> mismo valor
+
+$ seleccion por saliencia (aislado)
+ids 1/2/3 con saliencia en el 3 y max_pensando=1 -> 40 peticiones al 3 y 0 al 1
+sin el sort, el test FALLA (KeyError 3: penso el id 1)
+
+$ topes
+max_pensando=2, 40 ticks -> 80 peticiones, maximo 2 pensando ; max_en_vuelo 1-2
+los no elegidos siguen por instinto
+
+$ run --llm stub --llm-sincrono --ticks 1200 (dos corridas byte-identicas)
+"saliencia": {"top": [[5,0.657],[2,0.455],[8,0.304]],
+              "pensamientos": {"2":1,"3":287,"5":173,"6":1,"9":307,"10":2,"11":360,"12":298,"13":4},
+              "max_pensando": 4, "max_en_vuelo": 0}
+  coincide con el README ; el asincrono varia (130 vs 112 peticiones) y esta avisado
+  sin LLM: bloque presente y pensamientos {}
+
+Mutaciones verificadas por el reviewer (hash restaurado):
+  A quitar el sort -> FALLA | B quitar decaer en step -> FALLA | C quitar hito de crisis -> FALLA
+
+$ uv run pytest -q
+907 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 55 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 66 source files
+```
+
+</details>

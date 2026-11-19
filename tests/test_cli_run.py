@@ -68,6 +68,7 @@ CLAVES = {
     "nodos_por_origen",
     "nivel_max",
     "memoria",
+    "saliencia",
     "config",
 }
 
