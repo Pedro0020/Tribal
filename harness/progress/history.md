@@ -1736,3 +1736,43 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 89 so
 ```
 
 </details>
+
+## ART-001 — Versionar el kit de arte 16 px y enlazarlo en el README
+
+- **Cerrada:** 2026-11-20
+- **Verificación:** ./init.sh en verde · 490 passed in 326.97s (0:05:26)
+- **Cambios:** README.md (fila de docs/art/README.md en la tabla de Documentacion, una sola vez); docs/art/README.md (§10: el kit ya esta versionado, enlazado y excluido de .git/info/exclude); harness/progress/implementer-ART-001.md
+- **Decisiones:** El kit de arte ya se habia commiteado en 8395353 y sacado de .git/info/exclude; esta feature solo lo enlaza y deja constancia. El criterio 'grep de pixl_ = 0' es literalmente insatisfacible porque la cadena aparece en el propio texto del criterio y en placeholders: la evidencia se da con el patron de clave real (pixl_ + 16 caracteres) sobre ficheros versionados, que da 0, y se listan las 6 apariciones explicadas. No se toco producto ni arte: TILE_PX sigue en 8 y el kit no se cablea. Deuda: el criterio deberia reformularse con harness edit cuando la feature este cerrada (edit solo admite pending).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 490 passed
+
+$ docs/art versionado
+git ls-files docs/art -> 75 ficheros ; HEAD tiene los mismos 75 ; commit 8395353 es ancestro
+.git/info/exclude sin entradas activas
+
+$ README
+docs/art/README.md aparece UNA vez (L21, ultima fila de la tabla Documentacion), ruta relativa correcta
+re-ejecutar enlazar_readme.py -> "la fila ya esta, nada que hacer" ; README +1 linea
+
+$ sin secretos (criterio 3, con la precision necesaria)
+git grep -E "pixl_[A-Za-z0-9_-]{16,}" sobre ficheros versionados -> 0
+el literal pixl_ aparece 6 veces en 5 ficheros: prosa/placeholder de docs/art/README, texto del propio
+criterio en featureslist/current y avisos historicos redactados de F2-004
+secrets scan: 13 hallazgos, todos fixtures preexistentes de agents/tests/
+
+$ producto intacto: TILE_PX = 8 ; cero .py de producto en el diff ; arte sin tocar
+$ docs/art/README §10 corregido (ya no dice que no existe para git)
+
+$ uv run pytest -q
+1046 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 90 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 90 source files
+```
+
+</details>

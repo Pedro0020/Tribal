@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- docs: versiona y enlaza el kit de pixel art (ART-001)
 - feat: nuevo mundo con archivo y confirmacion (RESET-001)
 - feat: guardar y reanudar con estado completo (SAVE-001)
 - feat: endurecimiento final y README reproducible (HARD-3)

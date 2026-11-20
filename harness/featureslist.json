@@ -827,10 +827,13 @@
         "Sin secretos: grep recursivo de pixl_ en el arbol de trabajo devuelve 0 ficheros",
         "./init.sh en verde"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F2-005"
-      ]
+      ],
+      "started": "2026-11-20",
+      "review_rounds": 0,
+      "closed": "2026-11-20"
     },
     {
       "id": "HARNESS-REMOVE",

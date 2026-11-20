@@ -474,35 +474,25 @@ El spritesheet es una fila de 8 celdas de 48×48 en este orden:
 
 ---
 
-## 10. Engancharlo al repo (pendiente, a propósito)
+## 10. Enganchado al repo (hecho en ART-001)
 
-Tal como está, este kit **no existe para git**: al cerrar F2-004 se añadió
-`docs/art/` a `.git/info/exclude`, así que ni se versiona ni aparece en
-`git status`, y un `git add -A` no lo arrastra. El README principal tampoco lo
-enlaza. Eso es deliberado —había trabajo en curso— pero significa que quien
-clone el repo no verá nada de esto.
+Este kit **ya existe para git**: se versionó entero en el commit `8395353`
+(`chore: kit de pixel art y hojas de sprites`, 75 ficheros) y se retiró
+`docs/art/` de `.git/info/exclude`, así que aparece en `git status` y un
+`git add -A` lo arrastra. El README principal lo enlaza una sola vez en la tabla
+de *Documentación*, con el script incluido (idempotente, respeta CRLF y UTF-8
+sin BOM):
 
-Faltan tres pasos, en este orden:
+```bash
+uv run python docs/art/enlazar_readme.py
+```
 
-1. **Decidir si entra al repo.** Si sí:
-   ```bash
-   git add -f docs/art          # -f porque .git/info/exclude lo tapa
-   ```
-2. **Enlazarlo desde el README**, con el script incluido (idempotente, respeta
-   CRLF y UTF-8 sin BOM):
-   ```bash
-   uv run python docs/art/enlazar_readme.py
-   ```
-   Añade una fila a la tabla de *Documentación*:
-   `| docs/art/README.md | Kit de arte 16 px: paleta cerrada, personajes, tilesets y el mapa |`
-3. **Que el arnés lo sepa** (opcional, pero coherente con `AGENTS.md`: todo
-   trabajo se cierra con feature, evidencia e historial). Nunca editando el
-   JSON a mano:
-   ```bash
-   uv run python -m agents --json run harness add --id ART-001 \
-     --title "Kit de arte 16 px con paleta cerrada" \
-     --criteria "0 pixeles fuera de paleta; mockup a 16 y 8 px; regenerable con make_sheets.py"
-   ```
+La fila que añade es:
+
+`| docs/art/README.md | Kit de arte 16 px: paleta cerrada, personajes, tilesets y el mapa |`
+
+El trabajo lo cierra la feature **ART-001** del backlog, con evidencia e
+historial; el JSON no se edita a mano.
 
 La decisión **16 vs 8 px** no va aquí: es arquitectura, y su sitio es
 `vault/01_PROYECTO/arquitectura.md`, escrito por la feature de diseño
