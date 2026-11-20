@@ -139,7 +139,7 @@ if [ -n "$PY" ] && [ -f "harness/featureslist.json" ]; then
 import json
 import sys
 
-VALID_STATUS = ("pending", "in_progress", "done", "blocked")
+VALID_STATUS = ("pending", "in_progress", "done", "blocked", "discarded")
 REQUIRED = ("id", "title", "description", "acceptance_criteria", "status")
 
 try:
@@ -198,8 +198,9 @@ running = [f["id"] for f in features if f["status"] == "in_progress"]
 if len(running) > 1:
     print("warn\t%d features en in_progress a la vez: %s" % (len(running), ", ".join(running)))
 
-print("ok\t%d features · %d pending · %d in_progress · %d done · %d blocked" % (
-    len(features), counts["pending"], counts["in_progress"], counts["done"], counts["blocked"]))
+print("ok\t%d features · %d pending · %d in_progress · %d done · %d blocked · %d discarded" % (
+    len(features), counts["pending"], counts["in_progress"], counts["done"], counts["blocked"],
+    counts["discarded"]))
 
 nxt = next((f for f in features if f["status"] == "in_progress"), None)
 nxt = nxt or next((f for f in features if f["status"] == "pending"), None)

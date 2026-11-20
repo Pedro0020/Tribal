@@ -116,7 +116,7 @@ uv run python -m agents --json run git commit_feature --id <ID> --title "<t>"
 | `init.sh` | La puerta: decide si se puede trabajar. Exit != 0 → parar |
 | `harness/featureslist.json` | Backlog: qué hay que hacer, con criterios de aceptación |
 | `harness/progress/current.md` | Estado vivo de la feature en curso |
-| `harness/progress/history.md` | Append-only: lo cerrado y con qué evidencia |
+| `harness/progress/history.md` | Append-only: lo cerrado y con qué evidencia, y lo descartado con su motivo |
 | `harness/progress/<agente>-<ID>.md` | Resultado de cada subagente |
 | `.opencode/agents/*.md` | Definición de cada agente del arnés |
 
@@ -139,6 +139,9 @@ uv run python -m agents --json run harness start --id FEAT-001
 uv run python -m agents --json run harness record --agent explorer --id FEAT-001 --content "..."
 uv run python -m agents --json run harness finish --id FEAT-001 --evidence "$(make test 2>&1 | tail -5)"
 uv run python -m agents --json run harness block --id FEAT-001 --reason "falta decidir el formato de entrada"
+uv run python -m agents --json run harness discard --id FEAT-002 --reason "ya no se quiere"
+uv run python -m agents --json run harness revive --id FEAT-002
+uv run python -m agents --json run harness remove --id FEAT-003 --dry-run true   # destructiva: sin --yes no borra
 uv run python -m agents --json run harness add --id API-002 --title "..." --criteria "a;b"
 uv run python -m agents --json run git commit_feature --id FEAT-001 --title "..." --dry-run true
 ```

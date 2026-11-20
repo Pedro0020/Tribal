@@ -17,7 +17,7 @@ vez de releer el repositorio entero — menos tokens, menos degradación.
 | Fichero | Se escribe con | Qué contiene |
 |---------|----------------|--------------|
 | `current.md` | `harness start` / `harness finish` | Feature en curso, criterios, bitácora y bloqueos |
-| `history.md` | `harness finish` | Append-only: features cerradas con su evidencia |
+| `history.md` | `harness finish` / `harness discard` | Append-only: features cerradas con su evidencia y descartadas con su motivo |
 | `<agente>-<FEATURE-ID>.md` | `harness record` | Resultado de una ejecución concreta |
 
 ```bash
@@ -48,7 +48,8 @@ La cabecera (fecha y veredicto) la pone `harness record`; tú aportas el cuerpo:
    es ahorrar contexto, no fabricar más.
 4. **`current.md` se vacía al cerrar la feature**, y su resumen se añade a
    `history.md`. Los ficheros de subagente se pueden borrar cuando la feature
-   está en `history.md`.
+   está en `history.md` — y se **conservan** si la feature se borra del backlog
+   con `harness remove`: son la memoria de lo que se llegó a investigar.
 
 ## Las otras dos memorias
 

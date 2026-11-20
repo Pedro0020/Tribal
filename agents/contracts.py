@@ -439,6 +439,10 @@ CONTRACTS: dict[str, Contract] = {
         role="Dueño mecánico del arnés: mantiene el backlog y el progreso, y ejecuta la puerta init.sh.",
         can=(
             "leer y actualizar harness/featureslist.json (abrir, cerrar, bloquear y añadir features)",
+            "descartar una feature con motivo y fecha (discard) y devolverla a pending (revive), "
+            "sin borrar su rastro",
+            "borrar del backlog una feature pending creada por error (remove), conservando sus "
+            "informes de harness/progress/",
             "corregir título, descripción, criterios y dependencias de una feature pending (edit), "
             "devolviendo el diff antes/después en data",
             "escribir harness/progress/current.md y añadir entradas a harness/progress/history.md",
@@ -452,10 +456,13 @@ CONTRACTS: dict[str, Contract] = {
             "escribir código del producto → 'refactor' y el implementer",
             "ejecutar los tests por su cuenta → los ejecuta init.sh, o el agente 'test'",
             "cerrar una feature sin evidencia → devuelve needs, nunca la da por buena",
+            "borrar una feature que no está pending o de la que otra depende → discard conserva "
+            "el motivo; el grafo se corrige con edit",
         ),
         needs=("el id de la feature", "la evidencia real de verificación para cerrarla"),
         owns=("harness/featureslist.json", "harness/progress/", "harness/memory.md"),
         collaborates=("plan", "test", "review", "memory"),
+        destructive=("remove",),
     ),
 }
 

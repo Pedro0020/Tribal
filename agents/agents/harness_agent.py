@@ -24,7 +24,7 @@ from agents.core.base_agent import AgentResult, BaseAgent
 from agents.core.registry import register_agent
 from agents.tools.process_tool import run_command
 
-VALID_STATUS = ("pending", "in_progress", "done", "blocked")
+VALID_STATUS = ("pending", "in_progress", "done", "blocked", "discarded")
 REQUIRED_FIELDS = ("id", "title", "description", "acceptance_criteria", "status")
 
 
@@ -147,6 +147,9 @@ class HarnessAgent(BaseAgent):
             "start": self.start,
             "finish": self.finish,
             "block": self.block,
+            "discard": self.discard,
+            "revive": self.revive,
+            "remove": self.remove,
             "record": self.record,
             "gate": self.gate,
             "add": self.add,
@@ -288,11 +291,12 @@ class HarnessAgent(BaseAgent):
             message=(
                 f"{len(features)} features · {counts['pending']} pending · "
                 f"{counts['in_progress']} in_progress · {counts['done']} done · "
-                f"{counts['blocked']} blocked"
+                f"{counts['blocked']} blocked · {counts['discarded']} discarded"
             ),
             data={
                 "counts": counts,
                 "in_progress": running,
+                "discarded": [f["id"] for f in features if f.get("status") == "discarded"],
                 "eligible": [f["id"] for f in eligible],
                 "features": [
                     {"id": f.get("id"), "title": f.get("title"), "status": f.get("status")}
@@ -395,6 +399,17 @@ class HarnessAgent(BaseAgent):
         feat = self._find(doc, id)
         if feat is None:
             return self._fail("start", f"No existe la feature '{id}' en el backlog.")
+        if feat.get("status") == "discarded":
+            return self._fail(
+                "start",
+                f"'{id}' está descartada: no se abre lo que no se va a hacer. "
+                f"Revívela antes con `harness revive --id {id}`.",
+                data={
+                    "id": id,
+                    "status": "discarded",
+                    "discarded_reason": feat.get("discarded_reason"),
+                },
+            )
 
         running = [f["id"] for f in doc["features"] if f.get("status") == "in_progress"]
         if running and running != [id]:
@@ -509,6 +524,13 @@ class HarnessAgent(BaseAgent):
             return self._fail("finish", f"No existe la feature '{id}' en el backlog.")
         if feat.get("status") == "done":
             return self._fail("finish", f"'{id}' ya está en done.")
+        if feat.get("status") == "discarded":
+            return self._fail(
+                "finish",
+                f"'{id}' está descartada: no se cierra lo que no se va a hacer. "
+                f"Revívela antes con `harness revive --id {id}`.",
+                data={"id": id, "status": "discarded"},
+            )
 
         gate = self.gate()
         if not gate.success:
@@ -578,6 +600,13 @@ class HarnessAgent(BaseAgent):
         feat = self._find(doc, id)
         if feat is None:
             return self._fail("block", f"No existe la feature '{id}' en el backlog.")
+        if feat.get("status") == "discarded":
+            return self._fail(
+                "block",
+                f"'{id}' está descartada: no se bloquea lo que no se va a hacer. "
+                f"Revívela antes con `harness revive --id {id}`.",
+                data={"id": id, "status": "discarded"},
+            )
 
         feat["status"] = "blocked"
         feat["blocked_reason"] = reason
@@ -588,6 +617,196 @@ class HarnessAgent(BaseAgent):
             action="block",
             message=f"{id} bloqueada: {reason}",
             data={"id": id, "reason": reason},
+        )
+
+    def discard(self, *, id: str = "", reason: str = "") -> AgentResult:
+        """
+        Abandona una feature sin borrarla: estado `discarded`, motivo y fecha.
+
+        Es la diferencia entre «todavía no se puede» (`blocked`, que es una
+        alarma) y «ya no se quiere» (`discarded`, que es una decisión). El
+        rastro queda en el backlog y en `history.md`; lo que no se hace es
+        fingir que la feature nunca existió.
+        """
+        missing = []
+        if not id:
+            missing.append("¿Qué feature descarto? (id de featureslist.json)")
+        if not reason:
+            missing.append("¿Por qué se descarta? Sin motivo, el descarte no deja rastro.")
+        if missing:
+            return self._fail("discard", "Faltan datos para descartar.", needs=missing)
+
+        doc, error = self._load()
+        if doc is None:
+            return self._fail("discard", error)
+
+        feat = self._find(doc, id)
+        if feat is None:
+            return self._fail("discard", f"No existe la feature '{id}' en el backlog.")
+
+        status = feat.get("status")
+        if status == "discarded":
+            return self._fail("discard", f"'{id}' ya está descartada.")
+        if status in ("done", "in_progress"):
+            return self._fail(
+                "discard",
+                f"'{id}' está {status}: lo cerrado es histórico y lo abierto se cierra o se "
+                f"bloquea antes. Descarta solo features pending o blocked.",
+                data={"id": id, "status": status},
+            )
+
+        hoy = date.today().isoformat()
+        dependientes = [
+            f["id"]
+            for f in doc["features"]
+            if isinstance(f, dict) and f.get("id") != id and id in f.get("depends_on", [])
+        ]
+        feat["status"] = "discarded"
+        feat["discarded_reason"] = reason
+        feat["discarded_on"] = hoy
+        # Un motivo solo: si venía bloqueada, el descarte lo sustituye. Dos
+        # razones contradictorias en el mismo JSON no explican nada.
+        feat.pop("blocked_reason", None)
+        self._save(doc)
+
+        entry = f"- **Descartada:** {id} — {feat.get('title', '')} · {hoy} · motivo: {reason}\n"
+        self._progress_dir.mkdir(parents=True, exist_ok=True)
+        with self._history_file.open("a", encoding="utf-8") as fh:
+            fh.write(entry)
+
+        warnings = (
+            [
+                f"De '{id}' depende {', '.join(dependientes)}: mientras siga descartada "
+                f"no volverán a ser elegibles. Revívela si las necesitas."
+            ]
+            if dependientes
+            else []
+        )
+        return AgentResult(
+            success=True,
+            agent=self.name,
+            action="discard",
+            message=f"{id} descartada: {reason}",
+            warnings=warnings,
+            data={
+                "id": id,
+                "reason": reason,
+                "discarded_on": hoy,
+                "dependents": dependientes,
+            },
+        )
+
+    def revive(self, *, id: str = "") -> AgentResult:
+        """Devuelve una feature `discarded` a `pending`, borrando el rastro del descarte."""
+        if not id:
+            return self._fail(
+                "revive",
+                "Falta el id de la feature.",
+                needs=["¿Qué feature revivo? Usa su id de featureslist.json."],
+            )
+
+        doc, error = self._load()
+        if doc is None:
+            return self._fail("revive", error)
+
+        feat = self._find(doc, id)
+        if feat is None:
+            return self._fail("revive", f"No existe la feature '{id}' en el backlog.")
+        if feat.get("status") != "discarded":
+            return self._fail(
+                "revive",
+                f"'{id}' está {feat.get('status')}: solo se revive una feature descartada.",
+                data={"id": id, "status": feat.get("status")},
+            )
+
+        feat["status"] = "pending"
+        for campo in ("discarded_reason", "discarded_on", "blocked_reason", "started"):
+            feat.pop(campo, None)
+        feat["review_rounds"] = 0
+        self._save(doc)
+
+        return AgentResult(
+            success=True,
+            agent=self.name,
+            action="revive",
+            message=f"{id} revivida: vuelve a pending.",
+            data={"id": id, "status": "pending"},
+        )
+
+    def remove(self, *, id: str = "", dry_run: bool = False) -> AgentResult:
+        """
+        Borra del backlog una feature `pending` creada por error.
+
+        Es la única operación que destruye una entrada, así que el contrato la
+        marca como destructiva (la puerta pide `--yes`) y aquí se limita a lo
+        que no deja un hueco: solo `pending`, y nunca si otra feature la lista
+        en `depends_on`. Los informes de `harness/progress/<agente>-<ID>.md` se
+        conservan: son memoria de lo que se investigó, no parte del backlog.
+        """
+        if not id:
+            return self._fail(
+                "remove",
+                "Falta el id de la feature.",
+                needs=["¿Qué feature borro? Usa su id de featureslist.json."],
+            )
+
+        doc, error = self._load()
+        if doc is None:
+            return self._fail("remove", error)
+
+        feat = self._find(doc, id)
+        if feat is None:
+            return self._fail("remove", f"No existe la feature '{id}' en el backlog.")
+
+        status = feat.get("status")
+        if status != "pending":
+            return self._fail(
+                "remove",
+                f"'{id}' está {status}: solo se borran features pending. "
+                f"Una bloqueada o descartada se conserva con su motivo; una cerrada es histórico.",
+                data={"id": id, "status": status},
+            )
+
+        dependents = [
+            f["id"]
+            for f in doc["features"]
+            if isinstance(f, dict) and f.get("id") != id and id in f.get("depends_on", [])
+        ]
+        if dependents:
+            return self._fail(
+                "remove",
+                f"No se borra '{id}': depende de ella {', '.join(dependents)}. "
+                f"Reapunta esas dependencias con `harness edit` antes de borrar.",
+                data={"id": id, "dependents": dependents},
+            )
+
+        if dry_run:
+            return AgentResult(
+                success=True,
+                agent=self.name,
+                action="remove",
+                message=(
+                    f"[dry-run] '{id}' se borraría del backlog "
+                    f"({len(doc['features']) - 1} features quedarían). No se ha escrito nada."
+                ),
+                data={"id": id, "title": feat.get("title", ""), "dry_run": True},
+            )
+
+        doc["features"] = [
+            f for f in doc["features"] if not (isinstance(f, dict) and f.get("id") == id)
+        ]
+        self._save(doc)
+
+        reports = sorted(p.name for p in self._progress_dir.glob(f"*-{id}.md"))
+        return AgentResult(
+            success=True,
+            agent=self.name,
+            action="remove",
+            message=(
+                f"'{id}' borrada del backlog."
+                + (f" Se conservan sus informes: {', '.join(reports)}." if reports else "")
+            ),
+            data={"id": id, "title": feat.get("title", ""), "reports_kept": reports},
         )
 
     def record(

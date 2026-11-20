@@ -34,6 +34,7 @@ Después, uno por uno:
 |----------|------------------|
 | ¿Se cumple cada criterio de aceptación? | Ejecutando el comando que lo prueba, no leyéndolo |
 | ¿Hay test para el comportamiento nuevo? | `tests/` contiene un test que falla si se revierte el cambio |
+| ¿El test falla por el motivo que dice? | Muta **cada guardia nueva por separado** (ponla a `False`) y comprueba que cae el test que la cubre: un test puede pasar porque otra guardia rechaza antes |
 | ¿Respeta la arquitectura de `AGENTS.md`? | El código vive donde le toca, un dueño por recurso |
 | ¿Se ha tocado algo fuera del alcance? | El diff no incluye reformateos ni refactors no pedidos |
 | ¿Hay abstracción anticipada? | Nada extraído a interfaz con una sola implementación real |

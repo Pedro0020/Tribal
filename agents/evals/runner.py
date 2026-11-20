@@ -148,7 +148,7 @@ def _contracts() -> list[dict]:
 
 
 HARNESS_AGENTS = ("lider", "implementer", "reviewer", "explorer")
-HARNESS_STATUS = ("pending", "in_progress", "done", "blocked")
+HARNESS_STATUS = ("pending", "in_progress", "done", "blocked", "discarded")
 HARNESS_REQUIRED = ("id", "title", "description", "acceptance_criteria", "status")
 
 

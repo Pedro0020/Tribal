@@ -1815,3 +1815,50 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 91 so
 ```
 
 </details>
+
+## HARNESS-REMOVE — Descartar features con estado propio y borrar solo las creadas por error
+
+- **Cerrada:** 2026-11-20
+- **Verificación:** ./init.sh en verde · 498 passed in 319.63s (0:05:19)
+- **Cambios:** agents/agents/harness_agent.py (estado discarded; acciones discard/revive/remove; status/next/start/finish/block coherentes); agents/contracts.py (remove destructiva); agents/evals/runner.py (HARNESS_STATUS); init.sh (validador acepta discarded); agents/prompts/harness_agent.md; .opencode/agents/reviewer.md y .claude/agents/reviewer.md (regla de mutacion de guardias); agents/tests/test_harness_discard.py (nuevo, 26 casos); AGENTS.md; harness/progress/README.md
+- **Decisiones:** discarded es un estado con rastro: motivo, fecha y linea en history.md, y no entra en next ni en elegibles. revive lo devuelve a pending; start, finish y block se niegan mientras siga descartada. remove es la excepcion destructiva y solo borra pending: se niega si hay dependientes (nombrandolos), pide confirmacion sin --yes y no escribe con --dry-run. Los informes de progress/ se conservan al borrar una feature: son la memoria de por que existio. block sobre discarded y discard de blocked ahora limpian el motivo anterior. El validador de init.sh y el runner de evals conocen el estado, con control negativo para un estado inventado.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 498 passed
+backlog: 54 features - 8 pending - 1 in_progress - 38 done - 7 blocked - 0 discarded
+
+$ harness discard --id TMP --reason "..."
+status discarded + discarded_reason + discarded_on ; linea en history.md con id, titulo y motivo
+sin motivo -> needs y bytes identicos ; fuera de next y de elegibles ; contador propio en status
+discard de una blocked limpia blocked_reason y avisa dependientes (sin impedirlo)
+
+$ harness revive --id TMP -> pending, limpia rastro y review_rounds
+$ start/finish/block rechazan una discarded con mensaje ("Revivela antes")
+
+$ harness remove
+solo pending: done/in_progress/blocked/discarded rechazadas (parametrizado sin dependientes)
+si otra la lista en depends_on -> rechazo nombrando dependientes
+destructiva: sin --yes -> needs + JSON intacto ; --dry-run true -> SHA identico ;
+--yes borra solo esa y conserva sus informes de progress/
+
+$ init.sh y evals aceptan discarded
+arbol temporal: 1 discarded -> exit 0 ; status inventado -> fail (control negativo)
+
+$ mutaciones cazadas (12): remove status, finish/block discarded, discard blocked, history,
+dependientes, dry_run, start discarded, revive limpio, motivo obligatorio, VALID_STATUS...
+baseline 26 passed, restaurado byte a byte
+
+$ agents/board.py y tribal-board.cmd quedan fuera (untracked ajenos, excluidos localmente)
+
+$ uv run pytest -q
+1080 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 91 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 91 source files
+```
+
+</details>

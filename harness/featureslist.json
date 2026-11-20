@@ -850,10 +850,13 @@
         "tests: descartar, revive, borrar una pending sin tocar el resto del backlog y rechazo de done e in_progress",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "HARNESS-EDIT"
-      ]
+      ],
+      "started": "2026-11-20",
+      "review_rounds": 1,
+      "closed": "2026-11-20"
     },
     {
       "id": "MEDIR-LLM",

@@ -13,6 +13,9 @@ Ejecuta la parte mecánica del arnés. No decide nada: los agentes markdown
 | `gate [--quick true]` | Ejecuta `./init.sh` y devuelve el veredicto estructurado |
 | `finish --id <ID> --evidence "<salida real>"` | Cierra la feature y escribe el histórico |
 | `block --id <ID> --reason "<motivo>"` | Marca bloqueada |
+| `discard --id <ID> --reason "<motivo>"` | Abandona una feature pending/blocked: `discarded` con motivo, fecha y línea en el histórico |
+| `revive --id <ID>` | Devuelve una feature descartada a `pending` |
+| `remove --id <ID> [--dry-run true]` | Borra una feature `pending` del backlog. Destructiva: sin `--yes` no se ejecuta |
 | `record --agent <a> --id <ID> --content "<informe>"` o `--content-file <ruta>` | Guarda `progress/<a>-<ID>.md` (el fichero, UTF-8, evita los truncados de PowerShell) |
 | `add --id <ID> --title "<t>" --criteria "a;b;c"` | Añade feature al backlog |
 | `edit --id <ID> [--title "<t>"] [--description "<d>"] [--criteria "a;b"] [--depends_on "A;B"]` | Corrige una feature `pending` sin tocar el JSON; `--depends_on ""` limpia las dependencias |
@@ -52,6 +55,23 @@ o `--criteria` sin valor llegan como `True` y `edit` **rechaza** con `needs`,
 sin escribir nada. Escribir `"title": true` en el backlog lo corrompe en
 silencio, y el arnés existe justo para que un flag mal escrito no lo haga.
 
+## Descartar no es borrar
+
+`blocked` mezcla dos cosas que no son la misma: «todavía no se puede» y «ya no
+se quiere». Con cuatro bloqueadas nadie sabe cuál es la alarma. `discard` es el
+segundo caso: deja `status=discarded`, `discarded_reason` y `discarded_on`, y
+**escribe una línea en `harness/progress/history.md`** con id, título y motivo.
+La feature sale de `next` y de las elegibles, pero no del backlog: el motivo
+sigue ahí para quien pregunte después por qué no se hizo.
+
+`revive` la devuelve a `pending` y limpia el rastro del descarte; mientras siga
+descartada, `start` la rechaza. `remove` es otra cosa y solo para features
+`pending` creadas por error: borra la entrada del JSON, se niega si otra
+feature la lista en `depends_on` (nombrando a los dependientes) y **conserva**
+los informes `<agente>-<ID>.md` de `harness/progress/`. Sin `--yes` la puerta de
+permisos no la ejecuta; con `--dry-run true` enseña qué borraría sin escribir
+nada.
+
 ## Lo que rechaza
 
 - **`finish` sin `./init.sh` en verde** → `success=false`. La regla del arnés es
@@ -66,6 +86,15 @@ silencio, y el arnés existe justo para que un flag mal escrito no lo haga.
   el grafo queda como estaba.
 - **`edit` intentando cambiar `status` o `blocked_reason`** → esos los cambian
   `start`, `block` y `finish`, no una edición de texto.
+- **`discard` sin motivo, de una `done` o de una `in_progress`** → el descarte
+  deja rastro y no tira lo cerrado ni lo abierto. De una `blocked` sí: limpia
+  `blocked_reason` (un motivo, no dos) y avisa con los dependientes en
+  `warnings`/`data`, sin impedir el descarte.
+- **`start`, `block` o `finish` de una feature `discarded`** → primero `revive`.
+- **`remove` de algo que no está `pending`** → bloqueadas y descartadas se
+  conservan con su motivo; una cerrada es histórico.
+- **`remove` de una feature que otro `depends_on` lista** → `success=false` con
+  los dependientes en `data`; se reapuntan con `edit`.
 - **`edit --title`, `--description` o `--criteria` sin valor** (llegan como
   `True`) → `needs` y el backlog intacto: un flag olvidado no es un texto.
 - **`edit --criteria ";"`** → lista vacía tras el split; una feature sin
@@ -90,6 +119,9 @@ Ver el ciclo completo: `skill harness_workflow`.
 | `run harness start` | `--id`, `--owner` |
 | `run harness finish` | `--id`, `--evidence`, `--changes`, `--decisions`, `--pending` |
 | `run harness block` | `--id`, `--reason` |
+| `run harness discard` | `--id`, `--reason` |
+| `run harness revive` | `--id` |
+| `run harness remove` ⚠️ pide confirmación | `--id`, `--dry_run` |
 | `run harness record` | `--agent`, `--id`, `--content`, `--content_file`, `--verdict` |
 | `run harness gate` | `--quick` |
 | `run harness add` | `--id`, `--title`, `--description`, `--criteria`, `--depends_on` |
@@ -99,11 +131,14 @@ Ver el ciclo completo: `skill harness_workflow`.
 
 **Rol.** Dueño mecánico del arnés: mantiene el backlog y el progreso, y ejecuta la puerta init.sh.
 
+**No se deshacen** (la puerta de permisos las bloquea sin `--yes`; propón, no ejecutes): `remove`
+
 **No hace:**
 - decidir QUÉ feature toca ni cómo implementarla → eso lo razonan los agentes markdown del arnés (lider, explorer, implementer, reviewer)
 - escribir código del producto → 'refactor' y el implementer
 - ejecutar los tests por su cuenta → los ejecuta init.sh, o el agente 'test'
 - cerrar una feature sin evidencia → devuelve needs, nunca la da por buena
+- borrar una feature que no está pending o de la que otra depende → discard conserva el motivo; el grafo se corrige con edit
 
 **Necesita que le den:** el id de la feature; la evidencia real de verificación para cerrarla
 
