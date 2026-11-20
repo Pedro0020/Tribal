@@ -23,6 +23,7 @@ from tribal.core.acciones import Accion
 from tribal.core.genoma import Genoma
 from tribal.core.habilidades import Habilidades
 from tribal.core.modelos import Individuo, Mundo, Necesidades, TipoTile
+from tribal.culture.arbol import Nodo
 from tribal.llm.cliente import ClienteLLM, Transporte, backend_stub
 from tribal.llm.cola import ColaLLM
 from tribal.sim import Simulacion
@@ -146,6 +147,42 @@ def test_la_primera_tradicion_sube_la_saliencia_de_su_autor() -> None:
 
     assert simulacion.tradiciones == 1
     assert autor.saliencia == pytest.approx(saliencia.SUBIDA["tradicion"])
+
+
+def test_una_tradicion_viva_suma_peso_al_descubrimiento_de_su_rama() -> None:
+    individuo = _individuo(1)
+    simulacion = Simulacion(_mundo(individuo))
+    simulacion.grafo.descubrir("guijarro", autor=1, tick=0)
+    simulacion.grafo.agregar(
+        Nodo(
+            "tradicion_litica_1",
+            "litica",
+            1,
+            "Cantera del grupo",
+            "La costumbre hace más visible el hallazgo.",
+            requisitos=("guijarro",),
+            origen="interaccion",
+            autor=1,
+            tick=1,
+        )
+    )
+
+    assert simulacion._practicar(individuo, "tallar", descubrir=True) is True
+
+    assert simulacion.grafo.activo("lasca")
+    assert individuo.saliencia == pytest.approx(
+        saliencia.SUBIDA["primer_nodo"] + saliencia.SUBIDA["tradicion_practica"]
+    )
+
+
+def test_sin_tradicion_el_descubrimiento_solo_suma_primer_nodo() -> None:
+    individuo = _individuo(1)
+    simulacion = Simulacion(_mundo(individuo))
+    simulacion.grafo.descubrir("guijarro", autor=1, tick=0)
+
+    assert simulacion._practicar(individuo, "tallar", descubrir=True) is True
+
+    assert individuo.saliencia == pytest.approx(saliencia.SUBIDA["primer_nodo"])
 
 
 def test_ensenar_una_habilidad_sube_la_saliencia(

@@ -154,7 +154,7 @@ def test_pct_fuera_arbol_es_cero_sin_nodos_de_emergencia() -> None:
     assert grafo.nodos_por_origen() == {"arbol": 2, "combinacion": 0, "interaccion": 0, "llm": 0}
 
 
-def test_pct_fuera_arbol_solo_cuenta_combinacion_e_interaccion() -> None:
+def test_pct_fuera_arbol_cuenta_combinacion_interaccion_y_llm() -> None:
     grafo = Grafo()
     grafo.descubrir("guijarro", autor=1, tick=1)  # arbol
     grafo.descubrir("observar_rayo", autor=1, tick=2)  # arbol
@@ -164,10 +164,10 @@ def test_pct_fuera_arbol_solo_cuenta_combinacion_e_interaccion() -> None:
 
     assert grafo.pct_fuera_arbol() == 40.0  # 2 de 5
 
-    # `llm` cuenta en el reparto por origen, pero no es un nivel 1/2 de §8b.
+    # `llm` es nivel 1 de §8b: el modelo une 2+ nodos y el motor lo valida.
     grafo.descubrir("conservar_brasas", autor=1, tick=6, origen="llm")
     assert grafo.nodos_por_origen()["llm"] == 1
-    assert grafo.pct_fuera_arbol() == 33.3  # 2 de 6
+    assert grafo.pct_fuera_arbol() == 50.0  # 3 de 6
 
 
 def test_sin_la_habilidad_no_se_descubre_nodo() -> None:

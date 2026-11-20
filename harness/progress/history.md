@@ -1555,3 +1555,60 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 84 fi
 ```
 
 </details>
+
+## F3-006 — Fin de pelicula: el criterio de exito, demostrado
+
+- **Cerrada:** 2026-11-20
+- **Verificación:** ./init.sh en verde · 462 passed in 263.03s (0:04:23)
+- **Cambios:** vault/01_PROYECTO/objetivo.md (SQL del KPI incluye llm con nota de correccion); tribal/culture/kpi.py (ORIGENES_FUERA con llm); tribal/culture/propuestas.py (prohibicion de cadena comb/llm y validacion de parejas); tribal/culture/{tradiciones,combinaciones,grafo}.py (tradicion unica por rama, sin llm, con efecto y apagado social; combinaciones por regla); tribal/gate_f2.py (denominadores sobre activos); tribal/sim.py (turno de invencion); tests/test_kpi.py (SQL literal con llm, test invertido, cadena, tope, apagado, e2e 4/4); README y arquitectura.md §9.4/§9.5 con la tabla y el 14.8 % real
+- **Decisiones:** El usuario decidio corregir el KPI, no bajarlo: objetivo.md §3.2 contaba solo combinacion e interaccion, pero la prosa ya decia 'origen distinto de arbol' y concepto §8b define el nivel 1 como el nodo que el LLM propone y el motor valida; auditoria-llm.md §4 E1 ya lo prescribia. Ahora el numerador incluye llm y el test literal lo ancla (excluirlo da 4.8 %). Se prohibe la cadena comb->comb en el motor porque era la unica forma de que el script cruzara el 50 %: con la regla, el mecanismo da 50.0-55.8 % en cinco semillas. TRADICIONES: una por rama, sin llm, con efecto propio y apagado si nadie las imita. EVIDENCIA EN DOS CAPAS, como pidio el usuario: el test determinista del mecanismo y una corrida real contra tribal-llm. La real da 14.8 % (4/27, veredicto False): se publica tal cual en README, arquitectura e informe. El criterio mecanico se cumple; la brecha real es del modelo pequeno y su contrato, no de la metrica, y queda como el trabajo abierto mas importante (auditoria-llm.md).
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 462 passed
+
+$ criterio corregido por decision del usuario (objetivo.md §3.2)
+numerador = origen IN ('combinacion','interaccion','llm')
+llm es nivel 1 de concepto §8b ("el LLM une 2+ nodos en un paso no previsto, validado");
+su exclusion del SQL era error de transcripcion (la prosa ya decia "distinto de arbol");
+anclado en auditoria-llm.md §4 E1. NO se baja el umbral: se corrige que cuenta.
+
+$ mecanismo determinista (backend falso, 3000 ticks, crisis, 12 individuos)
+seed | activos | arbol comb inter llm | nuevos | fuera | %fuera | hitos | veredicto
+   1 |      42 |   21    2     0  19 |    21 |    21 |  50.0 |  4/4  | True
+   2 |      46 |   23    4     0  19 |    23 |    23 |  50.0 |  4/4  | True
+   3 |      46 |   23    4     0  19 |    23 |    23 |  50.0 |  4/4  | True
+   4 |      49 |   23    3     4  19 |    22 |    26 |  53.1 |  4/4  | True
+   5 |      52 |   23    5     5  19 |    24 |    29 |  55.8 |  4/4  | True
+SQL literal >= 50 en las cinco; excluir llm da 4.8 % (test invertido que ancla el cambio)
+
+$ cadena comb->comb prohibida en el motor (no solo en el backend)
+propuestas.validar rechaza comb_* con requisito comb_* o llm_*; test que falla si se permite
+mutar la validacion -> DID NOT RAISE
+
+$ tradiciones: maximo una por rama, nunca desde llm, efecto propio (+0.25 saliencia al descubrir),
+apagado a los 1200 ticks sin imitacion (seed 1: nacen 4, mueren 4)
+
+$ CORRIDA REAL contra tribal-llm (condicion del usuario: publicar el numero real)
+llm selfcheck --json -> disponible true, modelo_presente true, 38.5 ms
+run --headless --ticks 3000 --crisis --seed 1 --llm http -> llm {peticiones 1, aplicadas 0,
+  descartadas 3, fallos 0}
+report kpi --db tribu.db -> fuego si / herramienta_compuesta si / proto_lenguaje si / mito si
+  pct_fuera_arbol 14.8 % (4/27, umbral 50.0 %) | veredicto False
+  (60 fps, 2000 ticks: 23.3 % (7/30), False). PUBLICADO tal cual en README y arquitectura §9.5.
+  El modelo real NO llega al 50 %: el mecanismo si; la brecha es del modelo/contrato, no del KPI.
+
+$ gate-f2 con denominadores coherentes (activos en todo): 5/5 SUCCESS, concentracion 0.7-1.0
+$ 60 fps (0.72 ms/tick), sin deps, sin .tmp-*
+
+$ uv run pytest -q
+1018 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 86 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 86 files
+```
+
+</details>

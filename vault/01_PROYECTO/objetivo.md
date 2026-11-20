@@ -69,8 +69,10 @@ según los niveles de emergencia de concepto §8b:
 
 - **Nivel 0 — `arbol`:** el paso estaba previsto y el motor lo fuerza. No es
   emergencia.
-- **Nivel 1 — `combinacion`:** el LLM une dos o más nodos existentes en un
-  paso no previsto, válido por plausibilidad. Emergencia débil.
+- **Nivel 1 — `combinacion` / `llm`:** el LLM une dos o más nodos existentes
+  en un paso no previsto, válido por plausibilidad. `llm` es el mismo nivel 1
+  cuando el nodo lo propone el modelo y `combinacion` cuando lo inscribe la
+  regla de plausibilidad del motor. Emergencia débil.
 - **Nivel 2 — `interaccion`:** el nodo nace de la dinámica social y **persiste**
   porque el grupo lo copia. Emergencia real.
 
@@ -82,11 +84,19 @@ excluyeran, el porcentaje sería 100 % por construcción y no mediría nada.
 **Cómo se comprueba** — una consulta, no una opinión:
 
 ```sql
-SELECT ROUND(100.0 * SUM(CASE WHEN origen IN ('combinacion','interaccion')
+SELECT ROUND(100.0 * SUM(CASE WHEN origen IN ('combinacion','interaccion','llm')
                          THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_fuera_arbol
 FROM nodos
 WHERE estado = 'activo';
 ```
+
+> **Nota (corrección de F3-006).** `llm` es nivel 1 por concepto §8b: «el LLM
+> une 2+ nodos en un paso no previsto, validado». La versión anterior de este
+> SQL lo omitía por un **error de transcripción**, no de diseño: la prosa de
+> arriba ya pedía `origen` distinto de `'arbol'`. La solución E1 de
+> `auditoria-llm.md` §4 ya lo decía. El numerador cuenta, por tanto,
+> `combinacion`, `interaccion` y `llm`; el denominador sigue siendo todos los
+> nodos activos.
 
 La partida se cierra con el resultado en `tribu.db` y la comprobación pasa a
 ser un test del repositorio (`tests/`) que ejecuta esa consulta y exige

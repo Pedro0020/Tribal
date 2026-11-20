@@ -1,5 +1,5 @@
 """
-Beneficios de las combinaciones activas (concepto §8b y §9b).
+Beneficios de las combinaciones y tradiciones activas (concepto §8b y §9b).
 
 Una combinación no es un multiplicador fijo: es una técnica cuyo valor depende
 del estado del mundo (hoja de ruta de refinamiento, eje 1). La utilidad de cada
@@ -7,7 +7,7 @@ nodo se compone de tres cosas, y ninguna es el temperamento:
 
 - **Escasez del recurso que explota.** Con el recurso lleno la utilidad vale
   1.0 (no hay premio: lo que sobra no distingue a nadie); según se vacía, el
-  efecto nominal de `EFECTOS` se recupera proporcionalmente. `escasez` es
+  efecto nominal se recupera proporcionalmente. `escasez` es
   `1 - cantidad_total / capacidad_total`, acotada a [0, 1].
 - **Densidad de portadores.** Si todo el grupo conoce la técnica, la ventaja de
   tenerla se diluye: `1 / (1 + 0.1 · portadores)`. No es una propiedad del
@@ -21,7 +21,25 @@ nodo se compone de tres cosas, y ninguna es el temperamento:
 El temperamento no entra en ninguna de las tres: dos individuos con la misma
 habilidad reciben exactamente la misma utilidad, sea cual sea su divergencia.
 Así la ventaja del descubridor viene de lo que hizo —aprender la técnica— y no
-de lo que es. Si dos combinaciones mejoran lo mismo, se componen multiplicando.
+de lo que es. Las cinco combinaciones curadas se componen multiplicando si
+mejoran lo mismo.
+
+Desde F3-006 hay dos clases de nodo con efecto, además del catálogo curado:
+
+- **combinación dinámica** (`origen="combinacion"`): nace de dos nodos activos
+  de la misma rama o de ramas adyacentes. Su efecto es un −1 % o −2 % de sed
+  cuya magnitud sale de los dos ids. No toca bayas ni caza: veinte cruces
+  multiplicando comida desestabilizaban la ecología de 8000 ticks. Las
+  variantes de una misma rama no se apilan: `_agrupar` deja la mejor, no
+  `1.01^20`.
+- **tradición** (`origen="interaccion"`): su efecto es **cultural**, no un
+  multiplicador de recursos: cuando la rama descubre un nodo, la costumbre
+  suma peso narrativo (`saliencia.SUBIDA["tradicion_practica"]`). Diez
+  tradiciones y veinte combinaciones multiplicando comida a la vez
+  desestabilizaban la ecología; una costumbre cambia quién protagoniza la
+  práctica, no cuánto come la tribu. La tradición apunta a la práctica con una
+  arista, pero no es una copia 1:1: tiene id, contenido y efecto propios, y se
+  apaga si el grupo deja de imitarla.
 """
 
 from __future__ import annotations
@@ -29,8 +47,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from tribal.core.habilidades import CATALOGO
+from tribal.core.habilidades import CATALOGO, Rama
 from tribal.core.modelos import Mundo, TipoRecurso
+from tribal.culture.arbol import Nodo
 from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.grafo import Grafo
 
@@ -40,6 +59,14 @@ ESCALA_DENSIDAD = 0.1
 #: esta fracción extra. El agua no entra: un lago no cambia de estación.
 BONUS_INVIERNO = 0.25
 RECURSOS_ESTACIONALES = (TipoRecurso.BAYAS, TipoRecurso.CAZA)
+#: Habilidad de una combinación dinámica, según la rama propuesta.
+HABILIDAD_POR_RAMA: dict[Rama, str] = {
+    "litica": "fabricar",
+    "fuego": "fuego",
+    "lenguaje": "ensenar",
+    "roles": "cazar",
+    "simbolico": "ensenar",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +88,15 @@ class Beneficios:
 
 
 @dataclass(frozen=True, slots=True)
+class Perfil:
+    """Efecto, recurso y habilidad de un nodo que cambia el mundo."""
+
+    efecto: Beneficios
+    recurso: TipoRecurso
+    habilidad: str
+
+
+@dataclass(frozen=True, slots=True)
 class Situacion:
     """Estado del mundo que modula la utilidad de las técnicas."""
 
@@ -74,9 +110,9 @@ class Situacion:
         return {"escasez": escasez, "estacion": self.estacion}
 
 
-#: Efecto nominal de cada combinación, el que se cobra con el recurso agotado.
-#: La tabla cubre el catálogo entero a propósito: una combinación sin efecto
-#: sería un nodo decorativo.
+#: Efecto nominal de cada combinación del catálogo, el que se cobra con el
+#: recurso agotado. La tabla cubre el catálogo entero a propósito: una
+#: combinación sin efecto sería un nodo decorativo.
 EFECTOS: dict[str, Beneficios] = {
     "raedera": Beneficios(bayas=1.25),
     "cuchillo_al_fuego": Beneficios(caza=1.25),
@@ -85,9 +121,9 @@ EFECTOS: dict[str, Beneficios] = {
     "canto_ritual": Beneficios(tasa_sed=0.9),
 }
 
-#: Recurso cuya escasez hace valiosa cada combinación. La raedera procesa
-#: vegetales; el cuchillo y la cacería dirigida valen por la presa; la vigilia
-#: protege al grupo que se dispersa cazando y el canto ahorra agua.
+#: Recurso cuya escasez hace valiosa cada combinación del catálogo. La raedera
+#: procesa vegetales; el cuchillo y la cacería dirigida valen por la presa; la
+#: vigilia protege al grupo que se dispersa cazando y el canto ahorra agua.
 RECURSO_POR_COMBINACION: dict[str, TipoRecurso] = {
     "raedera": TipoRecurso.BAYAS,
     "cuchillo_al_fuego": TipoRecurso.CAZA,
@@ -96,9 +132,9 @@ RECURSO_POR_COMBINACION: dict[str, TipoRecurso] = {
     "canto_ritual": TipoRecurso.AGUA,
 }
 
-#: Habilidad que hay que saber para disfrutar el efecto de cada combinación.
-#: Descubrir el cruce enseña esta habilidad al autor; los demás la copian
-#: enseñando o imitando, como cualquier otra técnica (concepto §3 y §5).
+#: Habilidad que hay que saber para disfrutar el efecto de cada combinación
+#: curada. Descubrir el cruce enseña esta habilidad al autor; los demás la
+#: copian enseñando o imitando, como cualquier otra técnica (concepto §3 y §5).
 HABILIDAD_POR_COMBINACION: dict[str, str] = {
     "raedera": "fabricar",
     "cuchillo_al_fuego": "fuego",
@@ -133,6 +169,46 @@ for _habilidad in HABILIDAD_POR_COMBINACION.values():
 del _nodo_id, _habilidad, _efecto, _dimensiones
 
 
+def perfil_de(nodo: Nodo, grafo: Grafo) -> Perfil | None:
+    """Efecto, recurso y habilidad de `nodo`; None si no cambia el mundo.
+
+    El catálogo curado manda. Una tradición toma el efecto pequeño de su rama.
+    Una combinación dinámica deriva recurso y efecto de las ramas de sus dos
+    requisitos, y la habilidad de la rama que propuso el modelo. Los nodos del
+    árbol y los que no tienen efecto devuelven None.
+    """
+    if nodo.id in EFECTOS:
+        return Perfil(
+            EFECTOS[nodo.id],
+            RECURSO_POR_COMBINACION[nodo.id],
+            HABILIDAD_POR_COMBINACION[nodo.id],
+        )
+    if nodo.origen == "combinacion":
+        return _perfil_combinacion(nodo, grafo)
+    return None
+
+
+def _perfil_combinacion(nodo: Nodo, grafo: Grafo) -> Perfil | None:
+    """Deriva el efecto de la pareja: las dos ramas eligen la magnitud.
+
+    No toca la comida: diecisiete combinaciones multiplicando bayas o caza
+    desestabilizan la ecología de 8000 ticks. Ahorra sed (−1 % o −2 %) y la
+    magnitud sale de los dos requisitos, no de una tabla fija.
+    """
+    if len(nodo.requisitos) != 2:
+        return None
+    requisitos = [grafo.nodos.get(requisito) for requisito in nodo.requisitos]
+    if any(requisito is None for requisito in requisitos):
+        return None
+    semilla = sum(sum(ord(caracter) for caracter in requisito) for requisito in nodo.requisitos)
+    tasa = 0.99 if semilla % 2 == 0 else 0.98
+    return Perfil(
+        Beneficios(tasa_sed=tasa),
+        TipoRecurso.AGUA,
+        HABILIDAD_POR_RAMA[nodo.rama],
+    )
+
+
 def escasez_de(mundo: Mundo, tipo: TipoRecurso) -> float:
     """`1 - cantidad_total / capacidad_total`, en [0, 1]; 0 si no hay fuentes."""
     capacidad = sum(recurso.capacidad for recurso in mundo.recursos if recurso.tipo == tipo)
@@ -151,62 +227,93 @@ def situacion(mundo: Mundo, *, estacion: str | None = None) -> Situacion:
 
 
 def portadores(mundo: Mundo, nodo_id: str) -> int:
-    """Vivos que saben la habilidad de la combinación."""
-    habilidad = HABILIDAD_POR_COMBINACION[nodo_id]
+    """Vivos que saben la habilidad de una combinación del catálogo."""
+    return portadores_de(mundo, HABILIDAD_POR_COMBINACION[nodo_id])
+
+
+def portadores_de(mundo: Mundo, habilidad: str) -> int:
+    """Vivos que saben `habilidad`."""
     return sum(1 for individuo in mundo.individuos if individuo.habilidades.sabe(habilidad))
 
 
 def utilidad(nodo_id: str, situacion: Situacion, portadores: int) -> float:
-    """Multiplicador de `nodo_id` ajustado al mundo; 1.0 si el recurso sobra.
+    """Multiplicador de una combinación del catálogo; 1.0 si el recurso sobra.
 
     Con la escasez a 1 y un solo portador vale el efecto nominal de `EFECTOS`
     (por ejemplo 1.25 para la raedera); con el recurso lleno vale 1.0. La
     densidad de portadores solo diluye la ventaja, nunca la vuelve negativa.
-    En invierno el efecto de las técnicas estacionales sube un 25 %: cuando la
-    comida escasea de verdad, lo que la exprime vale más.
+    En invierno el efecto de las técnicas estacionales sube un 25 %.
     """
-    efecto = _ventaja(EFECTOS[nodo_id])
-    if (
-        situacion.estacion == "invierno"
-        and RECURSO_POR_COMBINACION[nodo_id] in RECURSOS_ESTACIONALES
-    ):
+    perfil = Perfil(
+        EFECTOS[nodo_id],
+        RECURSO_POR_COMBINACION[nodo_id],
+        HABILIDAD_POR_COMBINACION[nodo_id],
+    )
+    return _utilidad_perfil(perfil, situacion, portadores)
+
+
+def utilidad_de(nodo: Nodo, grafo: Grafo, situacion: Situacion, portadores: int) -> float:
+    """Multiplicador de cualquier nodo con efecto (catálogo, dinámica o tradición)."""
+    perfil = perfil_de(nodo, grafo)
+    if perfil is None:
+        return 1.0
+    return _utilidad_perfil(perfil, situacion, portadores)
+
+
+def _utilidad_perfil(perfil: Perfil, situacion: Situacion, portadores: int) -> float:
+    efecto = _ventaja(perfil.efecto)
+    if situacion.estacion == "invierno" and perfil.recurso in RECURSOS_ESTACIONALES:
         efecto *= 1.0 + BONUS_INVIERNO
-    escasez = situacion.escasez.get(RECURSO_POR_COMBINACION[nodo_id], 0.0)
+    escasez = situacion.escasez.get(perfil.recurso, 0.0)
     densidad = 1.0 / (1.0 + ESCALA_DENSIDAD * max(0, portadores))
     return 1.0 + efecto * escasez * densidad
 
 
 def utilidades(grafo: Grafo, mundo: Mundo, situacion: Situacion) -> dict[str, float]:
-    """Utilidad de cada combinación activa este tick, en orden de catálogo."""
-    return {
-        nodo_id: utilidad(nodo_id, situacion, portadores(mundo, nodo_id))
-        for nodo_id in EFECTOS
-        if grafo.activo(nodo_id)
-    }
+    """Utilidad de cada nodo activo con efecto este tick, en orden de grafo."""
+    utilidades_tick: dict[str, float] = {}
+    for nodo in grafo.nodos.values():
+        if nodo.estado != "activo":
+            continue
+        perfil = perfil_de(nodo, grafo)
+        if perfil is None:
+            continue
+        utilidades_tick[nodo.id] = _utilidad_perfil(
+            perfil, situacion, portadores_de(mundo, perfil.habilidad)
+        )
+    return utilidades_tick
 
 
 def activos(grafo: Grafo, mundo: Mundo, estado: Situacion | None = None) -> Beneficios:
-    """Multiplicadores de todas las combinaciones activas, en orden de catálogo."""
+    """Multiplicadores de los nodos activos con efecto, sin apilar variantes.
+
+    Las combinaciones dinámicas y las tradiciones de una misma rama comparten
+    habilidad y dimensión; contar las 17 variantes a la vez convertiría un +5 %
+    en un ×2.3. Se aplica la mejor de cada `(origen, rama)`; el catálogo curado
+    sí se compone entero, porque son cinco técnicas distintas por diseño.
+    """
     if estado is None:
         estado = situacion(mundo)
-    return _componer(utilidades(grafo, mundo, estado))
+    return _componer(grafo, _agrupar(grafo, utilidades(grafo, mundo, estado)))
 
 
 def conocidos(grafo: Grafo, habilidades: set[str], utilidades_tick: dict[str, float]) -> Beneficios:
-    """Multiplicadores que disfruta quien sabe la habilidad de cada combinación.
+    """Multiplicadores que disfruta quien sabe la habilidad de cada nodo.
 
     `habilidades` es el conjunto de un individuo (`Habilidades.conocidas`) y
     `utilidades_tick` el mapa nodo→utilidad que devuelve `utilidades`. El
     temperamento no aparece por ningún lado: dos individuos con las mismas
     habilidades reciben lo mismo, tenga la divergencia que tengan.
     """
-    return _componer(
-        {
-            nodo_id: utilidades_tick[nodo_id]
-            for nodo_id in EFECTOS
-            if grafo.activo(nodo_id) and HABILIDAD_POR_COMBINACION[nodo_id] in habilidades
-        }
-    )
+    filtradas: dict[str, float] = {}
+    for nodo_id, valor in utilidades_tick.items():
+        nodo = grafo.nodos.get(nodo_id)
+        if nodo is None or nodo.estado != "activo":
+            continue
+        perfil = perfil_de(nodo, grafo)
+        if perfil is not None and perfil.habilidad in habilidades:
+            filtradas[nodo_id] = valor
+    return _componer(grafo, _agrupar(grafo, filtradas))
 
 
 def _ventaja(efecto: Beneficios) -> float:
@@ -217,10 +324,38 @@ def _ventaja(efecto: Beneficios) -> float:
     return 0.0
 
 
-def _componer(utilidades_tick: dict[str, float]) -> Beneficios:
+def _agrupar(grafo: Grafo, utilidades_tick: dict[str, float]) -> dict[str, float]:
+    """Catálogo entero y la mejor variante de cada `(origen, rama)` no curada.
+
+    Evita que 17 combinaciones dinámicas de fuego, que comparten la habilidad
+    `fuego`, se apilen como 1.05^17 sobre la caza del mismo portador.
+    """
+    elegidas: dict[str, float] = {}
+    mejores: dict[tuple[str, str], tuple[float, str]] = {}
+    for nodo_id, valor in utilidades_tick.items():
+        if nodo_id in EFECTOS:
+            elegidas[nodo_id] = valor
+            continue
+        nodo = grafo.nodos.get(nodo_id)
+        if nodo is None:
+            continue
+        clave = (nodo.origen, nodo.rama)
+        if clave not in mejores or valor > mejores[clave][0]:
+            mejores[clave] = (valor, nodo_id)
+    elegidas.update({nodo_id: valor for valor, nodo_id in mejores.values()})
+    return elegidas
+
+
+def _componer(grafo: Grafo, utilidades_tick: dict[str, float]) -> Beneficios:
     resultado = Beneficios()
     for nodo_id, valor in utilidades_tick.items():
-        efecto = EFECTOS[nodo_id]
+        nodo = grafo.nodos.get(nodo_id)
+        if nodo is None:
+            continue
+        perfil = perfil_de(nodo, grafo)
+        if perfil is None:
+            continue
+        efecto = perfil.efecto
         resultado = Beneficios(
             bayas=resultado.bayas * (valor if efecto.bayas != 1.0 else 1.0),
             caza=resultado.caza * (valor if efecto.caza != 1.0 else 1.0),

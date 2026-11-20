@@ -501,9 +501,11 @@ def test_con_escasez_aparecen_descubridores_y_en_calma_el_diferencial_es_cero() 
     ).resumen()
 
     assert crisis["descubridores"], "en crisis nadie descubrió nada: no hay mecanismo"
+    # Los tres valores se redondean a 3 decimales por separado: restar los dos
+    # redondeados puede desviarse 1 ulp del diferencial redondeado.
     assert crisis["diferencial_seleccion"] == pytest.approx(
         crisis["supervivencia_descubridores"] - crisis["supervivencia_no_descubridores"],
-        abs=1e-3,
+        abs=2e-3,
     )
 
     assert calma["descubridores"] == []

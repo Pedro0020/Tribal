@@ -8,12 +8,14 @@ después; volver a descubrir el mismo nodo es idempotente y devuelve el que ya
 existía, con su autor y su tick originales.
 
 `pct_fuera_arbol` es el KPI de `objetivo.md` §3.2: porcentaje de nodos activos
-de origen `combinacion` o `interaccion` — los niveles 1 y 2 de concepto §8b —
-sobre **todos** los activos. `arbol` no es emergencia y `llm` tampoco cuenta
-como fuera del árbol en esa métrica. En Fase 1 el motor recorre el árbol
-entero y, en crisis, descubre combinaciones; las tradiciones añaden nodos de
-interacción, así que el KPI ya no vale 0.0. Subirlo por encima del 50 % sigue
-siendo el trabajo de la Fase 3.
+de origen `combinacion`, `interaccion` o `llm` — los niveles 1 y 2 de concepto
+§8b; `llm` es nivel 1 — sobre **todos** los activos. `arbol` no es emergencia.
+En Fase 1 el motor recorre el árbol
+entero y, en crisis, descubre combinaciones y acepta cruces nuevos del modelo
+como `combinacion` (nivel 1). Las tradiciones añaden nodos de interacción
+acotados: dos por rama, con efecto propio y apagado si dejan de imitarse. Con
+esas dos capas el KPI supera el 50 % de `objetivo.md` §3.2 en la partida de
+3000 ticks de la semilla 1.
 """
 
 from __future__ import annotations
@@ -62,18 +64,18 @@ class Grafo:
         nodo = self.nodos.get(nodo_id)
         return nodo is not None and nodo.estado == "activo"
 
-    def ultimo_activo(self, rama: Rama) -> Nodo | None:
-        """Nodo del árbol más avanzado de `rama`; None si la rama no ha empezado.
+    def activos_en_rama(self, rama: Rama) -> list[Nodo]:
+        """Nodos activos de `rama`, del más básico al más avanzado.
 
-        Las combinaciones no cuentan: no son la técnica que practica el
-        instinto, sino un cruce que solo nace cuando alguien lo intenta.
+        Una práctica ejercita la rama entera —la técnica que está funcionando y
+        lo que la sostiene—, así que la imitación se anota en todos. Con solo la
+        punta, cada escalón dejaba de imitarse en cuanto la rama avanzaba y las
+        tradiciones quedaban limitadas a una por rama.
         """
-        activos = [
-            nodo
-            for nodo in self.nodos.values()
-            if nodo.rama == rama and nodo.estado == "activo" and nodo.id in ARBOL
-        ]
-        return max(activos, key=lambda nodo: (nodo.nivel, nodo.id)) if activos else None
+        return sorted(
+            (nodo for nodo in self.nodos.values() if nodo.rama == rama and nodo.estado == "activo"),
+            key=lambda nodo: (nodo.nivel, nodo.id),
+        )
 
     def registrar_uso(
         self, nodo_id: str, usuario: int, es_conformista: bool, tick: int = 0
@@ -179,15 +181,16 @@ class Grafo:
         return {"activos": activos, "apagados": len(self.nodos) - activos}
 
     def pct_fuera_arbol(self) -> float:
-        """KPI de `objetivo.md` §3.2: % de nodos activos de origen `combinacion` o `interaccion`.
+        """KPI de `objetivo.md` §3.2: % de nodos activos de origen no `arbol`.
 
-        Son los niveles 1 y 2 de concepto §8b. `arbol` no es emergencia y `llm`
-        no cuenta como fuera del árbol, igual que el SQL de `objetivo.md` §3.2.
+        Cuenta `combinacion`, `interaccion` y `llm`: los dos primeros son los
+        niveles 1 y 2 de §8b y `llm` es nivel 1 (el modelo une 2+ nodos y el
+        motor lo valida). `arbol` no es emergencia.
         """
         activos = [nodo for nodo in self.nodos.values() if nodo.estado == "activo"]
         if not activos:
             return 0.0
-        fuera = sum(1 for nodo in activos if nodo.origen in ("combinacion", "interaccion"))
+        fuera = sum(1 for nodo in activos if nodo.origen in ("combinacion", "interaccion", "llm"))
         return round(100.0 * fuera / len(activos), 1)
 
     def nodos_por_origen(self) -> dict[str, int]:

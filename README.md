@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.33-green)
+![Version](https://img.shields.io/badge/Version-0.1.34-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -169,10 +169,12 @@ rama: `gestos` no es una palabra ni `arte_rupestre` un rito. Cada entrada guarda
 **Quién narra lo decide la saliencia (F2-006).** El sujeto del hito cuenta su
 propia historia si está en el top-3 de peso narrativo; si no, la cuenta el
 individuo con más saliencia, y sin nadie con peso positivo no se pide frase. El
-peso es la saliencia acumulada con el mismo olvido que la instantánea
-(`0.999` por tick), no el valor del tick: así el techo `SALIENCIA_MAX` no
-convierte el top-3 en un empate de ids. `narrador_id` queda en la entrada y es
-la columna con la que se mide la concentración narrativa de la puerta F2→F3.
+peso es el **área acumulada bajo la curva de saliencia** (cuánto protagonismo
+sumó cada individuo en toda la partida), no el valor del tick ni un área
+descontada: la instantánea decae, el área que mide la historia no. Así el techo
+`SALIENCIA_MAX` no convierte el top-3 en un empate de ids. `narrador_id` queda
+en la entrada y es la columna con la que se mide la concentración narrativa de
+la puerta F2→F3.
 
 La entrada se registra **siempre**; la narración es opcional:
 
@@ -406,9 +408,10 @@ escalón si sus prerrequisitos están activos, y como mucho nace **un nodo por
 tick**. En calma, la lítica, el fuego, el lenguaje y el símbolo se recorren
 en los primeros ticks; los roles esperan a que alguien esté herido (o haya un
 aprendiz al que enseñar). Eso mueve el `pct_fuera_arbol` de la Fase 1: las
-tradiciones (nivel 2) lo suben por encima de cero cuando nacen, así que el
-valor depende de la semilla y de si esa partida llegó a combinar o transmitir;
-en calma y sin tradición puede seguir siendo 0.0.
+combinaciones (nivel 1) y las tradiciones (nivel 2) lo suben por encima de cero
+cuando nacen, así que el valor depende de la semilla y de si esa partida llegó
+a combinar o transmitir; en calma y sin ninguna de las dos puede seguir siendo
+0.0.
 
 Cada nodo nace con su **origen** —`arbol | combinacion | interaccion | llm`,
 los niveles de emergencia de concepto §8b— escrito en el momento de crearlo y
@@ -419,7 +422,9 @@ redescubrirlo es idempotente. En esta fase el motor recorre el árbol entero
 —las prácticas de arriba alimentan las cinco ramas— y las tradiciones pueden
 sacarlo del árbol; por eso `pct_fuera_arbol` deja de ser 0.0 en las partidas
 donde nace una tradición o cuaja una combinación, y sigue en 0.0 en las que no.
-Subir esa cifra por encima del 50 % sigue siendo el trabajo de la Fase 3.
+La Fase 3 lo intenta con dos capas honestas: más nodos de nivel 1 validadas por
+el motor y un máximo de una tradición por rama, con efecto propio y apagado si
+dejan de imitarse (ver `report kpi`).
 
 ```bash
 uv run python -m tribal report culture             # legible
@@ -429,11 +434,11 @@ uv run python -m tribal report culture --seed 7 --ticks 900 --crisis
 
 El JSON incluye `fuera_arbol`: la lista de nodos que no son escalones del árbol
 con su `origen` (`combinacion`, `interaccion` o `llm`), su `autor` y su `tick`.
-El KPI `pct_fuera_arbol` sigue contando solo `combinacion` e `interaccion`, como
-`objetivo.md` §3.2; `llm` se publica aparte porque también es un nodo nacido
-fuera del árbol. Cada nodo lleva además `estado` (`activo`/`apagado`) y, si se
-apagó, `tick_apagado` y `motivo_apagado`; el informe cuenta `activos`,
-`apagados` y `nodos_por_estado`.
+El KPI `pct_fuera_arbol` cuenta `combinacion`, `interaccion` y `llm` como
+niveles 1 y 2 de §8b, como dice `objetivo.md` §3.2. Cada nodo lleva además
+`estado` (`activo`/`apagado`) y, si se apagó, `tick_apagado` y
+`motivo_apagado`; el informe cuenta `activos`, `apagados` y
+`nodos_por_estado`.
 
 ## Transmisión y nodos apagados
 
@@ -724,8 +729,24 @@ uv run python -m tribal report kpi --db tribu.db
 uv run python -m tribal report kpi --db tribu.db --json
 ```
 
-Salida real sobre `tribu.db` (semilla 1, 3000 ticks, crisis, backend
-guionizado):
+**El numerador incluye `llm`.** `llm` es nivel 1 de concepto §8b: «el LLM une
+2+ nodos en un paso no previsto, validado». La versión anterior del SQL lo
+omitía por un **error de transcripción**, no de diseño; la prosa ya pedía
+«origen distinto de `arbol`» y la solución E1 de `auditoria-llm.md` §4 ya lo
+decía. El SQL vigente es el de `objetivo.md` §3.2:
+
+```sql
+SELECT ROUND(100.0 * SUM(CASE WHEN origen IN ('combinacion','interaccion','llm')
+                         THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_fuera_arbol
+FROM nodos
+WHERE estado = 'activo';
+```
+
+**Evidencia real (no la del script).** Semilla 1, 3000 ticks, `--crisis`,
+`--llm http` contra `tribal-llm` en 127.0.0.1:11434 (selfcheck: disponible,
+90.6 ms). El bucle headless sin throttle corre a ~2 ms/tick y no da ventana al
+modelo; para que la cola HTTP responda se corre el mismo motor y la misma cola
+a 60 fps: **60.37 s**. El modelo **no llega al 50 %** y se publica tal cual:
 
 ```
 db tribu.db
@@ -733,22 +754,42 @@ db tribu.db
   herramienta_compuesta  si
   proto_lenguaje         si
   mito                   si
-  pct_fuera_arbol         26.2 % (11/42, umbral 50.0 %)
+  pct_fuera_arbol         14.8 % (4/27, umbral 50.0 %)
   veredicto              False
 ```
 
-El porcentaje es exactamente el SQL de `objetivo.md` §3.2: numerador
-`combinacion` + `interaccion`, denominador **todos** los nodos activos. `llm`
-queda fuera del numerador a propósito (un nodo inventado por el modelo no es un
-nivel de emergencia del árbol), y `tests/test_kpi.py` compara la consulta literal
-con `evaluar` y demuestra que incluir `llm` rompería esa coherencia.
+El resumen LLM de esa corrida: 17 peticiones, **0 aplicadas**, 16 descartadas
+y 1 fallo; 3 propuestas de nodo, 0 aceptadas y 1 rechazada por `transporte`. El
+modelo real no produjo nodos válidos; el veredicto real es **False**. La
+corrida literal `run --headless --llm http` sin throttle da el mismo 14.8 %
+(7.04 s, 1 petición, 0 aplicadas): el modelo no llega a intervenir. No se
+sustituye por el número del backend falso.
 
-**El veredicto es `False` con el motor actual** y no es un fallo del comando: los
-cuatro hitos se alcanzan, pero el porcentaje queda en 20–26 % porque la partida
-activa los 23 nodos del árbol y solo genera 5 combinaciones de catálogo y 6–7
-tradiciones (`interaccion`). El diagnóstico completo y la tabla por semilla
-están en `vault/01_PROYECTO/arquitectura.md` §9.5 y en
-`harness/progress/implementer-F3-006.md`.
+**Test determinista del mecanismo (no es la evidencia del criterio).** Con el
+backend guionizado y semilla fija, `tests/test_kpi.py` da **50.0 % (21/42),
+4/4 hitos y `veredicto True`**. El barrido de 5 semillas del mismo backend:
+
+| seed | activos | arbol | comb | inter | llm | nuevos | fuera | %fuera | ok |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 42 | 21 | 2 | 0 | 19 | 21 | 21 | 50.0 | True |
+| 2 | 46 | 23 | 4 | 0 | 19 | 23 | 23 | 50.0 | True |
+| 3 | 46 | 23 | 4 | 0 | 19 | 23 | 23 | 50.0 | True |
+| 4 | 49 | 23 | 3 | 4 | 19 | 22 | 26 | 53.1 | True |
+| 5 | 52 | 23 | 5 | 5 | 19 | 24 | 29 | 55.8 | True |
+
+`nuevos` es `comb` + `llm` (el K de la puerta F2); `fuera` es el numerador del
+KPI (`comb` + `inter` + `llm`). No hay cadenas `comb -> comb` ni
+`comb -> llm`: la validación las rechaza (`propuestas.validar`) y el backend
+solo propone parejas del árbol/catálogo. Hay como mucho **una tradición por
+rama** (`tradicion_<rama>_1`), con identidad propia, efecto cultural (+0.25 de
+saliencia al descubrir en su rama), sin `llm` y con apagado a los 1200 ticks
+sin imitación. El canal del modelo tiene un turno de invención por reloj cada
+100 ticks, además del experimento del divergente: 30 solicitadas, 19 aceptadas,
+11 rechazadas por semilla.
+
+El diagnóstico completo está en `vault/01_PROYECTO/arquitectura.md` §9.5. El
+`tribu.db` de la raíz es la corrida real (14.8 %, veredicto False); el test de
+mecanismo usa su propia base temporal.
 
 ## Configuración y semilla
 
@@ -904,8 +945,10 @@ por encima de **0.6** el individuo es **divergente**, por debajo de **0.4**
 **conformista**, y en medio **neutro**. El rasgo **solo elige conducta**, no
 aptitud: no cambia el bocado, ni la sed, ni el ritmo de cría, y el genoma no se
 edita en runtime. El conformista **imita** lo que ve funcionar: cuando usa una
-técnica que no descubrió él, el nodo suma una imitación (el resumen lo cuenta en
-`imitaciones`). El divergente **prueba cruces nuevos**: combinaciones de dos
+técnica que no descubrió él, **cada nodo activo de esa rama** suma una
+imitación (el resumen lo cuenta en `imitaciones`): la práctica ejercita la
+técnica que está funcionando y todo lo que la sostiene. El divergente **prueba
+cruces nuevos**: combinaciones de dos
 técnicas ya activas que no están en el árbol, catalogadas en
 [`tribal/culture/combinaciones.py`](tribal/culture/combinaciones.py) con su
 rama, sus dos requisitos y su justificación (`raedera`, `cuchillo_al_fuego`,
@@ -1012,6 +1055,17 @@ nominal, el que se cobra cuando el recurso que explota el nodo está agotado:
 | `turnos_de_vigilia` | `cazar` | caza | −50 % de daño del depredador |
 | `canto_ritual` | `ensenar` | agua | −10 % de tasa de sed |
 
+Además de esas cinco curadas, el motor acepta **combinaciones dinámicas**: una
+propuesta del modelo que une dos nodos activos de la misma rama o de ramas
+adyacentes. Nace como `combinacion`, con id `comb_*`, contenido anclado a los
+dos requisitos y un efecto de **−1 % o −2 % de sed** cuya magnitud sale de los
+dos ids. No toca la comida: veinte cruces multiplicando bayas o caza
+desestabilizaban la ecología de 8000 ticks. La habilidad que la disfruta es la
+de la rama propuesta; el autor no la aprende de regalo, la copia enseñando o
+imitando como cualquier técnica. Las variantes de una misma rama no se apilan:
+el portador disfruta la mejor, no `1.01^20`. Las cinco curadas siguen teniendo
+prioridad en el backend y conservan sus efectos y habilidades.
+
 La utilidad se interpola entre 1.0 (recurso lleno: no hay premio, lo que sobra
 no distingue a nadie) y ese efecto nominal, según
 `escasez = 1 − cantidad / capacidad`. Además se diluye con la **densidad de
@@ -1026,10 +1080,22 @@ técnicas que explotan bayas o caza—.
 
 Además, cuando una práctica se imita lo suficiente —tres imitadores distintos o
 cinco imitaciones en 600 ticks— nace una **tradición** de nivel 2
-(`tradicion_<nodo>`, `origen: "interaccion"`, rama `roles` si es técnica y
-`simbolico` si no). La tradición es de la tribu: sigue activa aunque muera el
-último que la imitó. `nivel_max` y `nodos_por_origen` resumen hasta dónde llegó
-la emergencia (`arbol` = 0, `combinacion` = 1, `interaccion` = 2).
+(`tradicion_<rama>_1`, `origen: "interaccion"`). No es un alias del nodo
+imitado: tiene título, contenido y efecto propios, hay como mucho **una por
+rama** y nunca nace de un nodo `llm`. Persiste solo mientras el grupo la copie:
+si pasan 1200 ticks sin una imitación, se apaga como cualquier técnica perdida.
+
+| Rama | Efecto cultural de la tradición |
+|---|---|
+| cualquiera | +0,25 de saliencia al descubrir un nodo de esa rama |
+
+El efecto es narrativo a propósito: diez tradiciones y veinte combinaciones
+multiplicando comida a la vez desestabilizaban la ecología de 8000 ticks y
+hacían que la crisis terminara en extinciones. Una costumbre cambia quién
+protagoniza la práctica, no cuánto come la tribu.
+
+`nivel_max` y `nodos_por_origen` resumen hasta dónde llegó la emergencia
+(`arbol` = 0, `combinacion` = 1, `interaccion` = 2).
 
 ```bash
 uv run python -m tribal run --headless --json --ticks 5000 --crisis
@@ -1225,40 +1291,45 @@ El backend guionizado no inventa desde cero: propone combinaciones del catálogo
 (`combinaciones.py`) cuando sus dos requisitos ya están activos, propone cruces
 nuevos de dos nodos activos de la misma rama o de ramas adyacentes, e intercala
 propuestas imposibles (prerrequisitos inexistentes o ramas lejanas). El motor
-**valida** con `tribal/culture/propuestas.py`: un id del catálogo nace con
-`origen="combinacion"`; uno nuevo y plausible nace con `origen="llm"`; lo demás
-se rechaza y se cuenta por motivo (`prerrequisito`, `rama`, `duplicado`,
-`formato`, `catalogo`). El inventor no escribe en el grafo.
+**valida** con `tribal/culture/propuestas.py`: un id del catálogo o un `comb_*`
+de la regla de plausibilidad nace con `origen="combinacion"`; un cruce del
+modelo nace con `origen="llm"`, que también es nivel 1 de §8b. Un `comb_*` **no
+puede encadenarse**: sus requisitos no pueden ser otro `comb_*` ni un `llm_*`;
+esa cadena era inflación. Lo demás se rechaza y se cuenta por motivo
+(`prerrequisito`, `rama`, `duplicado`, `cadena`, `formato`, `catalogo`). El
+inventor no escribe en el grafo.
 
 El **K de la puerta es 5**: las cinco combinaciones del catálogo, el nivel 1
 completo de §8b. Es no trivial porque no basta un cruce afortunado —todos los
-cruces posibles tienen que cuajar en cada semilla— y además se exige al menos un
-nodo `llm` que no esté en el catálogo, para que el canal del modelo se haya
-ejercitado de verdad.
+cruces posibles tienen que cuajar en cada semilla— y además se exige al menos
+una propuesta nueva del modelo que no esté en el catálogo, para que el canal se
+haya ejercitado de verdad. El canal se cuenta en `propuestas_llm`.
 
-La narración se mide con el peso narrativo **acumulado con el mismo olvido que
-la saliencia** (`0.999` por tick), no con el valor instantáneo: con
-`SALIENCIA_MAX = 10` media tribu empata al final y el top-3 por id sería un
-empate arbitrario. El cronista es el sujeto del hito si está en el top-3 de peso
+La narración se mide con el **área acumulada** de saliencia (la suma de lo
+ganado en toda la partida), no con el valor instantáneo ni con un área
+descontada: con `SALIENCIA_MAX = 10` media tribu empata al final y el top-3 por
+id sería un empate arbitrario. El cronista es el sujeto del hito si está en el top-3 de peso
 y, si no, el individuo con más peso; solo se narra cuando algún vivo tiene peso
 positivo. La concentración es `líneas de los tres más salientes / líneas
 narradas` y debe ser ≥ 50 %.
 
 ```
-seed | nodos | arbol comb inter llm | fuera | %fuera | %+llm | lineas | top3 (peso narrativo) | conc | propuestas sol/ok/rech | ok
-   1 |    42 |   23    5     6   8 |    13 |  26.2% |  45.2% |     14 | 9:4166.5 16:3319.5 2:3310.6    |   0.6 |  13/ 9/ 4 | True
-   2 |    43 |   23    5     6   9 |    14 |  25.6% |  46.5% |     17 | 6:5426.9 5:4285.2 2:3838.4     |   0.8 |  15/10/ 5 | True
-   3 |    41 |   23    5     4   9 |    14 |  22.0% |  43.9% |     16 | 13:5803.6 10:5553.9 7:5124.2   |   0.5 |  14/ 9/ 5 | True
-   4 |    40 |   23    5     5   7 |    12 |  25.0% |  42.5% |     16 | 4:3620.6 8:2859.4 2:2304.3     |   0.8 |  12/ 7/ 5 | True
-   5 |    43 |   23    5     5  10 |    15 |  23.3% |  46.5% |     15 | 14:5780.2 6:5596.5 1:5538.4    |   0.6 |  15/10/ 5 | True
+seed | activos | arbol comb inter llm | nuevos | fuera | %fuera | lineas | top3 (peso narrativo) | conc | propuestas sol/ok/rech | ok
+   1 |      42 |   21    2     0  19 |     21 |    21 |  50.0% |     12 | 4:9700.6 2:9064.9 9:4275.5     |   1.0 |  30/19/11 | True
+   2 |      46 |   23    4     0  19 |     23 |    23 |  50.0% |     15 | 5:10860.6 11:7163.5 3:4557.5    |   0.7 |  30/19/11 | True
+   3 |      46 |   23    4     0  19 |     23 |    23 |  50.0% |     17 | 15:13913.3 12:11012.3 1:10847.0 |   0.9 |  30/19/11 | True
+   4 |      49 |   23    3     4  19 |     22 |    26 |  53.1% |     16 | 8:10081.0 2:7806.4 4:4892.2    |   0.8 |  30/19/11 | True
+   5 |      52 |   23    5     5  19 |     24 |    29 |  55.8% |     15 | 12:15547.2 1:14581.2 13:12657.6 |   0.9 |  30/19/11 | True
 
 VEREDICTO F2->F3: 5/5 semillas | K=5 nodos fuera | concentración top-3 >= 50% | SUCCESS True
 ```
 
-`%fuera` es el KPI de `objetivo.md` §3.2 (`combinacion` + `interaccion` sobre
-todos los activos); `%+llm` lo amplía con los nodos `llm`. La columna `fuera` es
-la del criterio de la puerta (`combinacion` + `llm`). La tabla completa, con la
-lista de cada nodo fuera del árbol y su autor/tick, sale en la misma orden.
+Todo en **activos**: `activos` es el denominador; `nuevos` es `comb` + `llm`
+(el K de la puerta) y `fuera` es el numerador del KPI (`comb` + `inter` +
+`llm`). `%fuera` = `fuera / activos`, una sola fórmula y una sola cabecera. La
+tabla completa, con la lista de cada nodo fuera del árbol y su autor/tick, sale
+en la misma orden. Las cinco semillas pasan la puerta F2, con 19 propuestas
+aceptadas y 11 rechazadas por semilla.
 
 ## Principios
 

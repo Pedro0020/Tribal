@@ -136,6 +136,20 @@ def test_el_mismo_montaje_con_un_conformista_si_suma_imitacion() -> None:
     assert simulacion.resumen()["imitaciones"] == 1
 
 
+def test_la_practica_imita_la_rama_entera_y_no_solo_su_punta() -> None:
+    autor = _hambriento(1, divergencia=0.9)
+    conformista = _hambriento(2, divergencia=0.1)
+    simulacion = Simulacion(_mundo_de_dos(autor, conformista))
+    simulacion.grafo.descubrir("guijarro", autor=autor.id, tick=0)
+    simulacion.grafo.descubrir("lasca", autor=autor.id, tick=0)
+
+    simulacion.step()
+
+    # La punta es `lasca`, pero practicar la lítica ejercita también `guijarro`:
+    # una tradición no puede depender de que su nodo siga siendo la punta.
+    assert {"guijarro", "lasca"} <= set(simulacion.grafo.imitado)
+
+
 def test_en_crisis_los_divergentes_intentan_y_aparecen_nodos_combinacion() -> None:
     simulacion = run(
         ticks=5000,

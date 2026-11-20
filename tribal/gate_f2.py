@@ -12,8 +12,8 @@ El backend guionizado hace tres cosas a la vez:
 
 - propone combinaciones del catálogo (`combinaciones.py`) cuando sus dos
   requisitos ya están activos;
-- propone cruces nuevos que el motor debe aceptar como `origen="llm"` si la
-  pareja es de la misma rama o de ramas adyacentes;
+- propone cruces nuevos que el motor debe aceptar como `origen="combinacion"`
+  (nivel 1 de §8b) si la pareja es de la misma rama o de ramas adyacentes;
 - intercala propuestas imposibles (prerrequisitos inexistentes o ramas lejanas)
   para demostrar que el motor **rechaza**, no que todo lo que llega entra.
 
@@ -43,8 +43,9 @@ from tribal.sim import Simulacion, run
 
 #: K de la puerta: las cinco combinaciones del catálogo, el nivel 1 completo de
 #: §8b. Es no trivial porque no basta un cruce afortunado: en cada semilla tienen
-#: que cuajar todos los cruces posibles del catálogo, y además al menos un nodo
-#: `llm` que no está en él (si no, el canal del modelo no se ha ejercitado).
+#: que cuajar todos los cruces posibles del catálogo, y además al menos una
+#: propuesta nueva del modelo que no esté en él (si no, el canal no se ha
+#: ejercitado). El nodo nace como `combinacion`; el canal se cuenta aparte.
 K_NODOS_FUERA = 5
 #: Fracción mínima de líneas narradas que deben concentrar los tres individuos
 #: con más saliencia acumulada.
@@ -52,8 +53,8 @@ CONCENTRACION_MINIMA = 0.5
 #: Barrido que publica la puerta: las cinco primeras semillas, 3000 ticks.
 SEMILLAS_PUERTA_F2: tuple[int, ...] = tuple(range(1, 6))
 TICKS_PUERTA_F2 = 3000
-#: Orígenes que cuentan como «fuera del árbol» en el informe. `llm` no entra en
-#: el KPI de `objetivo.md` §3.2 (`pct_fuera_arbol`), pero sí en la puerta F2.
+#: Orígenes que cuentan como «fuera del árbol». `llm` es nivel 1 de §8b y entra
+#: tanto en el KPI de `objetivo.md` §3.2 como en el informe de la puerta F2.
 ORIGENES_FUERA: tuple[str, ...] = ("combinacion", "interaccion", "llm")
 #: Un backend guionizado intercala un rechazo cada seis propuestas: uno por
 #: prerrequisito inexistente y otro por ramas no adyacentes.
@@ -67,6 +68,7 @@ class FilaF2:
     seed: int
     ticks: int
     crisis: bool
+    #: Nodos activos al final; `por_origen` y los porcentajes usan lo mismo.
     nodos_totales: int
     por_origen: dict[str, int]
     fuera_arbol: tuple[dict[str, Any], ...]
@@ -85,7 +87,10 @@ class FilaF2:
     def veredicto(self) -> dict[str, Any]:
         """Los cuatro criterios de la puerta, uno por uno y sin promedios."""
         nodos = self.nodos_fuera >= K_NODOS_FUERA
-        llm = self.por_origen.get("llm", 0) >= 1
+        # El canal del modelo se ejerce cuando acepta al menos una propuesta
+        # que no está en el catálogo. El nodo nace como `combinacion` (nivel 1
+        # de §8b), así que se cuenta el canal, no un origen `llm` residual.
+        llm = self.propuestas.get("por_origen", {}).get("llm", 0) >= 1
         concentracion = self.concentracion >= CONCENTRACION_MINIMA
         rechazo = self.propuestas.get("rechazadas", 0) >= 1
         return {
@@ -165,18 +170,19 @@ class BarridoF2:
     def texto(self) -> str:
         """La tabla en texto plano, más los nodos fuera del árbol y el veredicto."""
         lineas = [
-            "seed | nodos | arbol comb inter llm | fuera | %fuera | %+llm | lineas | "
+            "seed | activos | arbol comb inter llm | nuevos | fuera | %fuera | lineas | "
             "top3 (peso narrativo) | conc | propuestas sol/ok/rech | ok"
         ]
         for fila in self.filas:
             por = fila.por_origen
             top3 = " ".join(f"{individuo}:{saliencia:.1f}" for individuo, saliencia in fila.top3)
             propuestas = fila.propuestas
+            fuera = sum(por[origen] for origen in ORIGENES_FUERA)
             lineas.append(
-                f"{fila.seed:4d} | {fila.nodos_totales:5d} | "
+                f"{fila.seed:4d} | {fila.nodos_totales:7d} | "
                 f"{por['arbol']:4d} {por['combinacion']:4d} {por['interaccion']:5d} "
-                f"{por['llm']:3d} | {fila.nodos_fuera:5d} | "
-                f"{fila.pct_fuera_arbol:5.1f}% | {fila.pct_fuera_arbol_llm:5.1f}% | "
+                f"{por['llm']:3d} | {fila.nodos_fuera:6d} | {fuera:5d} | "
+                f"{fila.pct_fuera_arbol:5.1f}% | "
                 f"{fila.lineas_narradas:6d} | "
                 f"{top3:<30} | {fila.concentracion:5.1f} | "
                 f"{propuestas['solicitadas']:3d}/{propuestas['aceptadas']:2d}/"
@@ -274,8 +280,11 @@ def _crear_cola(llm: str, sincrono: bool) -> ColaLLM | None:
 def _fila(simulacion: Simulacion, *, seed: int, ticks: int, crisis: bool, llm: str) -> FilaF2:
     resumen = simulacion.resumen()
     nodos = resumen["nodos"]
+    activos = sum(1 for nodo in nodos if nodo["estado"] == "activo")
     por_origen = dict(resumen["nodos_por_origen"])
-    fuera = tuple(nodo for nodo in nodos if nodo["origen"] in ORIGENES_FUERA)
+    fuera = tuple(
+        nodo for nodo in nodos if nodo["estado"] == "activo" and nodo["origen"] in ORIGENES_FUERA
+    )
     fuera_llm = sum(por_origen.get(origen, 0) for origen in ("combinacion", "interaccion", "llm"))
     lineas = [
         entrada
@@ -301,11 +310,11 @@ def _fila(simulacion: Simulacion, *, seed: int, ticks: int, crisis: bool, llm: s
         seed=seed,
         ticks=ticks,
         crisis=crisis,
-        nodos_totales=len(nodos),
+        nodos_totales=activos,
         por_origen=por_origen,
         fuera_arbol=fuera,
         pct_fuera_arbol=resumen["pct_fuera_arbol"],
-        pct_fuera_arbol_llm=round(100.0 * fuera_llm / len(nodos), 1) if nodos else 0.0,
+        pct_fuera_arbol_llm=round(100.0 * fuera_llm / activos, 1) if activos else 0.0,
         lineas_narradas=total,
         narraciones_por_individuo=dict(por_individuo),
         top3=top3,
@@ -382,10 +391,14 @@ def _propuesta(estado: Mapping[str, Any], n: int) -> dict[str, Any]:
                 "contenido": combinacion.contenido,
             }
 
+    # Los cruces nuevos se apoyan en el árbol y el catálogo, no en nodos
+    # emergentes: encadenar `llm_*`/`comb_*` convertía cada propuesta en un
+    # requisito de la siguiente y el KPI crecía con el grafo, no con la cultura.
+    base = {nodo_id for nodo_id in ids if nodo_id in ARBOL or nodo_id in COMBINACIONES}
     pares = [
         (primero, segundo)
-        for primero in sorted(ids)
-        for segundo in sorted(ids)
+        for primero in sorted(base)
+        for segundo in sorted(base)
         if primero < segundo and _adyacentes(ramas.get(primero), ramas.get(segundo))
     ]
     for primero, segundo in pares:
@@ -444,7 +457,11 @@ def _adyacentes(primera: object, segunda: object) -> bool:
 
 
 def _id_nuevo(primero: str, segundo: str) -> str:
-    """Id estable y corto: el par, no el título, identifica la propuesta."""
+    """Id estable y corto: el par, no el título, identifica la propuesta.
+
+    Es un nodo del modelo (`origen="llm"`, nivel 1 de §8b). Los `comb_*` son
+    combinaciones de la regla de plausibilidad y no se encadenan.
+    """
     digest = hashlib.sha256(f"{primero}|{segundo}".encode()).hexdigest()[:12]
     return f"llm_{digest}"
 

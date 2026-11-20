@@ -500,13 +500,14 @@
         "uv run python -m tribal report kpi --db tribu.db devuelve los cuatro hitos, el porcentaje y el veredicto",
         "harness gate success=true"
       ],
-      "status": "in_progress",
+      "status": "done",
       "depends_on": [
         "F3-005",
         "F3-002"
       ],
       "started": "2026-11-19",
-      "review_rounds": 0
+      "review_rounds": 2,
+      "closed": "2026-11-20"
     },
     {
       "id": "HARD-3",
@@ -648,8 +649,9 @@
         "La utilidad situacional y el prestigio (ejes 1 y 2) van antes que el resto",
         "No se empieza hasta cerrar EMER-001, F2 y F3"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "blocked",
+      "depends_on": [],
+      "blocked_reason": "absorbida por features concretas (UTIL-001, AMB-001, F2-004, SOCIAL, MEDIR-LLM, RAMAS-EMERGENTES); su criterio esperaba EMER-001, bloqueado para siempre"
     },
     {
       "id": "UTIL-001",
@@ -730,8 +732,9 @@
         "Un test demuestra que la ventaja del descubridor es condicional al contexto, no permanente",
         "uv run pytest -q pasa"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "blocked",
+      "depends_on": [],
+      "blocked_reason": "duplicado de UTIL-001 (done): utilidad situacional ya implementada; pasar a discarded cuando exista harness discard"
     },
     {
       "id": "EMER-003",
@@ -743,8 +746,9 @@
         "Un divergente que prueba el recurso nuevo sobrevive mas que un conformista que insiste en el viejo (test)",
         "uv run pytest -q pasa"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "blocked",
+      "depends_on": [],
+      "blocked_reason": "duplicado de AMB-001 (done): gradiente ambiental ya implementado; pasar a discarded cuando exista harness discard"
     },
     {
       "id": "F2-CONTRATO",
@@ -837,6 +841,112 @@
       "status": "pending",
       "depends_on": [
         "HARNESS-EDIT"
+      ]
+    },
+    {
+      "id": "MEDIR-LLM",
+      "title": "Medir el uso real del LLM",
+      "description": "sustituye el 5 por ciento inventado de auditoria-llm.md por el numero medido: porcentaje de acciones decididas por LLM frente a instinto",
+      "acceptance_criteria": [
+        "resumen() expone el porcentaje de acciones decididas por LLM frente a instinto, por tramo/era, no solo peticiones enviadas",
+        "auditoria-llm.md seccion 1 sustituye el ~5 por ciento por el numero medido con su comando de evidencia",
+        "un test ancla que la metrica distingue instinto de LLM y cae si se finge"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "MEM-LOOP",
+      "title": "Cerrar el bucle de memoria",
+      "description": "D1+D2+D3 de auditoria-llm.md: la memoria lee IDs y no escribe lo que el LLM produce",
+      "acceptance_criteria": [
+        "la recuperacion inyecta el TEXTO del recuerdo en el contexto, no solo id y score",
+        "la narracion y el dialogo se indexan como recuerdos y son recuperables por similitud en ticks posteriores",
+        "la memoria se asocia al individuo: no se recuperan recuerdos de otro sin vinculo"
+      ],
+      "status": "pending",
+      "depends_on": []
+    },
+    {
+      "id": "PERSONA",
+      "title": "Prompt por individuo",
+      "description": "C1 de auditoria-llm.md: el prompt hoy es identico para todos los individuos",
+      "acceptance_criteria": [
+        "dos individuos con distinto genoma y la misma situacion reciben prompts distintos",
+        "el prompt del decididor incluye rasgos del genoma, habilidades, saliencia e hitos propios"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "MEM-LOOP"
+      ]
+    },
+    {
+      "id": "HABLA",
+      "title": "Dialogo real y evolucion del lenguaje",
+      "description": "A1+A2 de auditoria-llm.md: el canal habla no existe",
+      "acceptance_criteria": [
+        "un dialogo de al menos 2 turnos asociado a dos individuos, indexado en memoria",
+        "la complejidad del texto depende de la rama lenguaje: sin proto_palabras gestos, con vocabulario sintaxis"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "MEM-LOOP",
+        "PERSONA"
+      ]
+    },
+    {
+      "id": "CONTENIDO",
+      "title": "Contenido simbolico real",
+      "description": "E3 de auditoria-llm.md: el mito hoy es un nodo con contenido fijo, no texto del modelo",
+      "acceptance_criteria": [
+        "un mito o rito con texto del LLM queda en el grafo con su contenido y es recuperable",
+        "el contenido no es una plantilla fija: dos partidas con distinta historia producen contenido distinto"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "PERSONA"
+      ]
+    },
+    {
+      "id": "INVENTOR",
+      "title": "Inventor sin prioridad de catalogo",
+      "description": "E2 de auditoria-llm.md: el catalogo tiene prioridad sobre el LLM, origen=llm es residual",
+      "acceptance_criteria": [
+        "con backend falso aparecen nodos origen=llm sin que el catalogo se agote",
+        "el catalogo pasa a ser un caso particular de validacion, no la primera opcion"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "PERSONA"
+      ]
+    },
+    {
+      "id": "SOCIAL",
+      "title": "Prestigio, necesidad social y edad",
+      "description": "ejes 2 y 4 de refinamiento-hoja-de-ruta.md, ausentes de la auditoria",
+      "acceptance_criteria": [
+        "copiar al exitoso por prestigio, no al mayoritario: los linajes de copiados prestigiosos correlacionan con supervivencia",
+        "los ancianos concentran conocimiento y su muerte sin ensenar apaga nodos"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "MEM-LOOP"
+      ]
+    },
+    {
+      "id": "RAMAS-EMERGENTES",
+      "title": "Ramas y eras emergentes mas KPI contra el seed",
+      "description": "F1+F2+F3+F4 de auditoria-llm.md: abandonar el arbol fijo",
+      "acceptance_criteria": [
+        "quitar la tabla RAMAS fija no rompe el motor: las ramas se derivan por clustering de embeddings y co-transmision",
+        "la validacion es por restricciones locales (padres activos, material existe), no por categorias",
+        "la era es un resumen narrativo del LLM, no una etapa impuesta",
+        "el SQL de objetivo.md seccion 3.2 mide contra el seed inicial, no contra un arbol fijo"
+      ],
+      "status": "pending",
+      "depends_on": [
+        "INVENTOR",
+        "CONTENIDO"
       ]
     }
   ]

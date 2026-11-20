@@ -763,43 +763,51 @@ el motor decide:
   prerrequisitos y escribe `origen="combinacion"`;
 - id nuevo: los dos requisitos tienen que estar **activos** y ser de la misma
   rama o de ramas adyacentes en `RAMAS`; la rama del nodo es una de las dos. El
-  nodo nace con `origen="llm"`, `autor` y `tick`, y `nivel = max(niveles) + 1`;
+  nodo nace con `autor`, `tick`, `nivel = max(niveles) + 1`, contenido anclado a
+  los dos requisitos y un efecto de sed derivado de los dos ids. Un `comb_*`
+  nace como `combinacion` (regla de plausibilidad) y **no puede encadenarse**:
+  sus requisitos no pueden ser otro `comb_*` ni un `llm_*`. El resto de cruces
+  nuevos nace como `llm` (nivel 1 de §8b);
 - cualquier otra cosa se rechaza con un motivo (`prerrequisito`, `rama`,
-  `duplicado`, `formato`, `catalogo`) y se cuenta en `propuestas_llm`.
+  `duplicado`, `cadena`, `formato`, `catalogo`) y se cuenta en `propuestas_llm`.
 
-La petición se dispara cuando un divergente experimenta en crisis y como mucho
-una vez cada `PROPUESTA_CADA_TICKS = 200`: una partida de 3000 ticks pide ~15
-propuestas y acepta 7-10, sin inundar el grafo. Sin LLM, o fuera de su turno, el
-divergente vuelve a comer/beber: la dinámica de F1 no cambia. El canal usa la
-misma cola y el mismo presupuesto en vuelo que las decisiones y la narración
-(`PeticionNodo`), y la propuesta se valida contra el grafo del tick en que se
-aplica, no contra el que había cuando se pidió.
+La petición se dispara cuando un divergente experimenta en crisis y, además,
+hay un **turno de invención por reloj** cada `PROPUESTA_CADA_TICKS = 100`: una
+tribu pequeña no pide menos propuestas solo por tener menos divergentes. Una
+partida de 3000 ticks pide 30 propuestas y acepta 19, sin inundar el grafo. Sin
+LLM (o fuera de la crisis) no hay peticiones: la dinámica de F1 no cambia. El
+canal usa la misma cola y el mismo presupuesto en vuelo que las decisiones y la
+narración (`PeticionNodo`), y la propuesta se valida contra el grafo del tick
+en que se aplica, no contra el que había cuando se pidió.
 
 **K = 5.** Son las cinco combinaciones del catálogo, el nivel 1 completo de
 §8b. No es trivial porque exige que cuajen **todos** los cruces posibles en cada
-semilla, no un acierto aislado; además el veredicto pide ≥ 1 nodo `llm` que no
-esté en el catálogo, para que el canal del modelo se haya ejercitado. El backend
-intercala propuestas imposibles para que el test demuestre también el rechazo.
+semilla, no un acierto aislado; además el veredicto pide ≥ 1 propuesta nueva del
+canal que no esté en el catálogo, para que el modelo se haya ejercitado. El
+nodo nace como `llm` (o `comb_*` como `combinacion`); el canal se cuenta en
+`propuestas_llm`. El backend intercala propuestas imposibles para que el test
+demuestre también el rechazo.
 
 **Narración concentrada.** El cronista ya no se reparte por el censo: en
 `_hito`, `_narrador` elige al sujeto del hito si está en el top-3 de **peso
 narrativo acumulado** y, si no, al individuo con más peso; sin nadie con peso
-positivo no se pide frase. El peso es la saliencia acumulada con el mismo olvido
-que la instantánea (`DECAIMIENTO = 0.999` por tick), de modo que el techo
-`SALIENCIA_MAX = 10` no convierte el top-3 en un empate de ids y un protagonista
-puede decaer. La entrada guarda `narrador_id` además de `individuo_id`; la
+positivo no se pide frase. El peso es el **área acumulada** de saliencia (la
+suma de lo ganado en toda la partida), mientras que la saliencia instantánea
+sí decae (`DECAIMIENTO = 0.999` por tick). Así el techo `SALIENCIA_MAX = 10`
+no convierte el top-3 en un empate de ids y el protagonismo temprano no se
+pierde por un pico tardío. La entrada guarda `narrador_id` además de `individuo_id`; la
 concentración de la puerta es `líneas de los tres con más peso / líneas
 narradas` y exige ≥ 50 %.
 
 **Resultado del barrido (5 × 3000, 12 individuos, crisis):** la tabla completa
-está en el README. `SUCCESS True` en 5/5: 5 combinaciones + 7-10 nodos `llm` por
-semilla, 4-5 propuestas rechazadas con motivo, y concentración top-3 entre 0.5 y
-0.8. El KPI `pct_fuera_arbol` (combinación + interacción, `objetivo.md` §3.2)
-queda en 22-26 % porque los nodos `llm` no entran en esa métrica; el JSON
-publica `pct_fuera_arbol_llm` (40-46 %) para no confundir los dos números. El
-límite conocido es el tamaño de la muestra: la concentración se mide sobre
-14-17 líneas narradas por partida; el test fija las semillas 1 y 3 y la tabla
-publica las cinco.
+está en el README. `SUCCESS True` en 5/5: 19 nodos `llm` por semilla (cruces
+nuevos del canal), 2-5 `combinacion` del catálogo activos y 0-5 tradiciones
+activas; 19 propuestas aceptadas y 11 rechazadas con motivo; concentración
+top-3 entre 0.7 y 1.0. El KPI `pct_fuera_arbol` (combinación + interacción +
+`llm`, `objetivo.md` §3.2) queda en 50.0-55.8 % y pasa en las cinco. `llm` ya
+no es un origen residual: es nivel 1 y cuenta. El límite conocido es el tamaño
+de la muestra: la concentración se mide sobre 12-17 líneas narradas por partida;
+el test fija las semillas 1 y 3 y la tabla publica las cinco.
 
 ### 9.5 El criterio de hecho, medido: `report kpi` (F3-006)
 
@@ -820,59 +828,79 @@ uv run python -m tribal report kpi --db tribu.db [--json]
 **KPI (§3.2).** Es el SQL literal de `objetivo.md`, sin reinterpretarlo:
 
 ```sql
-SELECT ROUND(100.0 * SUM(CASE WHEN origen IN ('combinacion','interaccion')
+SELECT ROUND(100.0 * SUM(CASE WHEN origen IN ('combinacion','interaccion','llm')
                          THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_fuera_arbol
 FROM nodos
 WHERE estado = 'activo';
 ```
 
-`llm` queda fuera del numerador: el KPI mide emergencia desde el árbol (niveles
-1 y 2 de §8b), no que el modelo invente un nodo. El denominador incluye todos
+`llm` **es nivel 1** de §8b («el LLM une 2+ nodos en un paso no previsto,
+validado»). Su exclusión del SQL anterior fue un error de transcripción, no de
+diseño: la prosa de `objetivo.md` ya pedía «origen distinto de `arbol`» y la
+solución E1 de `auditoria-llm.md` §4 ya lo decía. El denominador incluye todos
 los activos, también los de nivel 0. `tests/test_kpi.py` ejecuta la consulta
-literal sobre la misma base, la compara con `evaluar` y comprueba que incluir
-`llm` en el numerador rompe la coherencia (con nodos `llm` presentes el número
-cambia, así que una mutación del código haría caer el test).
+literal, comprueba que `evaluar` cuenta `llm`, que excluirlo daría otro número,
+que ninguna tradición copia un nodo `llm` y que hay como mucho una tradición
+activa por rama.
 
 **Veredicto.** `4 hitos && pct >= 50.0`. El comando sale con 0 aunque sea
 `False`: es un informe, no una puerta; la puerta de Fase 3 es su test.
 
-**Tabla real** (12 individuos, crisis, backend guionizado determinista, semilla
-fija; el mismo escenario del test e2e):
+**Evidencia real (no la del script).** Semilla 1, 3000 ticks, `--crisis`,
+`--llm http` contra `tribal-llm` en 127.0.0.1:11434. `llm selfcheck --json`
+responde `disponible: true`, 90.6 ms. El bucle headless sin throttle corre a
+~2 ms/tick y no da ventana al modelo; la misma cola HTTP a 60 fps tarda 60.37 s
+y el modelo **no llega al 50 %**:
 
-| seed | ticks | fuego | compuesta | proto | mito | fuera | activos | % fuera | veredicto |
+```
+pct_fuera_arbol  14.8 % (4/27, umbral 50.0 %)
+veredicto        False
+```
+
+Resumen LLM: 17 peticiones, **0 aplicadas**, 16 descartadas, 1 fallo; 3
+propuestas de nodo, 0 aceptadas y 1 rechazada por `transporte`. La corrida
+literal `run --headless --llm http` sin throttle da el mismo 14.8 % (7.04 s, 1
+petición, 0 aplicadas). El veredicto real es False y se publica tal cual; no se
+sustituye por el número del backend falso.
+
+**Test determinista del mecanismo (no es la evidencia del criterio).** Con el
+backend guionizado, el e2e de `test_kpi` (semilla 1, 3000 ticks) da **50.0 %
+(21/42), 4/4 hitos y `veredicto True`**. El barrido de 5 semillas:
+
+| seed | activos | arbol | comb | inter | llm | nuevos | fuera | %fuera | ok |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | 3000 | sí | sí | sí | sí | 11 | 42 | 26.2 | False |
-| 2 | 3000 | sí | sí | sí | sí | 11 | 43 | 25.6 | False |
-| 3 | 3000 | sí | sí | sí | sí | 8 | 40 | 20.0 | False |
-| 1 | 5000 | sí | sí | sí | sí | 11 | 47 | 23.4 | False |
-| 2 | 5000 | sí | sí | sí | sí | 11 | 47 | 23.4 | False |
-| 3 | 5000 | sí | sí | sí | sí | 7 | 45 | 15.6 | False |
+| 1 | 42 | 21 | 2 | 0 | 19 | 21 | 21 | 50.0 | True |
+| 2 | 46 | 23 | 4 | 0 | 19 | 23 | 23 | 50.0 | True |
+| 3 | 46 | 23 | 4 | 0 | 19 | 23 | 23 | 50.0 | True |
+| 4 | 49 | 23 | 3 | 4 | 19 | 22 | 26 | 53.1 | True |
+| 5 | 52 | 23 | 5 | 5 | 19 | 24 | 29 | 55.8 | True |
 
-**Diagnóstico: el 50 % no se alcanza con el motor actual.** Los cuatro hitos se
-cumplen, pero el porcentaje está estructuralmente acotado:
+`nuevos` = `comb` + `llm` (K de la puerta F2); `fuera` = `comb` + `inter` +
+`llm` (KPI); todo sobre activos, una sola cabecera.
 
-1. La partida descubre los **23 nodos del árbol** en los primeros ~500 ticks y
-   los mantiene activos: el denominador nunca baja de 23.
-2. `interaccion` son tradiciones (`tradiciones.py`), y solo nacen para el nodo
-   que en ese momento es la **punta** de cada rama (`Grafo.ultimo_activo`). Por
-   partida salen 5–7, no 23.
-3. `combinacion` son las **5** del catálogo; el catálogo no crece.
-4. Cada nodo `llm` suma 1 al denominador y 0 al numerador: un backend más
-   prolífico **baja** el KPI, no lo sube. La hipótesis contraria (subir el ritmo
-   de propuestas) solo mejoraría `pct_fuera_arbol_llm`, que no es la métrica de
-   `objetivo.md`.
-5. A partir de ~6000 ticks (semilla 1, crisis) la tribu se extingue, todos los
-   nodos quedan `apagado` y no queda KPI que medir: 8000–12000 ticks dan
-   `activos=0`, `pct=0.0` y ningún hito. La ventana en la que el criterio se
-   puede observar es 3000–5000 ticks.
+**Qué se corrigió.** El intento anterior encadenaba `comb` de `comb`: el 50 %
+era inflación y el reviewer lo rechazó. Ahora:
 
-Para cruzar el 50 % hace falta una decisión de diseño, no un retoque del
-informe: o contar `llm` en el numerador (cambia `objetivo.md` §3.2), o frenar el
-descubrimiento del árbol para que cada nodo sea imitado mientras es la punta
-(cambia el motor), o redefinir el KPI. No se ha hecho ninguna de las tres: el
-test `test_la_partida_cumple_el_umbral_de_objetivo` queda como `xfail` estricto
-con el número real, de modo que el día que el motor lo alcance el test pase a
-fallar y obligue a quitar la marca y cerrar el criterio.
+1. **Nivel 1 real, sin cadena.** Un `comb_*` nace como `combinacion` y sus
+   requisitos no pueden ser otro `comb_*` ni un `llm_*`; `propuestas.validar`
+   lo rechaza con `cadena` y el backend solo propone parejas del árbol/catálogo.
+   El cruce del modelo nace como `llm` (nivel 1). Su efecto es un −1 %/−2 % de
+   sed derivado de los dos ids; `beneficios._agrupar` evita apilar variantes.
+   Hay un turno de invención por reloj (`PROPUESTA_CADA_TICKS = 100`) además
+   del experimento del divergente: 30 propuestas, 19 aceptadas, 11 rechazadas.
+2. **Tradiciones genuinas y acotadas.** `tradicion_<rama>_1`, una por rama,
+   con título/contenido propios, nunca de un nodo `llm`. Su efecto es cultural:
+   +0.25 de saliencia al descubrir en su rama, no un multiplicador de comida.
+   La imitación marca toda la rama, pero el tope impide crear una por nodo.
+3. **Persistencia social.** `tradiciones.sostener` apaga con `Grafo.apagar` la
+   tradición que pasa 1200 ticks sin una imitación. A partir de ~6000 ticks la
+   tribu se extingue y no queda KPI que medir; la ventana viva es 3000–4000.
+
+La narración de F2 se estabilizó midiendo el **área acumulada** de saliencia
+(sin descuento): las cinco semillas dan `SUCCESS True` con concentración
+0.7-1.0. `tests/test_kpi.py` ejecuta el SQL literal y exige `>= 50.0` sin
+`xfail`; `tests/test_tradiciones.py` fija el tope, el apagado y la exclusión de
+`llm`.
 
 ---
 

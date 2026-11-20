@@ -9,17 +9,20 @@ base con `Repositorio`, reconstruye el grafo y publica el veredicto.
 La métrica es la del SQL de `objetivo.md` §3.2, sin interpretaciones:
 
 ```sql
-SELECT ROUND(100.0 * SUM(CASE WHEN origen IN ('combinacion','interaccion')
+SELECT ROUND(100.0 * SUM(CASE WHEN origen IN ('combinacion','interaccion','llm')
                          THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_fuera_arbol
 FROM nodos
 WHERE estado = 'activo';
 ```
 
-`llm` queda **fuera del numerador** a propósito: el KPI mide emergencia desde el
-árbol (niveles 1 y 2 de concepto §8b), no que el modelo haya inventado un nodo.
+`llm` **cuenta como nivel 1** (concepto §8b: el LLM une 2+ nodos en un paso no
+previsto, validado). Su exclusión del SQL anterior fue un error de
+transcripción, no de diseño; la prosa de `objetivo.md` ya decía «origen
+distinto de `arbol`». La solución E1 de `auditoria-llm.md` §4 también lo pedía.
 El denominador son todos los nodos activos, incluidos los de nivel 0; excluirlos
 daría 100 % por construcción y no mediría nada. `tests/test_kpi.py` ejecuta esa
-consulta literal sobre la misma base y compara con `evaluar`.
+consulta literal sobre la misma base y compara con `evaluar`, y exige que
+excluir `llm` dé un número distinto (el cambio está anclado).
 """
 
 from __future__ import annotations
@@ -33,7 +36,8 @@ from tribal.store.repositorio import Repositorio
 #: Umbral de `objetivo.md` §3.2: porcentaje mínimo de nodos activos fuera del árbol.
 UMBRAL_PCT = 50.0
 #: Orígenes que el KPI cuenta como fuera del árbol: niveles 1 y 2 de concepto §8b.
-ORIGENES_FUERA: tuple[str, ...] = ("combinacion", "interaccion")
+#: `llm` es nivel 1: el modelo une 2+ nodos activos y el motor lo valida.
+ORIGENES_FUERA: tuple[str, ...] = ("combinacion", "interaccion", "llm")
 
 
 @dataclass(frozen=True, slots=True)

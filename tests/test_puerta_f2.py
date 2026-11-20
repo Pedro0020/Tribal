@@ -1,9 +1,12 @@
 """Puerta F2→F3: nodos fuera del árbol y narración concentrada (F2-006).
 
 La propuesta del LLM no escribe en el grafo: el motor la valida. Una
-combinación del catálogo se delega a `Grafo.descubrir` (origen `combinacion`);
-un cruce nuevo solo entra si sus dos requisitos están activos y son de la misma
-rama o de ramas adyacentes (origen `llm`). La narración se concentra porque el
+combinación del catálogo se delega a `Grafo.descubrir`; un cruce nuevo solo
+entra si sus dos requisitos están activos y son de la misma rama o de ramas
+adyacentes. El cruce del modelo nace con `origen="llm"` y un `comb_*` de la
+regla de plausibilidad con `origen="combinacion"`; ambos son nivel 1 de §8b. Un
+`comb_*` no puede encadenarse con otro `comb_*` ni con un `llm_*`. La narración
+se concentra porque el
 cronista sale del peso de saliencia, no del censo.
 """
 
@@ -14,6 +17,7 @@ import json
 import pytest
 
 from tribal.cli import main
+from tribal.culture.arbol import Nodo
 from tribal.culture.grafo import Grafo
 from tribal.culture.propuestas import Propuesta, PropuestaInvalida, parsear, validar
 from tribal.gate_f2 import (
@@ -31,7 +35,7 @@ def _grafo(*nodos: str) -> Grafo:
     return grafo
 
 
-def test_una_propuesta_nueva_plausible_nace_con_origen_llm() -> None:
+def test_una_propuesta_nueva_plausible_nace_como_llm() -> None:
     grafo = _grafo("guijarro", "lasca", "bifaz", "observar_rayo", "conservar_brasas")
     propuesta = Propuesta(
         id="hacha_de_mano",
@@ -43,12 +47,72 @@ def test_una_propuesta_nueva_plausible_nace_con_origen_llm() -> None:
 
     nodo = validar(propuesta, grafo, autor=7, tick=99)
 
-    assert nodo.origen == "llm"
+    assert nodo.origen == "llm", "nivel 1 de §8b: el modelo une dos nodos activos"
     assert (nodo.autor, nodo.tick) == (7, 99)
     assert nodo.requisitos == ("bifaz", "conservar_brasas")
+    assert "Bifaz" in nodo.contenido and "Conservar brasas" in nodo.contenido
     # Bifaz es nivel 2; el cruce nuevo un escalón por encima.
     assert nodo.nivel == 3
     assert grafo.nodos["hacha_de_mano"] is nodo
+
+    with pytest.raises(PropuestaInvalida, match="duplicado"):
+        validar(propuesta, grafo, autor=7, tick=100)
+
+
+def test_una_combinacion_comb_no_puede_encadenarse() -> None:
+    grafo = _grafo("guijarro", "lasca")
+    grafo.agregar(
+        Nodo(
+            "comb_base",
+            "litica",
+            2,
+            "Base",
+            "Una combinación de la regla de plausibilidad.",
+            requisitos=("guijarro", "lasca"),
+            origen="combinacion",
+            autor=1,
+            tick=3,
+        )
+    )
+    grafo.agregar(
+        Nodo(
+            "llm_base",
+            "litica",
+            1,
+            "LlM base",
+            "Un nodo del modelo.",
+            requisitos=("guijarro",),
+            origen="llm",
+            autor=1,
+            tick=4,
+        )
+    )
+
+    for requisitos in (("comb_base", "lasca"), ("llm_base", "lasca")):
+        propuesta = Propuesta(
+            id="comb_nueva",
+            rama="litica",
+            requisitos=requisitos,
+            titulo="Cadena",
+            contenido="No puede apoyarse en otro nodo emergente.",
+        )
+        with pytest.raises(PropuestaInvalida, match="cadena"):
+            validar(propuesta, grafo, autor=7, tick=99)
+
+    # Con requisitos del árbol sí se acepta: el problema es la cadena.
+    aceptada = validar(
+        Propuesta(
+            id="comb_nueva",
+            rama="litica",
+            requisitos=("guijarro", "lasca"),
+            titulo="Cruce limpio",
+            contenido="Dos nodos del árbol y nada más.",
+        ),
+        grafo,
+        autor=7,
+        tick=100,
+    )
+    assert aceptada.origen == "combinacion"
 
 
 def test_una_propuesta_de_ramas_no_adyacentes_se_rechaza() -> None:
@@ -125,12 +189,12 @@ def test_gate_f2_e2e_crea_nodos_y_rechaza_los_imposibles() -> None:
     fila = medir_semilla(1, ticks=3000, crisis=True, llm="script", sincrono=True)
 
     assert fila.por_origen["combinacion"] + fila.por_origen["llm"] >= K_NODOS_FUERA
+    # El canal acepta cruces nuevos, que son nodos `llm` (nivel 1). Las cinco
+    # del catálogo pueden llegar por el divergente; las imposibles se cuentan
+    # por motivo, no se inscriben.
     assert fila.por_origen["llm"] >= 1
-    # El canal acepta las dos clases: una combinación del catálogo y un cruce
-    # nuevo. Las imposibles se cuentan por motivo, no se inscriben.
-    assert fila.propuestas["por_origen"]["combinacion"] >= 1
     assert fila.propuestas["por_origen"]["llm"] >= 1
-    assert fila.propuestas["aceptadas"] >= fila.por_origen["llm"]
+    assert fila.propuestas["aceptadas"] == sum(fila.propuestas["por_origen"].values())
     assert fila.propuestas["rechazadas"] >= 1
     assert {"prerrequisito", "rama"} <= set(fila.propuestas["rechazos"])
 

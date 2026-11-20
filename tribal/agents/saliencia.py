@@ -24,6 +24,9 @@ SUBIDA: dict[str, float] = {
     "primer_nodo": 1.0,
     "combinacion": 1.5,
     "tradicion": 1.0,
+    # Efecto cultural de una tradición viva: el descubrimiento de esa rama
+    # pesa un poco más en la memoria del grupo.
+    "tradicion_practica": 0.25,
     "ensenanza": 0.4,
     "rescate": 0.6,
     "crisis": 0.5,

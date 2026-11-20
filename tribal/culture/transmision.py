@@ -14,6 +14,11 @@ La otra ruta de la transmisión, **enseñar**, la resuelve `core.acciones.ensena
 exige proximidad y que la tribu tenga lenguaje (`proto_palabras` activo). La
 imitación pasiva de quien ve usar una habilidad no depende del lenguaje ni del
 temperamento: los conformistas también copian.
+
+Las **tradiciones** no pasan por este reloj de portadores: su persistencia es
+social y la lleva `tradiciones.sostener`, que las apaga si el grupo deja de
+imitarlas durante `TICKS_SIN_IMITACION`. Aquí no se les asigna habilidad, así
+que `sostener` no las toca por la vía de los portadores.
 """
 
 from __future__ import annotations

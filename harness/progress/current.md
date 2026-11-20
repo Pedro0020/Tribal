@@ -1,25 +1,26 @@
 # Tarea actual
 
-**Feature:** F3-006
-**Estado:** in_progress
-**Iniciada:** 2026-11-19
-**Responsable:** implementer
+> Estado vivo de la ejecución en curso. Es la memoria **fuera** de la ventana de
+> contexto: cualquier agente que arranque de cero lee este fichero y sabe dónde
+> está el trabajo sin releer el proyecto entero.
+
+**Feature:** _(ninguna)_
+**Estado:** idle
+**Iniciada:** —
+**Responsable:** —
 
 ## Objetivo
 
-objetivo.md §3: cuatro hitos y al menos el 50 por ciento de nodos activos fuera del arbol, comprobado con una consulta sobre la partida y un test del repo.
+_(sin trabajo en curso)_
 
 ## Criterios de aceptación
 
-- [ ] test end-to-end reproducible (semilla fija + backend falso guionizado) que llega a fuego, herramienta compuesta, proto-lenguaje y mito
-- [ ] test que ejecuta la consulta SQL de objetivo.md §3.2 sobre tribu.db y exige pct_fuera_arbol >= 50.0
-- [ ] uv run python -m tribal report kpi --db tribu.db devuelve los cuatro hitos, el porcentaje y el veredicto
-- [ ] harness gate success=true
+_(copiar aquí los `acceptance_criteria` de la feature al empezar)_
 
 ## Bitácora
 
-_(pendiente)_
+_(una línea por paso: qué se hizo, qué fichero se tocó, qué verificó)_
 
 ## Bloqueos
 
-_(ninguno)_
+_(qué impide avanzar y qué se necesita para desbloquearlo — vacío si nada)_

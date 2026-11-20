@@ -3,11 +3,18 @@ Propuestas de nodo del LLM: nivel 1 de concepto §8b, validadas por el motor.
 
 El modelo no escribe en el grafo: propone y el motor decide. Una propuesta es
 una combinación de dos técnicas **ya activas**. Si el id está en
-`combinaciones.py`, la propuesta se delega al catálogo y el nodo nace con
-`origen="combinacion"`, como si lo hubiera cruzado un divergente. Si el id no
-está en el catálogo, solo se acepta cuando la pareja es plausible por una regla
-explícita —los dos nodos activos y de la misma rama o de ramas adyacentes en
-`RAMAS`— y entonces nace con `origen="llm"`.
+`combinaciones.py`, la propuesta se delega al catálogo curado y el nodo nace
+con `origen="combinacion"`, como si lo hubiera cruzado un divergente. Si el id
+no está en el catálogo, se aplica una **regla de plausibilidad**: los dos
+requisitos activos, de la misma rama o de ramas adyacentes en `RAMAS`, y la
+rama propuesta es una de las dos. El contenido se ancla a los dos requisitos y
+el efecto es un −1 %/−2 % de sed derivado de sus ids
+(`beneficios.perfil_de`). Un id `comb_*` nace como `combinacion` (regla de
+plausibilidad) y **no puede encadenarse**: sus requisitos no pueden ser otro
+`comb_*` ni un `llm_*`. El resto de propuestas nuevas nace como `llm` —nivel 1
+de §8b: el modelo une dos nodos existentes en un paso no previsto—. El catálogo
+curado sigue teniendo prioridad en el backend y conserva sus efectos y
+habilidades.
 
 Lo que no cumple la regla se rechaza y se cuenta: un nodo inventado no puede
 saltarse el árbol por ser una frase bonita. La validación vive aquí y no en el
@@ -20,7 +27,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from tribal.culture.arbol import ARBOL, RAMAS, Nodo, Rama
+from tribal.culture.arbol import ARBOL, RAMAS, Nodo, Origen, Rama
 from tribal.culture.combinaciones import COMBINACIONES
 from tribal.culture.grafo import Grafo, PrerequisitoFaltante
 
@@ -118,6 +125,15 @@ def validar(propuesta: Propuesta, grafo: Grafo, *, autor: int, tick: int) -> Nod
         except PrerequisitoFaltante as exc:
             raise PropuestaInvalida(f"prerrequisito: {exc}") from None
 
+    # La cadena comb -> comb (o comb -> llm) era inflación: cada cruce se
+    # apoyaba en el anterior y el KPI crecía con el grafo, no con la cultura.
+    if propuesta.id.startswith("comb_") and any(
+        requisito.startswith(("comb_", "llm_")) for requisito in propuesta.requisitos
+    ):
+        raise PropuestaInvalida(
+            "cadena: una combinación no puede apoyarse en otra combinación ni en un nodo llm"
+        )
+
     ramas: list[Rama] = []
     niveles: list[int] = []
     for requisito in propuesta.requisitos:
@@ -133,14 +149,23 @@ def validar(propuesta: Propuesta, grafo: Grafo, *, autor: int, tick: int) -> Nod
         )
 
     nivel = max(niveles) + 1
+    # El contenido se ancla a los dos requisitos: la técnica nueva no es una
+    # frase suelta, es el cruce de dos prácticas que la tribu ya tiene.
+    enlaces = " y ".join(grafo.nodos[requisito].titulo for requisito in propuesta.requisitos)
+    contenido = f"{propuesta.contenido} Une {enlaces}."
+    if len(contenido) > MAX_CONTENIDO:
+        contenido = contenido[:MAX_CONTENIDO].rstrip()
+    # `comb_*` es una combinación de la regla de plausibilidad; el resto de
+    # propuestas nuevas son del modelo y se guardan como nivel 1 `llm`.
+    origen: Origen = "combinacion" if propuesta.id.startswith("comb_") else "llm"
     nodo = Nodo(
         id=propuesta.id,
         rama=propuesta.rama,
         nivel=nivel,
         titulo=propuesta.titulo,
-        contenido=propuesta.contenido,
+        contenido=contenido,
         requisitos=propuesta.requisitos,
-        origen="llm",
+        origen=origen,
         autor=autor,
         tick=tick,
     )

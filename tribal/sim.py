@@ -107,10 +107,11 @@ REGENERACION_INVIERNO = 0.5
 #: (máximo 15 % por tick) y completa el cruce la mitad de las veces.
 PROB_INTENTO_DIVERGENTE = 0.15
 PROB_COMPLETAR_COMBINACION = 0.5
-#: Ticks mínimos entre dos propuestas de nodo al LLM (F2-006). El inventor no
-#: puede inundar el grafo: una propuesta cada 200 ticks ≈ 15 por partida de
-#: 3000, suficiente para medir el canal sin convertir la cultura en ruido.
-PROPUESTA_CADA_TICKS = 200
+#: Ticks mínimos entre dos propuestas de nodo al LLM (F2-006/F3-006). El
+#: inventor no puede inundar el grafo, pero el nivel 1 real necesita más que
+#: las cinco del catálogo: una propuesta cada 100 ticks ≈ 30 por partida de
+#: 3000, y el motor valida cada cruce antes de inscribirlo.
+PROPUESTA_CADA_TICKS = 100
 #: Un muerto con esta edad o más es un anciano: su muerte entra en el diario.
 UMBRAL_ANCIANO = 1500
 #: Nodo del árbol que dispara cada hito de "primera vez" (concepto §10). Se ata
@@ -385,6 +386,7 @@ class Simulacion:
             if aplicada and self._practicar(individuo, accion.nombre, descubrir=not descubierto):
                 descubierto = True
 
+        self._proponer_si_toca()
         tradicion = tradiciones.evaluar(self.grafo, self.mundo.tick)
         if tradicion is not None:
             self.tradiciones += 1
@@ -405,16 +407,17 @@ class Simulacion:
                 tradicion.id,
                 f"tradicion {tradicion.rama} {tradicion.id} {tradicion.titulo}",
             )
+        tradiciones.sostener(self.grafo, self.mundo.tick)
         self._reproducir()
         self.agrupamiento_max = max(self.agrupamiento_max, self._junto_al_agua())
 
         #: Protagonismo acumulado del tick: la puerta F2→F3 mide la narración
-        #: contra este peso, no contra un top instantáneo empatado en
-        #: `SALIENCIA_MAX`. El olvido es el mismo que el de la saliencia.
+        #: contra el área real bajo la curva, no contra un top instantáneo
+        #: empatado en `SALIENCIA_MAX`. La saliencia instantánea decae; el área
+        #: que mide el protagonismo de toda la partida no se descuenta.
         for individuo in self.mundo.individuos:
             self._saliencia_acumulada[individuo.id] = (
-                self._saliencia_acumulada.get(individuo.id, 0.0) * saliencia.DECAIMIENTO
-                + individuo.saliencia
+                self._saliencia_acumulada.get(individuo.id, 0.0) + individuo.saliencia
             )
 
         self._drenar()
@@ -583,12 +586,30 @@ class Simulacion:
                 respuesta.tick + self.cola.ventana,
             )
 
-    def _solicitar_propuesta_llm(self, individuo: Individuo) -> None:
-        """Pide al inventor un cruce cuando un divergente experimenta (F2-006).
+    def _proponer_si_toca(self) -> None:
+        """Un turno de invención por reloj, no solo cuando un divergente prueba.
 
-        Una petición por tick como mucho: la cola es asíncrona y no se puede
-        convertir el experimento en una tormenta de propuestas. El contexto son
-        datos planos —ids, ramas y niveles—, nunca objetos del mundo.
+        Sin esto, una tribu pequeña con pocos divergentes pedía muy pocas
+        propuestas y el nivel 1 dependía del censo. El motor sigue validando
+        cada propuesta; el inventor es cualquier vivo, no siempre un divergente
+        que haya gastado el tick experimentando.
+        """
+        if self.cola is None or not self._en_crisis():
+            return
+        if self.mundo.tick - self._propuesta_pedida_tick < PROPUESTA_CADA_TICKS:
+            return
+        inventor = next((individuo for individuo in self.mundo.individuos if individuo.vivo), None)
+        if inventor is None:
+            return
+        self._propuesta_pedida_tick = self.mundo.tick
+        self._solicitar_propuesta_llm(inventor)
+
+    def _solicitar_propuesta_llm(self, individuo: Individuo) -> None:
+        """Pide al inventor un cruce (F2-006/F3-006).
+
+        La dispara el experimento de un divergente o el turno de invención por
+        reloj; una petición por tick como mucho. El contexto son datos planos
+        —ids, ramas y niveles—, nunca objetos del mundo.
         """
         if self.cola is None:
             return
@@ -640,7 +661,11 @@ class Simulacion:
             return
 
         self.propuestas_aceptadas += 1
-        self.propuestas_por_origen[nodo.origen] = self.propuestas_por_origen.get(nodo.origen, 0) + 1
+        # Canal de la propuesta: catálogo curado o cruce nuevo del modelo. El
+        # nodo es `combinacion` en ambos casos (nivel 1 de §8b); `llm` aquí
+        # cuenta el canal, no un origen de nodo.
+        canal = "combinacion" if nodo.id in COMBINACIONES else "llm"
+        self.propuestas_por_origen[canal] = self.propuestas_por_origen.get(canal, 0) + 1
         self._registrar_nodo_propuesto(nodo, respuesta.individuo_id)
 
     def _registrar_nodo_propuesto(self, nodo: Nodo, autor_id: int) -> None:
@@ -651,12 +676,21 @@ class Simulacion:
         )
         if nodo.origen == "combinacion":
             self.combinaciones_logradas += 1
-            if autor is not None:
-                autor.habilidades.aprender(modulo_beneficios.HABILIDAD_POR_COMBINACION[nodo.id])
+        # El catálogo curado enseña su habilidad al descubridor, como siempre.
+        # Las combinaciones dinámicas tienen efecto para quien ya sepa la
+        # habilidad de su rama; no se la regalan al autor, para no alterar la
+        # dinámica social de enseñar/cuidar que mide la puerta F2.
+        if nodo.id in modulo_beneficios.HABILIDAD_POR_COMBINACION and autor is not None:
+            autor.habilidades.aprender(modulo_beneficios.HABILIDAD_POR_COMBINACION[nodo.id])
         self._descubridores.add(autor_id)
         if autor is not None:
             self._descubrimientos_tramo[_tramo(autor)] += 1
-            saliencia.subir(autor, "combinacion")
+            # El peso narrativo es del acto físico de probar un cruce del
+            # catálogo. Las combinaciones dinámicas cuentan para el KPI, pero
+            # no reparten saliencia: con 17-22 por partida convertirían el
+            # top-3 de la puerta F2 en un empate.
+            if nodo.id in COMBINACIONES:
+                saliencia.subir(autor, "combinacion")
         self._registrar_recuerdo(
             nodo.id,
             f"{nodo.origen} {nodo.rama} {nodo.id} {nodo.titulo}",
@@ -944,10 +978,12 @@ class Simulacion:
         Solo cuenta quien **sabe** la habilidad de la práctica, si la práctica
         exige una (concepto §5: la cultura sale de lo que ya se sabe hacer); en
         las que se definen por situación, el verbo ya comprobó la condición.
-        El uso se anota en el nodo más avanzado de la rama —la técnica que está
-        funcionando— y un conformista que la usa sin haberla descubierto suma
-        una imitación (§9b). El nodo nuevo nace con su origen escrito por
-        `Grafo.descubrir`, que valida los prerrequisitos.
+        El uso se anota en **todos** los nodos activos de la rama —la técnica que
+        está funcionando y lo que la sostiene— y un conformista que la usa sin
+        haberla descubierto suma una imitación (§9b). Anotarlo solo en la punta
+        dejaba sin imitar cada escalón en cuanto la rama avanzaba, y las
+        tradiciones (nivel 2) no pasaban de una por rama. El nodo nuevo nace con
+        su origen escrito por `Grafo.descubrir`, que valida los prerrequisitos.
         """
         practica = PRACTICAS.get(accion)
         if practica is None:
@@ -955,9 +991,8 @@ class Simulacion:
         if practica.habilidad is not None and not individuo.habilidades.sabe(practica.habilidad):
             return False
         rama = practica.rama
-        en_uso = self.grafo.ultimo_activo(rama)
-        if en_uso is not None:
-            conformista = modulo_genoma.temperamento(individuo.genoma) == "conformista"
+        conformista = modulo_genoma.temperamento(individuo.genoma) == "conformista"
+        for en_uso in self.grafo.activos_en_rama(rama):
             self.grafo.registrar_uso(
                 en_uso.id,
                 usuario=individuo.id,
@@ -972,6 +1007,10 @@ class Simulacion:
         # Hito narrativo: ser el primero de la tribu en un escalón de la rama
         # —el primer fuego, la primera palabra, el primer líder— (concepto §10b).
         saliencia.subir(individuo, "primer_nodo")
+        # Efecto cultural de una tradición viva: el descubrimiento de su rama
+        # pesa un poco más en la memoria del grupo.
+        if tradiciones.activa_en(self.grafo, rama):
+            saliencia.subir(individuo, "tradicion_practica")
         self._hito_nodo(nodo, individuo)
         self._registrar_recuerdo(
             nodo.id, f"{nodo.rama} {nodo.id} {nodo.titulo} practicando {accion}"
@@ -1014,9 +1053,8 @@ class Simulacion:
         return top3[0].id
 
     def _peso_narrativo(self, individuo: Individuo) -> float:
-        """Peso con olvido acumulado hasta el tick anterior, más el de este."""
-        previo = self._saliencia_acumulada.get(individuo.id, 0.0) * saliencia.DECAIMIENTO
-        return previo + individuo.saliencia
+        """Área acumulada hasta el tick anterior, más la saliencia de este."""
+        return self._saliencia_acumulada.get(individuo.id, 0.0) + individuo.saliencia
 
     def _hito(self, tipo: str, individuo: Individuo | None, detalle: str) -> int:
         """Anota el hito en el diario y pide su frase. Nunca espera al LLM.

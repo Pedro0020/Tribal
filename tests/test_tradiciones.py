@@ -15,6 +15,7 @@ from tribal.config import SimConfig
 from tribal.core import mundo as modulo_mundo
 from tribal.core.modelos import Genoma, Individuo, Mundo, Necesidades, TipoTile
 from tribal.culture import tradiciones
+from tribal.culture.arbol import Nodo
 from tribal.culture.grafo import Arista, Grafo
 from tribal.sim import Simulacion, run
 
@@ -42,15 +43,72 @@ def test_tres_imitadores_distintos_convierten_la_practica_en_tradicion() -> None
     nodo = tradiciones.evaluar(grafo, tick=20)
 
     assert nodo is not None
-    assert nodo.id == "tradicion_guijarro"
+    assert nodo.id == "tradicion_litica_1"
     assert nodo.origen == "interaccion"
-    assert nodo.rama == "roles", "una técnica heredada se convierte en oficio"
+    assert nodo.rama == "litica", "la tradición pertenece a la rama de la práctica"
     assert nodo.requisitos == ("guijarro",)
+    assert nodo.titulo == "Cantera del grupo"
+    assert "talla" in nodo.contenido and "memoria" in nodo.contenido
     assert (nodo.autor, nodo.tick) == (4, 20)
     assert grafo.activo(nodo.id)
-    assert Arista("guijarro", "tradicion_guijarro") in grafo.aristas
+    assert Arista("guijarro", "tradicion_litica_1") in grafo.aristas
     assert grafo.nodos_por_origen() == {"arbol": 1, "combinacion": 0, "interaccion": 1, "llm": 0}
     assert grafo.a_json()["nivel_max"] == 2
+
+
+def test_una_tradicion_no_nace_de_un_nodo_llm() -> None:
+    grafo = Grafo()
+    grafo.descubrir("guijarro", autor=1, tick=1)
+    grafo.agregar(
+        Nodo(
+            "llm_inventado",
+            "litica",
+            1,
+            "Canto inventado",
+            "Un nodo que el KPI excluye a propósito.",
+            requisitos=("guijarro",),
+            origen="llm",
+            autor=1,
+            tick=2,
+        )
+    )
+    for usuario in (2, 3, 4):
+        grafo.registrar_uso("llm_inventado", usuario=usuario, es_conformista=True, tick=10)
+
+    assert tradiciones.evaluar(grafo, tick=20) is None
+    assert grafo.nodos_por_origen()["interaccion"] == 0
+
+
+def test_como_mucho_una_tradicion_por_rama() -> None:
+    grafo = Grafo()
+    grafo.descubrir("guijarro", autor=1, tick=1)
+    grafo.descubrir("lasca", autor=1, tick=2)
+    grafo.descubrir("bifaz", autor=1, tick=3)
+    for nodo_id in ("guijarro", "lasca", "bifaz"):
+        for usuario in (2, 3, 4):
+            grafo.registrar_uso(nodo_id, usuario=usuario, es_conformista=True, tick=10)
+
+    primera = tradiciones.evaluar(grafo, tick=20)
+    segunda = tradiciones.evaluar(grafo, tick=21)
+
+    assert primera is not None and primera.id == "tradicion_litica_1"
+    assert segunda is None
+    assert len(tradiciones._tradiciones_de(grafo, "litica")) == 1
+
+
+def test_la_tradicion_que_deja_de_imitarse_se_apaga() -> None:
+    grafo = _grafo_con_guijarro()
+    for usuario in (2, 3, 4):
+        grafo.registrar_uso("guijarro", usuario=usuario, es_conformista=True, tick=10)
+    nodo = tradiciones.evaluar(grafo, tick=20)
+    assert nodo is not None
+
+    assert tradiciones.sostener(grafo, tick=20 + tradiciones.TICKS_SIN_IMITACION - 1) == []
+    apagadas = tradiciones.sostener(grafo, tick=20 + tradiciones.TICKS_SIN_IMITACION)
+
+    assert apagadas == [(nodo.id, 20 + tradiciones.TICKS_SIN_IMITACION)]
+    assert grafo.nodos[nodo.id].estado == "apagado"
+    assert grafo.nodos[nodo.id].motivo_apagado == tradiciones.MOTIVO_SIN_IMITACION
 
 
 def test_cinco_imitaciones_en_ventana_tambien_crean_tradicion() -> None:
@@ -101,8 +159,8 @@ def test_la_tradicion_sigue_activa_aunque_muera_su_autor() -> None:
     nodo = tradiciones.evaluar(grafo, tick=20)
     assert nodo is not None
 
-    # El autor era el último imitador; su muerte no toca el grafo (aún no hay
-    # apagado): el nodo es de la tribu, no del individuo.
+    # El autor era el último imitador; su muerte no toca el grafo: el nodo es
+    # de la tribu. Solo lo apaga que el grupo deje de imitarlo.
     autor = Individuo(
         id=nodo.autor,
         sexo="m",
