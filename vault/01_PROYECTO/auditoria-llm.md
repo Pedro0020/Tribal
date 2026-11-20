@@ -163,12 +163,16 @@ individuos × 3000 ticks ≈ 36.000 acciones por partida).
 - `EmbedderHashing` (determinista, default) y `EmbedderOllama` (real, CPU).
 - `IndiceRecuerdos.buscar()` devuelve top-k por coseno, con guarda de contexto
   (no corre en hilo de render ni del LLM).
-- **Observaciones (críticas):**
-  - La recuperación solo inyecta `{"id", "score"}` en el contexto
-    (`sim.py _recuperar_memoria`), **no el contenido del recuerdo**. El texto
-    no viaja al prompt: el LLM no "lee" la memoria, solo recibe IDs.
-  - La narración y el diálogo **no escriben** en la memoria. El bucle está
-    abierto: se lee (IDs) pero no se escribe lo que el LLM produce.
+- **Observaciones (críticas) — resueltas por `MEM-LOOP`:**
+  - La recuperación solo inyectaba `{"id", "score"}` en el contexto
+    (`sim.py _recuperar_memoria`), **no el contenido del recuerdo**. Hoy el
+    contexto lleva `memoria: [{id, texto, score}]` con el texto real (D1).
+  - La narración y el diálogo **no escribían** en la memoria. Hoy ambos se
+    indexan al producirse y son recuperables por similitud en ticks posteriores
+    (D2).
+  - El índice era global. Hoy `Recuerdo` lleva `individuo_id` (o `None` para la
+    tribu) y `recuperar` filtra: un individuo no ve la memoria de otro sin
+    vínculo (D3; los vínculos llegan con `SOCIAL`).
 
 ### 2.9 El eval — `tribal/llm/eval.py`
 - 20 escenarios con una acción claramente correcta. En CI corre con
@@ -342,13 +346,19 @@ alcance.
 - **D1 — Contenido, no IDs.** `_recuperar_memoria` debe inyectar el **texto** del
   recuerdo en el contexto, no solo `{id, score}`.
   *Criterio:* el prompt de una decisión incluye el texto de los recuerdos top-k.
+  **Resuelto por `MEM-LOOP`:** el contexto lleva `memoria: [{id, texto, score}]`
+  con el texto acotado a `MAX_TEXTO_RECUERDO`.
 - **D2 — Escribir lo producido.** La narración y el diálogo se indexan como
   recuerdos (cierran el bucle). *Criterio:* un hito narrado queda recuperable por
   similitud en ticks posteriores.
+  **Resuelto por `MEM-LOOP`:** `_drenar` indexa la frase del cronista y el
+  diálogo de cada decisión con `tipo=narracion|dialogo`.
 - **D3 — Memoria persistente por individuo.** La memoria hoy es un índice global.
   Asociar recuerdos al individuo (y a la tribu) para que la "vida interior" sea
   de alguien. *Criterio:* la consulta de memoria de un individuo no devuelve
   recuerdos de otro sin vínculo.
+  **Resuelto por `MEM-LOOP`:** `Recuerdo.individuo_id` (o `None` = tribal) y
+  `IndiceRecuerdos.recuperar` filtran; los vínculos llegan con `SOCIAL`.
 
 ### E. Innovación / emergencia
 

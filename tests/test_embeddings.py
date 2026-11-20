@@ -63,8 +63,8 @@ def test_top_1_relevante_en_diez_consultas() -> None:
     indice = _indice()
     for recuerdo_id in RECUERDOS:
         top = indice.buscar(recuerdo_id, k=3)
-        assert top[0][0] == recuerdo_id
-        assert top[0][1] > top[-1][1]
+        assert top[0].id == recuerdo_id
+        assert top[0].score > top[-1].score
 
 
 def test_hashing_es_determinista_entre_procesos() -> None:
@@ -83,8 +83,8 @@ def test_orden_estable_con_empates() -> None:
     indice.agregar("alfa", "fuego frotar madera")
 
     top = indice.buscar("fuego", k=2)
-    assert [recuerdo_id for recuerdo_id, _ in top] == ["alfa", "zeta"]
-    assert top[0][1] == pytest.approx(top[1][1])
+    assert [recuerdo.id for recuerdo in top] == ["alfa", "zeta"]
+    assert top[0].score == pytest.approx(top[1].score)
 
 
 def test_orden_estable_no_depende_del_orden_de_insercion() -> None:
@@ -92,7 +92,7 @@ def test_orden_estable_no_depende_del_orden_de_insercion() -> None:
     indice.agregar("alfa", "fuego frotar madera")
     indice.agregar("zeta", "fuego frotar madera")
 
-    assert [recuerdo_id for recuerdo_id, _ in indice.buscar("fuego")] == ["alfa", "zeta"]
+    assert [recuerdo.id for recuerdo in indice.buscar("fuego")] == ["alfa", "zeta"]
 
 
 def test_usa_gpu_siempre_false() -> None:
@@ -202,7 +202,7 @@ def test_integracion_indexa_hitos_y_llena_el_contexto() -> None:
 
     indice = simulacion.recuerdos
     assert indice is not None
-    ids_indice = {recuerdo_id for recuerdo_id, _ in indice.buscar("", k=len(indice))}
+    ids_indice = {recuerdo.id for recuerdo in indice.buscar("", k=len(indice))}
     assert any(str(recuerdo_id).startswith("tradicion_") for recuerdo_id in ids_indice)
 
     assert cola.peticiones
@@ -213,8 +213,9 @@ def test_integracion_indexa_hitos_y_llena_el_contexto() -> None:
         assert isinstance(items, list) and items
         scores: list[float] = []
         for item in items:
-            assert set(item) == {"id", "score"}
+            assert set(item) == {"id", "texto", "score"}
             assert item["id"] in ids_indice
+            assert isinstance(item["texto"], str) and item["texto"]
             scores.append(item["score"])
         assert scores == sorted(scores, reverse=True)
 
@@ -229,7 +230,7 @@ def _embeddings_en_subproceso(semilla_hash: str) -> str:
         "i.agregar('agua', 'agua rio beber')\n"
         "i.agregar('caza', 'caza lanza presa')\n"
         "print(json.dumps({'vector': e.emb('fuego madera'), "
-        "'top': i.buscar('madera fuego', k=1)[0][0]}))\n"
+        "'top': i.buscar('madera fuego', k=1)[0].id}))\n"
     )
     entorno = {**os.environ, "PYTHONHASHSEED": semilla_hash}
     resultado = subprocess.run(

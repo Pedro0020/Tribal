@@ -104,11 +104,16 @@ modelo que puede tardar un segundo.
   `EmbedderOllama` es el real opcional (`POST /api/embed`, urllib, transporte
   inyectable); se declara en CPU (`usa_gpu=False`) porque la VRAM es del LLM y
   un fallo de servicio devuelve vector nulo sin lanzar. `IndiceRecuerdos`
-  guarda vectores y `buscar(consulta, k)` devuelve top-k por coseno con orden
-  estable (score y luego id); una guarda impide llamarlo desde `ui.render` o
-  desde el hilo `tribal-llm`. `Simulacion` indexa los hitos de cultura —nodos
-  del árbol, combinaciones y tradiciones de `origen=interaccion`— y añade los
-  relevantes al contexto de cada petición; `resumen()` publica
+  guarda `Recuerdo(id, texto, individuo_id, tick, tipo)` y `buscar(consulta, k)`
+  devuelve top-k por coseno con orden estable (score y luego id); una guarda
+  impide llamarlo desde `ui.render` o desde el hilo `tribal-llm`.
+  `recuperar(consulta, individuo, k)` filtra lo propio (`individuo_id == id`) y
+  lo tribal (`None`), nunca lo de otro sin vínculo (los vínculos llegan con
+  SOCIAL). `Simulacion` indexa los hitos de cultura —nodos del árbol,
+  combinaciones y tradiciones de `origen=interaccion`— y también lo que produce
+  el LLM: la narración al entrar en el diario y el diálogo de cada decisión, con
+  su individuo. El contexto de cada petición lleva `memoria: [{id, texto,
+  score}]` con el texto real acotado, no solo ids; `resumen()` publica
   `memoria: {recuerdos, recuperaciones}`.
 - `seleccion.py`: quién piensa este tick. Solo se encola si hay **dilema real**
   (conflicto de necesidades, evento propio relevante, oportunidad de innovar) y

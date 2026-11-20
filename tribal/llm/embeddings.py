@@ -19,6 +19,12 @@ de productos escalares sobre vectores de 256 floats— pero **nunca** puede corr
 en el hilo de render ni en el del LLM: se llama al construir el contexto de una
 petición, en el hilo del bucle. La guarda de `_comprobar_contexto` lo comprueba
 por nombre de hilo y por pila de llamadas, y la suite la verifica.
+
+Cada entrada es un `Recuerdo` con su texto, tick, tipo e individuo. El índice
+guarda el texto, no solo el id: el contexto del LLM recibe el contenido
+(`a_contexto`), no una referencia. `recuperar(consulta, individuo)` devuelve
+solo lo propio y lo tribal (`individuo_id=None`), de modo que la vida interior
+es de alguien; los vínculos que ampliarían esa visibilidad llegan con SOCIAL.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ import re
 import sys
 import threading
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from tribal.llm.http import Transporte, transporte_http
@@ -46,8 +53,35 @@ TIMEOUT_POR_DEFECTO = 3.0
 #: Hilo del LLM (`cola.NOMBRE_HILO`): la recuperación no corre ahí.
 NOMBRE_HILO_LLM = "tribal-llm"
 MODULO_RENDER = "tribal.ui.render"
+#: Tope de texto que viaja al contexto del LLM (stack §8): el recuerdo entero
+#: se guarda, pero el prompt recibe un extracto.
+MAX_TEXTO_RECUERDO = 160
 
 _TOKEN = re.compile(r"\w+", re.UNICODE)
+
+
+@dataclass(frozen=True, slots=True)
+class Recuerdo:
+    """Un recuerdo indexado. `individuo_id=None` es memoria de toda la tribu.
+
+    `score` solo tiene sentido en lo que devuelve `buscar`/`recuperar`; lo que
+    se guarda en el índice lo lleva a 0.0.
+    """
+
+    id: str | int
+    texto: str
+    individuo_id: int | None = None
+    tick: int = 0
+    tipo: str = ""
+    score: float = 0.0
+
+    def a_contexto(self) -> dict[str, Any]:
+        """Forma que viaja al prompt: id, texto acotado y score redondeado."""
+        return {
+            "id": self.id,
+            "texto": _recortar(self.texto),
+            "score": round(self.score, 4),
+        }
 
 
 class Embedder(Protocol):
@@ -141,36 +175,74 @@ def embedder_por_defecto() -> Embedder:
 
 
 class IndiceRecuerdos:
-    """Índice en memoria: añade textos y devuelve los `k` más parecidos.
+    """Índice en memoria: añade recuerdos y devuelve los `k` más parecidos.
 
     Similitud coseno (producto escalar sobre vectores normalizados) y orden
     estable: mayor score primero y, a igualdad, id ascendente comparado como
-    cadena. Volver a añadir un id lo sustituye.
+    cadena. Volver a añadir un id lo sustituye. `buscar` consulta el índice
+    entero; `recuperar` filtra por individuo (propios y tribales) y es la que
+    usa la simulación para construir el contexto de una petición. Los vínculos
+    entre individuos —que harían visible el recuerdo de un allegado— llegan con
+    SOCIAL; hoy el filtro solo admite lo propio y lo de la tribu.
     """
 
     def __init__(self, embedder: Embedder) -> None:
         self.embedder = embedder
+        self._recuerdos: dict[str | int, Recuerdo] = {}
         self._vectores: dict[str | int, tuple[float, ...]] = {}
 
-    def agregar(self, id: str | int, texto: str) -> None:
+    def agregar(
+        self,
+        id: str | int,
+        texto: str,
+        *,
+        individuo_id: int | None = None,
+        tick: int = 0,
+        tipo: str = "",
+    ) -> None:
         """Indexa `texto`; si el id ya existía, lo reemplaza."""
+        self._recuerdos[id] = Recuerdo(
+            id=id, texto=texto, individuo_id=individuo_id, tick=tick, tipo=tipo
+        )
         self._vectores[id] = _normalizar(self.embedder.emb(texto))
 
-    def buscar(self, consulta: str, k: int = 3) -> list[tuple[str | int, float]]:
-        """Top-k por coseno. Nunca desde render ni desde el hilo del LLM."""
+    def buscar(self, consulta: str, k: int = 3) -> list[Recuerdo]:
+        """Top-k por coseno sobre todo el índice. Nunca desde render ni del LLM."""
+        return self._top(consulta, k)
+
+    def recuperar(self, consulta: str, individuo_id: int, k: int = 3) -> list[Recuerdo]:
+        """Top-k de los recuerdos visibles para `individuo_id`.
+
+        Devuelve los propios (`individuo_id == individuo_id`) y los tribales
+        (`individuo_id is None`); nunca los de otro individuo.
+        """
+        return self._top(consulta, k, individuo_id=individuo_id)
+
+    def _top(self, consulta: str, k: int, *, individuo_id: int | None = None) -> list[Recuerdo]:
         _comprobar_contexto()
         if k <= 0:
             return []
         vector = _normalizar(self.embedder.emb(consulta))
         puntuados = [
-            (recuerdo_id, _producto(vector, guardado))
+            (self._recuerdos[recuerdo_id], _producto(vector, guardado))
             for recuerdo_id, guardado in self._vectores.items()
+            if individuo_id is None
+            or self._recuerdos[recuerdo_id].individuo_id is None
+            or self._recuerdos[recuerdo_id].individuo_id == individuo_id
         ]
-        puntuados.sort(key=lambda par: (-par[1], str(par[0])))
-        return puntuados[:k]
+        puntuados.sort(key=lambda par: (-par[1], str(par[0].id)))
+        return [replace(recuerdo, score=score) for recuerdo, score in puntuados[:k]]
 
     def __len__(self) -> int:
         return len(self._vectores)
+
+
+def _recortar(texto: str) -> str:
+    """Extracto del recuerdo para el prompt: corta sin reescribir el contenido."""
+    limpio = texto.strip()
+    if len(limpio) <= MAX_TEXTO_RECUERDO:
+        return limpio
+    return limpio[: MAX_TEXTO_RECUERDO - 1].rstrip() + "…"
 
 
 def _comprobar_contexto() -> None:

@@ -39,7 +39,7 @@ from tribal.culture.grafo import Grafo
 from tribal.culture.propuestas import PropuestaInvalida
 from tribal.llm import candidatas as modulo_candidatas
 from tribal.llm.cola import ColaLLM, Peticion, PeticionNarracion, PeticionNodo, PropuestaNodo
-from tribal.llm.embeddings import IndiceRecuerdos, embedder_por_defecto
+from tribal.llm.embeddings import IndiceRecuerdos, Recuerdo, embedder_por_defecto
 from tribal.store.repositorio import BaseInvalida, Repositorio
 
 #: Presupuesto de frame a 60 fps.
@@ -114,6 +114,8 @@ PROB_COMPLETAR_COMBINACION = 0.5
 PROPUESTA_CADA_TICKS = 100
 #: Un muerto con esta edad o más es un anciano: su muerte entra en el diario.
 UMBRAL_ANCIANO = 1500
+#: Recuerdos que viajan en cada contexto y tope de texto por recuerdo (O4).
+MAX_RECUERDOS_CONTEXTO = 3
 #: Nodo del árbol que dispara cada hito de "primera vez" (concepto §10). Se ata
 #: al nodo que representa el hecho y no al primer escalón de su rama: `gestos` no
 #: es una palabra y `arte_rupestre` no es todavía un rito.
@@ -425,6 +427,7 @@ class Simulacion:
             self._registrar_recuerdo(
                 tradicion.id,
                 f"tradicion {tradicion.rama} {tradicion.id} {tradicion.titulo}",
+                tipo="tradicion",
             )
         tradiciones.sostener(self.grafo, self.mundo.tick)
         self._reproducir()
@@ -664,10 +667,10 @@ class Simulacion:
             nombres = tuple(opcion.nombre for opcion in opciones)
             contexto = modulo_candidatas.estado_para(individuo, self.mundo)
             #: GraphRAG ligero: los recuerdos relevantes viajan como datos del
-            #: contexto, nunca dentro del hilo del LLM ni del render.
+            #: contexto, nunca dentro del hilo del LLM ni del render. El texto
+            #: va en el contexto (D1) y solo lo propio y lo tribal (D3).
             contexto["memoria"] = [
-                {"id": recuerdo_id, "score": round(score, 4)}
-                for recuerdo_id, score in self._recuperar_memoria(individuo, nombres)
+                recuerdo.a_contexto() for recuerdo in self._recuperar_memoria(individuo, nombres)
             ]
             peticion = Peticion(
                 id=self._peticion_id + 1,
@@ -687,24 +690,43 @@ class Simulacion:
             )
         self._max_pensando_visto = max(self._max_pensando_visto, encoladas)
 
-    def _recuperar_memoria(
-        self, individuo: Individuo, acciones: tuple[str, ...]
-    ) -> list[tuple[str | int, float]]:
-        """Top-3 de recuerdos parecidos a la situación; vacío sin capa LLM.
+    def _recuperar_memoria(self, individuo: Individuo, acciones: tuple[str, ...]) -> list[Recuerdo]:
+        """Top-3 de recuerdos visibles para el individuo; vacío sin capa LLM.
 
         La consulta son las acciones candidatas y la estación: lo que un nodo
-        de cultura comparte con el momento que se está decidiendo.
+        de cultura comparte con el momento que se está decidiendo. El filtro
+        por individuo vive en `IndiceRecuerdos.recuperar`: propios y tribales,
+        nunca los de otro sin vínculo (D3; los vínculos llegan con SOCIAL).
         """
         if self.recuerdos is None:
             return []
         consulta = f"{self.mundo.estacion or ''} {' '.join(acciones)}"
         self._recuperaciones += 1
-        return self.recuerdos.buscar(consulta, k=3)
+        return self.recuerdos.recuperar(consulta, individuo.id, k=MAX_RECUERDOS_CONTEXTO)
 
-    def _registrar_recuerdo(self, id: str, texto: str) -> None:
-        """Indexa un hito de cultura (árbol, combinación o tradición); no-op sin LLM."""
+    def _registrar_recuerdo(
+        self,
+        id: str | int,
+        texto: str,
+        *,
+        individuo_id: int | None = None,
+        tipo: str = "hito",
+        tick: int | None = None,
+    ) -> None:
+        """Indexa un recuerdo; no-op sin LLM.
+
+        `individuo_id=None` es memoria tribal (visible para todos); un id es la
+        memoria de alguien, que otro individuo no recupera. `tipo` distingue
+        hitos de cultura, narraciones y diálogos.
+        """
         if self.recuerdos is not None:
-            self.recuerdos.agregar(id, texto)
+            self.recuerdos.agregar(
+                id,
+                texto,
+                individuo_id=individuo_id,
+                tick=self.mundo.tick if tick is None else tick,
+                tipo=tipo,
+            )
 
     def _contar_accion(self, decidida_llm: bool) -> None:
         """Suma una acción decidida al total y al tramo de `ticks_telemetria`.
@@ -761,7 +783,17 @@ class Simulacion:
         if self.cola is None:
             return
         for texto in self.cola.drenar_textos():
-            self.diario.narrar(texto.entrada, texto.texto)
+            #: La frase del cronista se indexa en cuanto entra en el diario
+            #: (D2): el bucle se cierra y el recuerdo es recuperable después.
+            if self.diario.narrar(texto.entrada, texto.texto):
+                entrada = self.diario.entradas[texto.entrada]
+                self._registrar_recuerdo(
+                    f"narracion_{texto.entrada}",
+                    texto.texto,
+                    individuo_id=entrada.individuo_id,
+                    tipo="narracion",
+                    tick=entrada.tick,
+                )
         for propuesta in self.cola.drenar_propuestas(self.mundo.tick):
             self._aplicar_propuesta(propuesta)
         vivos = {individuo.id: individuo for individuo in self.mundo.individuos}
@@ -770,12 +802,20 @@ class Simulacion:
                 continue
             if respuesta.decision.dialogo:
                 # Habló antes de morir: el diálogo se anota aunque su emisor ya
-                # no esté entre los vivos del tick.
-                self.diario.registrar(
+                # no esté entre los vivos del tick. Su texto es memoria de quien
+                # lo dijo (D2/D3), recuperable en ticks posteriores.
+                indice = self.diario.registrar(
                     respuesta.tick,
                     "dialogo",
                     individuo_id=respuesta.individuo_id,
                     texto=respuesta.decision.dialogo,
+                )
+                self._registrar_recuerdo(
+                    f"dialogo_{indice}",
+                    respuesta.decision.dialogo,
+                    individuo_id=respuesta.individuo_id,
+                    tipo="dialogo",
+                    tick=respuesta.tick,
                 )
             individuo = vivos.get(respuesta.individuo_id)
             if individuo is None:
@@ -893,6 +933,7 @@ class Simulacion:
         self._registrar_recuerdo(
             nodo.id,
             f"{nodo.origen} {nodo.rama} {nodo.id} {nodo.titulo}",
+            tipo="nodo",
         )
 
     def _rechazar_propuesta(self, motivo: str) -> None:
@@ -1161,6 +1202,7 @@ class Simulacion:
                 self._registrar_recuerdo(
                     candidata.id,
                     f"combinacion {candidata.rama} {candidata.id} {candidata.titulo}",
+                    tipo="combinacion",
                 )
 
         # El inventor propone lo que el catálogo no tiene. Una petición cada
@@ -1212,7 +1254,9 @@ class Simulacion:
             saliencia.subir(individuo, "tradicion_practica")
         self._hito_nodo(nodo, individuo)
         self._registrar_recuerdo(
-            nodo.id, f"{nodo.rama} {nodo.id} {nodo.titulo} practicando {accion}"
+            nodo.id,
+            f"{nodo.rama} {nodo.id} {nodo.titulo} practicando {accion}",
+            tipo="nodo",
         )
         return True
 

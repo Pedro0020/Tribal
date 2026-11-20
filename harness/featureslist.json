@@ -882,8 +882,11 @@
         "la narracion y el dialogo se indexan como recuerdos y son recuperables por similitud en ticks posteriores",
         "la memoria se asocia al individuo: no se recuperan recuerdos de otro sin vinculo"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-20",
+      "review_rounds": 0,
+      "closed": "2026-11-20"
     },
     {
       "id": "PERSONA",

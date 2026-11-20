@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.40-green)
+![Version](https://img.shields.io/badge/Version-0.1.41-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -518,11 +518,20 @@ el tiempo real del backend falso (≈0 ms).
 ### Memoria y embeddings (CPU)
 
 `tribal/llm/embeddings.py` indexa los hitos de cultura —nodos del árbol,
-combinaciones y tradiciones de `origen=interaccion`— para que una petición al
-LLM lleve los recuerdos relevantes, no todos. `IndiceRecuerdos.buscar()` devuelve
-top-k por coseno con orden estable (score y luego id) y **nunca corre en el hilo
-de render ni en el del LLM**: se consulta al construir el contexto, en el hilo del
+combinaciones y tradiciones de `origen=interaccion`— y, además, lo que produce el
+LLM: la frase del cronista y el diálogo de cada decisión se indexan al entrar en
+el diario. Una petición al LLM lleva así los recuerdos relevantes **con su
+texto**, no solo su id: el contexto publica `memoria: [{id, texto, score}]` con el
+texto recortado a `MAX_TEXTO_RECUERDO`. `IndiceRecuerdos.buscar()` devuelve top-k
+por coseno con orden estable (score y luego id) y **nunca corre en el hilo de
+render ni en el del LLM**: se consulta al construir el contexto, en el hilo del
 bucle. La guarda lo comprueba por nombre de hilo y por pila de llamadas.
+
+Cada recuerdo se asocia a un individuo (`individuo_id`) o a la tribu (`None`).
+`IndiceRecuerdos.recuperar(consulta, individuo, k)` devuelve solo lo propio y lo
+tribal: la consulta de un individuo no trae recuerdos de otro. Los vínculos que
+ampliarían esa visibilidad (familia, alianzas) llegan con el motor social
+(`SOCIAL`).
 
 El backend por defecto es `EmbedderHashing`: bag-of-words con hash estable
 (blake2b, no `hash()`) en 256 dimensiones y L2 normalizado, así que mismo texto →

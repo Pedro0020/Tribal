@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: memoria con texto, narracion y filtro por individuo (MEM-LOOP)
 - feat: estado discarded, revive y remove (HARNESS-REMOVE)
 - feat: metrica medida de decisiones LLM por tramo (MEDIR-LLM)
 - docs: versiona y enlaza el kit de pixel art (ART-001)

@@ -1862,3 +1862,41 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 91 so
 ```
 
 </details>
+
+## MEM-LOOP — Cerrar el bucle de memoria
+
+- **Cerrada:** 2026-11-20
+- **Verificación:** ./init.sh en verde · 503 passed in 328.88s (0:05:28)
+- **Cambios:** tribal/llm/embeddings.py (Recuerdo con texto e individuo_id; buscar devuelve texto; recuperar filtrado por individuo y tribal); tribal/sim.py (contexto con texto literal, indexado de narracion y dialogo, filtro por individuo); tests/test_memoria.py (nuevo) y test_embeddings.py; README (memoria por individuo y texto recuperado); arquitectura.md §2.3; auditoria-llm.md D1-D3 resueltos
+- **Decisiones:** La memoria deja de ser ids: el contexto lleva el texto literal del recuerdo (recortado) y los hitos de cultura son memoria tribal (individuo None), visible para todos; narracion y dialogo se indexan al producirse y se recuperan por similitud en ticks posteriores. El filtro por individuo solo deja pasar lo propio y lo tribal; la visibilidad por vinculos llega con SOCIAL. Se eligio no podar el indice aun: a 3000 ticks son ~2473 recuerdos y el coste medido (p95 7.15 ms de busqueda, ~2 ms/tick) cabe en 16.67 ms, pero queda anotado como el siguiente limite si crece.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 503 passed
+
+$ recuperacion con TEXTO (940 peticiones reales)
+contexto["memoria"] no vacio en 940/940 ; claves {id, texto, score} ; texto literal del indice
+recortado a <=160 ; id presente en el indice ; scores descendentes
+
+$ narracion y dialogo indexados
+5/5 narraciones en el indice con texto identico al diario y recuperadas en top-5 con consulta parcial
+dialogo del tick 1 recuperado en el tick 40 por su emisor
+
+$ filtro por individuo
+recuperar(A) -> {propio_a, tribal} ; recuperar(B) -> {ajeno_b, tribal} ; tribal (None) lo ven ambos
+en la simulacion real, 0 de 940 peticiones llevaron un recuerdo de otro individuo
+
+Mutaciones que caen: contexto sin texto | filtro devuelve todo | solo propio sin tribal |
+narracion no indexada | dialogo no indexado
+
+$ uv run pytest -q
+1085 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 92 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 92 source files
+```
+
+</details>
