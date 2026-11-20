@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.34-green)
+![Version](https://img.shields.io/badge/Version-0.1.35-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -42,6 +42,192 @@ make run       # ejecuta el paquete
 make check     # lint + typecheck + test + arnés
 ```
 
+## Cómo ver el proyecto
+
+Ruta mínima para clonar, jugar, guardar y comprobar el criterio de éxito. Las
+salidas están verificadas sobre esta versión; los detalles de cada pieza están
+en los apartados siguientes.
+
+### 1. Instalar y abrir la puerta
+
+```bash
+git clone https://github.com/Pedro0020/Tribal.git && cd Tribal
+uv sync --extra dev        # juego + tests; solo el juego: uv sync
+./init.sh                  # entorno, arnés y suite de tests
+uv run python -m tribal --version
+# tribal 0.1.34
+```
+
+### 2. Arrancar Ollama y crear `tribal-llm` (opcional)
+
+La tribu funciona sin LLM; para ver al modelo decidir hay que tener el servicio
+y el alias:
+
+```bash
+ollama serve
+ollama pull qwen2.5:3b-instruct-q8_0
+ollama create tribal-llm -f tribal.Modelfile
+uv run python -m tribal llm selfcheck --json
+# {"disponible": true, "endpoint": "http://127.0.0.1:11434", "modelo": "tribal-llm",
+#  "modelo_presente": true, "latencia_ms": 55.9, "error": null,
+#  "embeddings": {"backend": "hashing", "usa_gpu": false, "dim": 256}}
+```
+
+La latencia cambia entre ejecuciones; lo que importa es `disponible` y
+`modelo_presente`. Los detalles están en
+[Arranque de Ollama y el modelo `tribal-llm`](#arranque-de-ollama-y-el-modelo-tribal-llm).
+
+### 3. Jugar y guardar una partida
+
+```bash
+uv run python -m tribal run                                      # ventana 60 fps
+uv run python -m tribal run --headless --json --ticks 600        # resumen JSON
+uv run python -m tribal run --headless --llm stub --llm-sincrono \
+    --ticks 1200 --seed 1 --db tribu.db --fresh                  # partida guardada
+```
+
+`--db` escribe la partida en SQLite y se niega a pisar una base existente sin
+`--fresh`. `--llm stub --llm-sincrono` es el modo reproducible: backend falso,
+sin red, decisión resuelta en el tick. El resumen incluye población, genoma,
+habilidades, nodos por origen, diario, memoria y los contadores del LLM. Las
+secciones §4-§6 leen esa misma base; §7 la sustituye por la corrida real con
+`--fresh`.
+
+Para volver a mirar esa partida sin simular:
+
+```bash
+uv run python -m tribal report db --db tribu.db
+# seed 1  tick 1200  poblacion 18  estacion sin estacion
+# nodos 27  aristas 24  arbol 23  combinacion 0  interaccion 4  llm 0
+# diario 5  telemetria 20  recursos 89  recuerdos 0
+```
+
+### 4. Leer la telemetría y el KPI
+
+`report telemetry --db` lee la tabla `telemetria` de la partida guardada (no
+simula) y la resume por intervalo:
+
+```bash
+uv run python -m tribal report telemetry --db tribu.db
+# db tribu.db  muestras 20  ticks 60..1200
+#   tick  pob  div  conf  neut  nodos  aristas  energia  sed
+#     60   12    3     5     4     22       19    76.77  17.22
+#    120   12    3     5     4     22       19    69.76  27.39
+#    ...
+#   1200   18    5     7     6     27       24    59.95  38.38
+uv run python -m tribal report telemetry --db tribu.db --json   # lista de muestras
+uv run python -m tribal report telemetry --db tribu.db --csv    # CSV con cabecera
+```
+
+`report kpi --db` aplica `objetivo.md` §3 sobre los nodos activos y publica el
+veredicto:
+
+```bash
+uv run python -m tribal report kpi --db tribu.db
+# db tribu.db
+#   fuego                  si
+#   herramienta_compuesta  no
+#   proto_lenguaje         si
+#   mito                   si
+#   pct_fuera_arbol         14.8 % (4/27, umbral 50.0 %)
+#   veredicto              False
+```
+
+Cómo se lee: los cuatro hitos de §3.1 tienen que estar activos (`herramienta_compuesta`
+exige un nódulo lítico con ≥ 2 aristas entrantes, por eso aquí sale `no`), y el
+KPI de §3.2 es el porcentaje de nodos activos cuyo `origen` es `combinacion`,
+`interaccion` o `llm`. `veredicto` es `4/4 hitos && pct >= 50`. El comando sale
+con **0** aunque el veredicto sea `False`: es un informe, no una puerta.
+
+### 5. Exportar a Obsidian
+
+Sobre la partida de 1200 ticks del §3 (`tribu.db`, la misma que lee §4):
+
+```bash
+uv run python -m tribal export obsidian --db tribu.db --out vault-tribu/
+# export obsidian: 27 nodos, 24 aristas, 28 ficheros -> vault-tribu
+```
+
+En Obsidian, **Abrir carpeta como bóveda** sobre `vault-tribu/`: `index.md`
+resume el grafo y cada nota enlaza a sus vecinas con `[[wikilinks]]`. El export
+es determinista e idempotente.
+
+### 6. Consultar el grafo
+
+Sobre la misma partida de 1200 ticks del §3:
+
+```bash
+uv run python -m tribal culture ask --db tribu.db --query "que ruta llevo al fuego"
+# pregunta: que ruta llevo al fuego
+# intencion: ruta
+# destino: ahuyentar_depredadores - Ahuyentar depredadores
+# camino (5 pasos):
+#   1. observar_rayo - Observar el rayo  [rama fuego | origen arbol | autor 2 | tick 3]
+#   2. conservar_brasas - Conservar brasas  <- observar_rayo  [rama fuego | origen arbol | autor 2 | tick 6]
+#   ...
+#   5. ahuyentar_depredadores - Ahuyentar depredadores  <- cocinar  [rama fuego | origen arbol | autor 4 | tick 10]
+uv run python -m tribal culture ask --db tribu.db --query "que nodos se apagaron"
+# no hay nodos apagados
+```
+
+La respuesta sale de `nodos` + `aristas`, sin inventar citas; una pregunta sin
+respuesta no es un error (exit 0).
+
+### 7. La brecha del modelo real (14.8 %, veredicto `False`)
+
+Otra partida: este comando **pisa** `tribu.db` con `--fresh`, así que a partir
+de aquí la base es la corrida real y no la de 1200 ticks de §3-§6. El backend
+guionizado demuestra el mecanismo (50-55 % y `True`), pero **el modelo real no
+alcanza el 50 %**. La corrida de cierre está publicada tal cual,
+sin sustituirla por el número del script:
+
+```bash
+uv run python -m tribal llm selfcheck --json     # servicio y modelo presentes
+uv run python -m tribal run --llm http --ticks 3000 --seed 1 --crisis \
+    --db tribu.db --fresh                        # ventana 60 fps, ~60 s
+uv run python -m tribal report kpi --db tribu.db
+# pct_fuera_arbol  14.8 % (4/27, umbral 50.0 %)
+# veredicto        False
+```
+
+En headless sin throttle el bucle corre a ~2 ms/tick y no da ventana al modelo:
+la corrida de 3000 ticks dura 7.04 s, hace 1 petición y aplica 0. La misma cola
+HTTP a 60 fps tarda 60.37 s y, en la corrida publicada, termina con 17
+peticiones, **0 aplicadas**, 16 descartadas y 1 fallo de transporte (los
+contadores dependen del timing): el modelo real no produjo nodos válidos.
+La brecha es del modelo, no del KPI, y se mide así; la evidencia completa está
+en [`arquitectura.md`](vault/01_PROYECTO/arquitectura.md#95-el-criterio-de-hecho-medido-report-kpi-f3-006).
+
+El `tribu.db` de la raíz es esa corrida real y **no se commitea** (`.gitignore`
+ignora `*.db`): tras clonar hay que generar el tuyo. Una partida con `--llm
+stub` da su propio porcentaje (el 14.8 % del ejemplo coincide por casualidad);
+el 14.8 % real tiene los cuatro hitos y falla solo por el umbral del 50 %. Lo
+reproducible es el mecanismo, no el número del modelo.
+
+### 8. Comprobar que se reproduce
+
+```bash
+uv run pytest tests/test_final.py -q
+# ..........                                                               [100%]
+# 10 passed in 60.11s
+```
+
+El test corre **10 semillas** con `--llm stub --llm-sincrono`, 1200 ticks y una
+base temporal, y exige que dos procesos dejen el resumen y el `report kpi
+--json` **byte a byte iguales**: mismos hitos, mismo porcentaje y mismo
+veredicto.
+
+### 9. Indexar la memoria del arnés (extra opcional)
+
+```bash
+uv run python -m agents run rag index
+# ✘ [rag.index] chromadb no está instalado. Ejecuta: uv sync --extra rag
+uv sync --extra rag        # instala chromadb y repite el comando
+```
+
+Sin el extra el índice no se crea, pero el resto del proyecto funciona: el RAG
+es una ayuda de búsqueda, no una dependencia del juego.
+
 ## Estado tras Fase 1
 
 La Fase 1 está cerrada y **no usa LLM**: todo lo de abajo sale del motor de
@@ -66,8 +252,9 @@ reglas y del azar de la semilla.
 - **Telemetría**: `report telemetry` muestrea por intervalo, no por tick; con
   `--db` lee la tabla `telemetria` de una partida guardada y `--csv` la vuelca.
 
-La Fase 2 (LLM) empieza en `F2-001`; hasta entonces, nada de lo anterior
-necesita red ni modelo.
+La Fase 2 (LLM) está cerrada y se apoya en lo anterior: la capa de modelo solo
+entra cuando hay algo que decidir, y todo lo de esta lista sigue funcionando sin
+red ni modelo.
 
 ## Capa LLM local (Fase 2)
 
@@ -350,10 +537,22 @@ agotado) y, con estaciones, otoño e invierno tiñen el mapa y el HUD dice cuál
 toca.
 **ESC** o cerrar la ventana termina la partida.
 
-Salida real de `uv run python -m tribal run --headless --ticks 600 --json`:
+Salida real de `uv run python -m tribal run --headless --ticks 600 --json`
+(recortada a las claves de la partida; el resumen completo añade genoma,
+habilidades, parches, nodos y aristas):
 
-```json
-{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 16, "nacimientos": 4, "coste_reproduccion": 50.0, "muertes": 0, "media_energia": 75.23, "media_sed": 34.51, "media_genes": {"velocidad": 0.993, "metabolismo": 1.023, "longevidad": 0.97, "fuerza": 1.01, "resistencia": 1.028, "inteligencia": 1.012, "salud": 0.975, "divergencia": 0.455}, "habilidades_distintas": 1, "habilidades": {"1": ["recolectar"], "2": ["recolectar"], "3": ["recolectar"], "4": ["recolectar"], "5": ["recolectar"], "6": ["recolectar"], "7": ["recolectar"], "8": ["recolectar"], "9": ["recolectar"], "10": ["recolectar"], "11": ["recolectar"], "12": ["recolectar"], "13": ["recolectar"], "14": ["recolectar"], "15": ["recolectar"], "16": ["recolectar"]}, "individuos_movidos": 16, "depredador": {"activos": 1, "ataques": 0, "muertes": 0}, "agrupamiento_max": 9, "huidas": 266, "n_divergentes": 3, "n_conformistas": 8, "n_neutros": 5, "mean_divergencia_inicial": 0.4513, "mean_divergencia_nacidos": 0.4666, "mean_divergencia_reproductores": 0.4724, "reproductores": 8, "S": 0.0211, "S_fecundidad": 0.0211, "S_viabilidad": 0.0038, "descubrimientos": 0, "descubrimientos_divergentes": 0, "descubrimientos_conformistas": 0, "divergentes_registrados": 3, "conformistas_registrados": 8, "tasa_descubrimiento_divergente": 0.0, "tasa_descubrimiento_conformista": 0.0, "tasa_imitacion": 0.0, "longevidad_media_descubridores": 0.0, "longevidad_media_conformistas": 0.0, "muertes_descubridores": 0, "muertes_conformistas": 0, "intentos_divergentes": 0, "combinaciones_logradas": 0, "descubridores": [], "supervivencia_descubridores": 0.0, "supervivencia_no_descubridores": 1.0, "diferencial_seleccion": 0.0, "tradiciones": 7, "imitaciones": 1911, "beneficios": {"bayas": 1.0, "caza": 1.0, "dano_depredador": 1.0, "tasa_sed": 1.0}, "utilidad_media": {}, "escasez": {"agua": 0.0, "bayas": 0.075, "caza": 0.125}, "estacion": null, "parches": [{"id": 1, "tipo": "agua", "activo": true, "abundancia": 1.0, "x": 44.0, "y": 7.0}, {"id": 2, "tipo": "agua", "activo": true, "abundancia": 1.0, "x": 18.0, "y": 8.0}, {"id": 3, "tipo": "agua", "activo": true, "abundancia": 1.0, "x": 21.0, "y": 11.0}, {"id": 4, "tipo": "agua", "activo": true, "abundancia": 1.0, "x": 5.0, "y": 27.0}, {"id": 5, "tipo": "bayas", "activo": true, "abundancia": 0.964, "x": 6.0, "y": 3.6}, {"id": 6, "tipo": "bayas", "activo": true, "abundancia": 0.779, "x": 39.5, "y": 6.7}, {"id": 7, "tipo": "bayas", "activo": true, "abundancia": 0.861, "x": 51.0, "y": 7.0}, {"id": 8, "tipo": "bayas", "activo": true, "abundancia": 1.0, "x": 9.0, "y": 10.2}, {"id": 9, "tipo": "bayas", "activo": true, "abundancia": 1.0, "x": 30.0, "y": 11.0}, {"id": 10, "tipo": "bayas", "activo": true, "abundancia": 0.95, "x": 41.0, "y": 16.8}, {"id": 11, "tipo": "bayas", "activo": true, "abundancia": 1.0, "x": 18.0, "y": 19.5}, {"id": 12, "tipo": "bayas", "activo": true, "abundancia": 0.988, "x": 48.1, "y": 23.6}, {"id": 13, "tipo": "caza", "activo": true, "abundancia": 0.5, "x": 33.0, "y": 17.0}, {"id": 14, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 54.0, "y": 22.0}, {"id": 15, "tipo": "caza", "activo": true, "abundancia": 0.5, "x": 16.0, "y": 11.0}, {"id": 16, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 4.5, "y": 32.0}, {"id": 17, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 13.0, "y": 0.0}, {"id": 18, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 19.0, "y": 29.0}, {"id": 19, "tipo": "caza", "activo": true, "abundancia": 1.0, "x": 56.0, "y": 30.0}], "migraciones": 0, "nodos": [{"id": "guijarro", "rama": "litica", "nivel": 0, "titulo": "Guijarro", "origen": "arbol", "autor": 3, "tick": 1}, {"id": "lasca", "rama": "litica", "nivel": 1, "titulo": "Lasca", "origen": "arbol", "autor": 3, "tick": 4}, {"id": "bifaz", "rama": "litica", "nivel": 2, "titulo": "Bifaz", "origen": "arbol", "autor": 3, "tick": 7}, {"id": "punta_de_lanza", "rama": "litica", "nivel": 3, "titulo": "Punta de lanza", "origen": "arbol", "autor": 3, "tick": 10}, {"id": "caza_cooperativa", "rama": "litica", "nivel": 4, "titulo": "Caza cooperativa", "origen": "arbol", "autor": 3, "tick": 13}, {"id": "observar_rayo", "rama": "fuego", "nivel": 0, "titulo": "Observar el rayo", "origen": "arbol", "autor": 3, "tick": 2}, {"id": "conservar_brasas", "rama": "fuego", "nivel": 1, "titulo": "Conservar brasas", "origen": "arbol", "autor": 3, "tick": 5}, {"id": "friccion", "rama": "fuego", "nivel": 2, "titulo": "Fricci\u00f3n", "origen": "arbol", "autor": 3, "tick": 8}, {"id": "cocinar", "rama": "fuego", "nivel": 3, "titulo": "Cocinar", "origen": "arbol", "autor": 8, "tick": 9}, {"id": "ahuyentar_depredadores", "rama": "fuego", "nivel": 4, "titulo": "Ahuyentar depredadores", "origen": "arbol", "autor": 3, "tick": 11}, {"id": "gestos", "rama": "lenguaje", "nivel": 0, "titulo": "Gestos y gru\u00f1idos", "origen": "arbol", "autor": 12, "tick": 85}, {"id": "proto_palabras", "rama": "lenguaje", "nivel": 1, "titulo": "Proto-palabras", "origen": "arbol", "autor": 11, "tick": 86}, {"id": "vocabulario", "rama": "lenguaje", "nivel": 2, "titulo": "Vocabulario", "origen": "arbol", "autor": 11, "tick": 89}, {"id": "transmision_eficaz", "rama": "lenguaje", "nivel": 3, "titulo": "Transmisi\u00f3n eficaz", "origen": "arbol", "autor": 11, "tick": 90}, {"id": "cazador", "rama": "roles", "nivel": 0, "titulo": "Cazador", "origen": "arbol", "autor": 14, "tick": 494}, {"id": "recolectora", "rama": "roles", "nivel": 0, "titulo": "Recolectora", "origen": "arbol", "autor": 14, "tick": 496}, {"id": "anciano", "rama": "roles", "nivel": 1, "titulo": "Anciano", "origen": "arbol", "autor": 14, "tick": 498}, {"id": "chaman", "rama": "roles", "nivel": 2, "titulo": "Cham\u00e1n", "origen": "arbol", "autor": 14, "tick": 501}, {"id": "lider", "rama": "roles", "nivel": 2, "titulo": "L\u00edder", "origen": "arbol", "autor": 14, "tick": 503}, {"id": "tradicion_ahuyentar_depredadores", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de ahuyentar depredadores", "origen": "interaccion", "autor": 9, "tick": 17}, {"id": "tradicion_caza_cooperativa", "rama": "roles", "nivel": 5, "titulo": "Tradici\u00f3n de caza cooperativa", "origen": "interaccion", "autor": 9, "tick": 19}, {"id": "arte_rupestre", "rama": "simbolico", "nivel": 0, "titulo": "Arte rupestre", "origen": "arbol", "autor": 3, "tick": 3}, {"id": "ritual", "rama": "simbolico", "nivel": 1, "titulo": "Ritual", "origen": "arbol", "autor": 3, "tick": 6}, {"id": "mito", "rama": "simbolico", "nivel": 2, "titulo": "Mito", "origen": "arbol", "autor": 3, "tick": 87}, {"id": "tradicion_ritual", "rama": "simbolico", "nivel": 2, "titulo": "Tradici\u00f3n de ritual", "origen": "interaccion", "autor": 9, "tick": 12}, {"id": "identidad_grupo", "rama": "simbolico", "nivel": 3, "titulo": "Identidad del grupo", "origen": "arbol", "autor": 5, "tick": 88}, {"id": "tradicion_lider", "rama": "simbolico", "nivel": 3, "titulo": "Tradici\u00f3n de l\u00edder", "origen": "interaccion", "autor": 6, "tick": 511}, {"id": "tradicion_mito", "rama": "simbolico", "nivel": 3, "titulo": "Tradici\u00f3n de mito", "origen": "interaccion", "autor": 5, "tick": 88}, {"id": "tradicion_identidad_grupo", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de identidad del grupo", "origen": "interaccion", "autor": 9, "tick": 96}, {"id": "tradicion_transmision_eficaz", "rama": "simbolico", "nivel": 4, "titulo": "Tradici\u00f3n de transmisi\u00f3n eficaz", "origen": "interaccion", "autor": 13, "tick": 383}], "aristas": [{"origen": "guijarro", "destino": "lasca"}, {"origen": "observar_rayo", "destino": "conservar_brasas"}, {"origen": "arte_rupestre", "destino": "ritual"}, {"origen": "lasca", "destino": "bifaz"}, {"origen": "conservar_brasas", "destino": "friccion"}, {"origen": "friccion", "destino": "cocinar"}, {"origen": "bifaz", "destino": "punta_de_lanza"}, {"origen": "cocinar", "destino": "ahuyentar_depredadores"}, {"origen": "ritual", "destino": "tradicion_ritual"}, {"origen": "punta_de_lanza", "destino": "caza_cooperativa"}, {"origen": "ahuyentar_depredadores", "destino": "tradicion_ahuyentar_depredadores"}, {"origen": "caza_cooperativa", "destino": "tradicion_caza_cooperativa"}, {"origen": "gestos", "destino": "proto_palabras"}, {"origen": "proto_palabras", "destino": "mito"}, {"origen": "ritual", "destino": "mito"}, {"origen": "mito", "destino": "identidad_grupo"}, {"origen": "mito", "destino": "tradicion_mito"}, {"origen": "proto_palabras", "destino": "vocabulario"}, {"origen": "vocabulario", "destino": "transmision_eficaz"}, {"origen": "identidad_grupo", "destino": "tradicion_identidad_grupo"}, {"origen": "transmision_eficaz", "destino": "tradicion_transmision_eficaz"}, {"origen": "cazador", "destino": "anciano"}, {"origen": "recolectora", "destino": "anciano"}, {"origen": "anciano", "destino": "chaman"}, {"origen": "anciano", "destino": "lider"}, {"origen": "caza_cooperativa", "destino": "lider"}, {"origen": "lider", "destino": "tradicion_lider"}], "pct_fuera_arbol": 23.3, "nodos_por_origen": {"arbol": 23, "combinacion": 0, "interaccion": 7, "llm": 0}, "nivel_max": 2, "config": {"seed": 42, "individuos": 12, "ancho": 60, "alto": 34, "tasa_sed": 0.16, "tasa_energia": 0.15, "tasa_salud": 0.6, "cooldown_reproduccion": 600, "depredadores": 1, "depredador_activo": true, "crisis": false, "sequia_ticks": 0, "migracion": true, "ticks_por_estacion": 0, "umbral_agotamiento": 0.25, "ticks_migracion": 3000}}
+```jsonc
+{"seed": 42, "ticks": 600, "poblacion_inicial": 12, "poblacion_final": 16, "
+ "nacimientos": 4, "muertes": 0, "media_energia": 75.23, "media_sed": 34.51,
+ "tradiciones": 5, "intentos_divergentes": 0, "combinaciones_logradas": 0,
+ "escasez": {"agua": 0.0, "bayas": 0.075, "caza": 0.125}, "migraciones": 0,
+ "pct_fuera_arbol": 17.9,
+ "nodos_por_origen": {"arbol": 23, "combinacion": 0, "interaccion": 5, "llm": 0},
+ "nivel_max": 2, "memoria": {"recuerdos": 0, "recuperaciones": 0},
+ "diario": {"entradas": 5, "narradas": 0, "dialogos": 0},
+ "config": {"seed": 42, "individuos": 12, "crisis": false, "ticks_guardado": 300,
+            "ticks_telemetria": 60, "...": "..."}}
+// recortado: el resumen completo añade genoma, habilidades, parches, nodos y aristas
 ```
 
 `--seed 7 --benchmark --headless --ticks 600` (comprueba el presupuesto de
@@ -365,13 +564,17 @@ muertes 1  nacimientos 3  individuos movidos 13
 depredadores 1  ataques 5  agrupamiento max 10  huidas 105
 media energia 70.93  media sed 39.51
 estacion sin estacion  parches 17  migraciones 0
+diario entradas 5  narradas 0  dialogos 0
+     14  primera_caza_grupo (sin narracion)
+     60  primera_palabra    (sin narracion)
+    433  primera_tradicion  (sin narracion)
 ```
 
 y en **stderr** (el `ms/tick` no entra en el resumen, que es determinista; su
 valor varía unas centésimas entre ejecuciones):
 
 ```
-benchmark: 0.56 ms/tick, cabe en 16.67 ms
+benchmark: 0.65 ms/tick, cabe en 16.67 ms
 ```
 
 Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
@@ -460,26 +663,29 @@ antes de las palabras se puede señalar, pero no contar un procedimiento. La
 imitación pasiva no depende del lenguaje ni del temperamento: quien ve usar una
 habilidad a ≤2 tiles puede copiarla, y los conformistas también imitan.
 
-Todavía no hay partida persistida, así que el informe sale de simular
-`--ticks` ticks (600 por defecto) en headless con la semilla y el `--config`
-pedidos: mismo seed y mismos ticks, mismo informe. Salida real de
+`report culture` todavía no lee una partida guardada, así que el informe sale
+de simular `--ticks` ticks (600 por defecto) en headless con la semilla y el
+`--config` pedidos: mismo seed y mismos ticks, mismo informe. Salida real de
 `uv run python -m tribal report culture`:
 
 ```
 seed 42  ticks 600
-nodos 30  aristas 27  activos 30  apagados 0  pct_fuera_arbol 23.3  nivel_max 2
+nodos 28  aristas 25  activos 28  apagados 0  pct_fuera_arbol 17.9  nivel_max 2
   litica    0  Guijarro             (arbol, autor 3, tick 1)
   litica    1  Lasca                (arbol, autor 3, tick 4)
+  litica    1  Cantera del grupo    (interaccion, autor 9, tick 7)
   litica    2  Bifaz                (arbol, autor 3, tick 7)
   litica    3  Punta de lanza       (arbol, autor 3, tick 10)
   litica    4  Caza cooperativa     (arbol, autor 3, tick 13)
   fuego     0  Observar el rayo     (arbol, autor 3, tick 2)
   fuego     1  Conservar brasas     (arbol, autor 3, tick 5)
+  fuego     1  Vigilia del fuego    (interaccion, autor 9, tick 8)
   fuego     2  Fricción             (arbol, autor 3, tick 8)
   fuego     3  Cocinar              (arbol, autor 8, tick 9)
   fuego     4  Ahuyentar depredadores (arbol, autor 3, tick 11)
   lenguaje  0  Gestos y gruñidos    (arbol, autor 12, tick 85)
   lenguaje  1  Proto-palabras       (arbol, autor 11, tick 86)
+  lenguaje  1  Decires del grupo    (interaccion, autor 11, tick 90)
   lenguaje  2  Vocabulario          (arbol, autor 11, tick 89)
   lenguaje  3  Transmisión eficaz   (arbol, autor 11, tick 90)
   roles     0  Cazador              (arbol, autor 14, tick 494)
@@ -487,17 +693,12 @@ nodos 30  aristas 27  activos 30  apagados 0  pct_fuera_arbol 23.3  nivel_max 2
   roles     1  Anciano              (arbol, autor 14, tick 498)
   roles     2  Chamán               (arbol, autor 14, tick 501)
   roles     2  Líder                (arbol, autor 14, tick 503)
-  roles     5  Tradición de ahuyentar depredadores (interaccion, autor 9, tick 17)
-  roles     5  Tradición de caza cooperativa (interaccion, autor 9, tick 19)
+  roles     2  Reparto aprendido    (interaccion, autor 6, tick 511)
   simbolico 0  Arte rupestre        (arbol, autor 3, tick 3)
   simbolico 1  Ritual               (arbol, autor 3, tick 6)
+  simbolico 1  Rito heredado        (interaccion, autor 9, tick 9)
   simbolico 2  Mito                 (arbol, autor 3, tick 87)
-  simbolico 2  Tradición de ritual  (interaccion, autor 9, tick 12)
   simbolico 3  Identidad del grupo  (arbol, autor 5, tick 88)
-  simbolico 3  Tradición de líder   (interaccion, autor 6, tick 511)
-  simbolico 3  Tradición de mito    (interaccion, autor 5, tick 88)
-  simbolico 4  Tradición de identidad del grupo (interaccion, autor 9, tick 96)
-  simbolico 4  Tradición de transmisión eficaz (interaccion, autor 13, tick 383)
 ```
 
 ## Telemetría por intervalo
@@ -533,18 +734,18 @@ para esa partida. Salida real (600 ticks, intervalo 60 → **10 muestras**, no
 600):
 
 ```
-seed 42  ticks 600  intervalo 60  crisis False
+seed 42  ticks 600  intervalo 60  crisis False  llm off
   tick  pob  div  conf  neut  nodos  aristas  energia  sed
     60   12    3     7     2     15       12    75.56  20.6
-   120   12    3     7     2     23       20    71.49  30.32
-   180   12    3     7     2     23       20     69.2  40.03
-   240   12    3     7     2     23       20    70.71  49.74
-   300   12    3     7     2     23       20    66.88  59.46
-   360   12    3     7     2     23       20    56.78  58.2
-   420   14    3     8     3     24       21    65.89  29.18
-   480   14    3     8     3     24       21    60.66  33.85
-   540   15    3     8     4     30       27    63.59  26.91
-   600   16    3     8     5     30       27    75.23  34.51
+   120   12    3     7     2     22       19    71.49  30.32
+   180   12    3     7     2     22       19     69.2  40.03
+   240   12    3     7     2     22       19    70.71  49.74
+   300   12    3     7     2     22       19    66.88  59.46
+   360   12    3     7     2     22       19    56.78  58.2
+   420   14    3     8     3     22       19    65.89  29.18
+   480   14    3     8     3     22       19    60.66  33.85
+   540   15    3     8     4     28       25    63.59  26.91
+   600   16    3     8     5     28       25    75.23  34.51
 ```
 
 En JSON es un objeto con `seed`, `ticks`, `intervalo`, `crisis`, `llm` y `muestras`
@@ -614,7 +815,7 @@ Salida real de `report db` sobre la partida de 600 ticks:
 
 ```
 seed 42  tick 600  poblacion 16  estacion sin estacion
-nodos 30  aristas 27  arbol 23  combinacion 0  interaccion 7  llm 0
+nodos 28  aristas 25  arbol 23  combinacion 0  interaccion 5  llm 0
 diario 5  telemetria 10  recursos 89  recuerdos 0
 ```
 
@@ -648,7 +849,7 @@ uv run python -m tribal export obsidian --db tribu.db --out vault-tribu/
 Salida real sobre la partida de 600 ticks:
 
 ```
-export obsidian: 30 nodos, 27 aristas, 31 ficheros -> vault-tribu
+export obsidian: 28 nodos, 25 aristas, 29 ficheros -> vault-tribu
 ```
 
 El slug de cada nota es el `id` del nodo saneado a ASCII (minúsculas, `-` y
@@ -691,13 +892,14 @@ Salida real sobre una partida de 5000 ticks (semilla 2, crisis):
 ```
 pregunta: que ruta llevo al fuego
 intencion: ruta
-destino: ahuyentar_depredadores - Ahuyentar depredadores
-camino (5 pasos):
+destino: tradicion_fuego_1 - Vigilia del fuego
+camino (6 pasos):
   1. observar_rayo - Observar el rayo  [rama fuego | origen arbol | autor 5 | tick 9]
   2. conservar_brasas - Conservar brasas  <- observar_rayo  [rama fuego | origen arbol | autor 5 | tick 12]
   3. friccion - Fricción  <- conservar_brasas  [rama fuego | origen arbol | autor 5 | tick 15]
   4. cocinar - Cocinar  <- friccion  [rama fuego | origen arbol | autor 5 | tick 18]
   5. ahuyentar_depredadores - Ahuyentar depredadores  <- cocinar  [rama fuego | origen arbol | autor 5 | tick 21]
+  6. tradicion_fuego_1 - Vigilia del fuego  <- ahuyentar_depredadores  [rama fuego | origen interaccion | autor 7 | tick 67]
 ```
 
 ```
@@ -758,8 +960,9 @@ db tribu.db
   veredicto              False
 ```
 
-El resumen LLM de esa corrida: 17 peticiones, **0 aplicadas**, 16 descartadas
-y 1 fallo; 3 propuestas de nodo, 0 aceptadas y 1 rechazada por `transporte`. El
+El resumen LLM de la corrida publicada: 17 peticiones, **0 aplicadas**, 16
+descartadas y 1 fallo (el timing varía); 3 propuestas de nodo, 0 aceptadas y 1
+rechazada por `transporte`. El
 modelo real no produjo nodos válidos; el veredicto real es **False**. La
 corrida literal `run --headless --llm http` sin throttle da el mismo 14.8 %
 (7.04 s, 1 petición, 0 aplicadas): el modelo no llega a intervenir. No se
@@ -788,8 +991,8 @@ sin imitación. El canal del modelo tiene un turno de invención por reloj cada
 11 rechazadas por semilla.
 
 El diagnóstico completo está en `vault/01_PROYECTO/arquitectura.md` §9.5. El
-`tribu.db` de la raíz es la corrida real (14.8 %, veredicto False); el test de
-mecanismo usa su propia base temporal.
+`tribu.db` de la raíz (artefacto local, `.gitignore` ignora `*.db`) es la corrida
+real (14.8 %, veredicto False); el test de mecanismo usa su propia base temporal.
 
 ## Configuración y semilla
 
@@ -1006,11 +1209,11 @@ lo que no se mide):
 
 ```bash
 uv run python -m tribal run --headless --json --ticks 2000 --crisis
-# ... "combinaciones_logradas": 5, "descubridores": [1, 2, 9],
-#     "supervivencia_descubridores": 1.0,
-#     "supervivencia_no_descubridores": 0.938, "diferencial_seleccion": 0.062,
-#     ... se lee como: los tres que descubrieron siguen vivos y los demás
-#     han perdido un 6 % de efectivos
+# ... "combinaciones_logradas": 5, "descubridores": [1, 7],
+#     "supervivencia_descubridores": 0.5,
+#     "supervivencia_no_descubridores": 0.895, "diferencial_seleccion": -0.395,
+#     ... se lee como: uno de los dos que descubrieron sigue vivo, frente al
+#     89.5 % de los demás; en esta semilla descubrir salió caro
 ```
 
 La ventaja no se codifica: viene de la habilidad que el autor aprende al
@@ -1023,22 +1226,23 @@ divergencia** solo se diferencian por lo que saben hacer.
 vivos y `dif` el diferencial de selección:
 
 ```
-seed | div% calma->crisis | descubridores | supD/supN | dif
-   1 |  11.8 ->  11.8 | 1 | 1.000/0.842 | +0.158
-   2 |  40.0 ->  17.6 | 2 | 0.500/0.842 | -0.342
-   3 |  29.4 ->  52.9 | 3 | 0.667/0.882 | -0.216
-   4 |  44.4 ->  25.0 | 3 | 0.667/0.714 | -0.048
-   5 |  61.1 ->  58.8 | 3 | 0.667/0.833 | -0.167
-   6 |   0.0 ->   0.0 | 0 | 0.000/0.579 |  0.000
-   7 |  10.0 ->   6.2 | 2 | 0.500/0.789 | -0.289
-   8 |   0.0 ->   5.0 | 1 | 1.000/0.864 | +0.136
-   9 |  11.1 ->  21.1 | 3 | 1.000/0.941 | +0.059
-  10 |  37.5 ->  20.0 | 3 | 0.667/0.812 | -0.146
+seed | div% calma->crisis | descubridores | supD/supN (crisis) | dif (crisis)
+   1 |   5.9 ->  16.7 | 2 | 1.000/1.000 | +0.000
+   2 |  33.3 ->  35.3 | 3 | 0.667/1.000 | -0.333
+   3 |  43.8 ->  55.6 | 4 | 0.750/0.938 | -0.188
+   4 |  28.6 ->  40.0 | 2 | 0.500/0.692 | -0.192
+   5 |  22.2 ->  37.5 | 3 | 0.333/0.882 | -0.549
+   6 |  38.5 ->  33.3 | 3 | 0.667/0.889 | -0.222
+   7 |  85.0 ->  64.7 | 2 | 0.500/0.889 | -0.389
+   8 |  45.5 ->  23.5 | 4 | 0.750/0.875 | -0.125
+   9 |   9.5 ->   5.6 | 1 | 1.000/0.810 | +0.190
+  10 |  15.0 ->  15.0 | 2 | 1.000/0.900 | +0.100
 ```
 
 Lectura honesta: el mecanismo ya es medible, pero con doce individuos la deriva
-manda. El signo del diferencial cambia según la semilla (4/10 a favor), y la
-proporción de divergentes no sube de forma sistemática: descubrir cuesta ticks y
+manda. El signo del diferencial cambia según la semilla (2/10 a favor, 1 empate
+y 7 en contra), y la proporción de divergentes no sube de forma sistemática
+(5/10 sube, 1 empata y 4 baja): descubrir cuesta ticks y
 la técnica se transmite a los conformistas en cuanto se usa. Lo que sí es
 estable es de quién es la ventaja cuando aparece —del descubridor que aprendió
 la habilidad, no del rasgo—.
@@ -1099,17 +1303,21 @@ protagoniza la práctica, no cuánto come la tribu.
 
 ```bash
 uv run python -m tribal run --headless --json --ticks 5000 --crisis
-# ... "intentos_divergentes": 8, "combinaciones_logradas": 5, "tradiciones": 5,
-#     "beneficios": {"bayas": 1.0469, "caza": 1.0337, "dano_depredador": 0.9777, ...},
-#     "utilidad_media": {"raedera": 1.0686, "caceria_dirigida": 1.014, ...},
-#     "escasez": {"agua": 0.5, "bayas": 0.526, "caza": 0.125}, "estacion": null,
-#     "migraciones": 45,
-#     "nodos_por_origen": {"arbol": 23, "combinacion": 5, "interaccion": 5, "llm": 0}
+# ... "intentos_divergentes": 16, "combinaciones_logradas": 5, "tradiciones": 5,
+#     "beneficios": {"bayas": 1.0, "caza": 1.0, "dano_depredador": 1.0, "tasa_sed": 1.0},
+#     "utilidad_media": {"raedera": 1.0878, "caceria_dirigida": 1.0028,
+#                        "cuchillo_al_fuego": 1.0033, "turnos_de_vigilia": 0.9947,
+#                        "canto_ritual": 0.9683},
+#     "escasez": {"agua": 0.5, "bayas": 0.503, "caza": 0.0}, "estacion": null,
+#     "migraciones": 12,
+#     "nodos_por_origen": {"arbol": 23, "combinacion": 3, "interaccion": 4, "llm": 0},
+#     "pct_fuera_arbol": 23.3
 #     ... los cinco cruces, incluido "canto_ritual" (proto_palabras + ritual)
 uv run python -m tribal run --headless --json --ticks 5000
 # ... "intentos_divergentes": 0, "combinaciones_logradas": 0,
-#     "utilidad_media": {}, "migraciones": 18,
-#     "nodos_por_origen": {"arbol": 23, "combinacion": 0, "interaccion": 4, ...}
+#     "utilidad_media": {}, "migraciones": 0,
+#     "nodos_por_origen": {"arbol": 23, "combinacion": 0, "interaccion": 4, ...},
+#     "pct_fuera_arbol": 14.8
 ```
 
 ### Resultado medido del barrido (EMER-001)
@@ -1211,16 +1419,16 @@ ambiental**, no con el tiempo: calma = sin cambio, crisis = cambio.
 
 ```
 seed | div% c->x | nac_div c/x | S_fec c/x | S_via c/x | desc/d c/x | desc/c c/x | imit/desc c/x | long_d c/x | long_c c/x | media c/x | sigma c/x | nac c/x | nodos c/x | pob c/x | ext
-   1 |   0.0->  0.0 | 0.415/0.458 | -0.039/+0.003 | -0.053/-0.012 | 0.000/1.250 | 0.000/0.000 | 0.00/3103.00 | 0/3480 | 3040/3195 | 0.407/0.448 | 0.029/0.027 | 40/38 | 6/11 | 18/ 8 | 0/0
-   2 |  26.3->  0.0 | 0.508/0.412 | +0.022/-0.042 | +0.011/-0.139 | 0.000/0.714 | 0.000/0.000 | 0.00/2660.80 | 0/2861 | 3046/2940 | 0.496/0.346 | 0.075/0.017 | 46/15 | 5/11 | 19/ 3 | 0/0
-   3 |   0.0-> 10.0 | 0.504/0.529 | -0.053/-0.035 | -0.065/-0.044 | 0.000/0.278 | 0.000/0.000 | 0.00/2447.60 | 0/2839 | 2996/3010 | 0.504/0.524 | 0.026/0.051 | 20/42 | 2/10 |  4/10 | 0/0
-   4 |   0.0-> 100.0 | 0.377/0.590 | -0.038/+0.129 | +0.000/+0.150 | 0.000/0.294 | 0.000/0.000 | 0.00/691.20 | 0/2778 | 2657/2717 | 0.000/0.595 | 0.000/0.024 | 10/14 | 6/10 |  0/ 6 | 1/0
-   5 |   0.0-> 71.4 | 0.383/0.534 | -0.072/+0.064 | -0.120/+0.090 | 0.000/0.278 | 0.000/0.000 | 0.00/1393.40 | 0/2261 | 3239/2780 | 0.352/0.562 | 0.036/0.034 | 58/24 | 5/10 | 24/ 7 | 0/0
-   6 |   3.1->  0.0 | 0.469/0.461 | -0.039/-0.026 | -0.050/+0.000 | 0.000/0.714 | 0.000/0.000 | 0.00/1437.40 | 0/2814 | 2788/2959 | 0.453/0.000 | 0.050/0.000 | 82/14 | 6/11 | 32/ 0 | 0/1
-   7 | 100.0-> 93.3 | 0.617/0.603 | +0.018/+0.013 | +0.013/-0.005 | 0.000/0.122 | 0.000/0.000 | 0.00/504.20 | 0/2969 | 2740/2740 | 0.613/0.594 | 0.030/0.037 | 89/41 | 4/9 | 43/15 | 0/0
-   8 |   0.0-> 88.9 | 0.000/0.519 | +0.000/+0.019 | +0.000/+0.111 | 0.000/0.312 | 0.000/0.000 | 0.00/1465.00 | 0/2940 | 3077/2898 | 0.000/0.612 | 0.000/0.054 | 0/26 | 4/10 |  0/ 9 | 1/0
-   9 |   0.0->  0.0 | 0.362/0.381 | -0.014/+0.005 | -0.069/+0.001 | 0.000/2.500 | 0.000/0.000 | 0.00/9228.60 | 0/2607 | 2938/2915 | 0.311/0.380 | 0.020/0.050 | 29/51 | 9/14 |  8/21 | 0/0
-  10 |   0.0->  0.0 | 0.372/0.443 | -0.032/+0.030 | -0.056/+0.073 | 0.000/1.000 | 0.000/0.000 | 0.00/2791.40 | 0/2994 | 2932/2890 | 0.355/0.484 | 0.015/0.022 | 25/28 | 5/11 |  9/ 6 | 0/0
+   1 |   0.0->  0.0 | 0.415/0.458 | -0.039/+0.003 | -0.053/-0.012 | 0.000/1.250 | 0.000/0.000 | 0.00/18464.60 | 0/3480 | 3040/3195 | 0.407/0.448 | 0.029/0.027 | 40/38 | 5/1 | 18/ 8 | 0/0
+   2 |  26.3->  0.0 | 0.508/0.412 | +0.022/-0.042 | +0.011/-0.139 | 0.000/0.714 | 0.000/0.000 | 0.00/15880.80 | 0/2861 | 3046/2940 | 0.496/0.346 | 0.075/0.017 | 46/15 | 4/7 | 19/ 3 | 0/0
+   3 |   0.0-> 10.0 | 0.504/0.529 | -0.053/-0.035 | -0.065/-0.044 | 0.000/0.278 | 0.000/0.000 | 0.00/13066.20 | 0/2839 | 2996/3010 | 0.504/0.524 | 0.026/0.051 | 20/42 | 0/4 |  4/10 | 0/0
+   4 |   0.0-> 100.0 | 0.377/0.590 | -0.038/+0.129 | +0.000/+0.150 | 0.000/0.294 | 0.000/0.000 | 0.00/3775.80 | 0/2778 | 2657/2717 | 0.000/0.595 | 0.000/0.024 | 10/14 | 0/3 |  0/ 6 | 1/0
+   5 |   0.0-> 71.4 | 0.383/0.534 | -0.072/+0.064 | -0.120/+0.090 | 0.000/0.278 | 0.000/0.000 | 0.00/8314.80 | 0/2261 | 3239/2780 | 0.352/0.562 | 0.036/0.034 | 58/24 | 4/4 | 24/ 7 | 0/0
+   6 |   3.1->  0.0 | 0.469/0.461 | -0.039/-0.026 | -0.050/+0.000 | 0.000/0.714 | 0.000/0.000 | 0.00/8625.20 | 0/2814 | 2788/2959 | 0.453/0.000 | 0.050/0.000 | 82/14 | 5/0 | 32/ 0 | 0/1
+   7 |  100.0-> 93.3 | 0.617/0.603 | +0.018/+0.013 | +0.013/-0.005 | 0.000/0.122 | 0.000/0.000 | 0.00/2927.40 | 0/2969 | 2740/2740 | 0.613/0.594 | 0.030/0.037 | 89/41 | 0/5 | 43/15 | 0/0
+   8 |   0.0-> 88.9 | 0.000/0.519 | +0.000/+0.019 | +0.000/+0.111 | 0.000/0.312 | 0.000/0.000 | 0.00/8159.40 | 0/2940 | 3077/2898 | 0.000/0.612 | 0.000/0.054 | 0/26 | 0/4 |  0/ 9 | 1/0
+   9 |   0.0->  0.0 | 0.362/0.381 | -0.014/+0.005 | -0.069/+0.001 | 0.000/2.500 | 0.000/0.000 | 0.00/55339.60 | 0/2607 | 2938/2915 | 0.311/0.380 | 0.020/0.050 | 29/51 | 5/10 |  8/21 | 0/0
+  10 |   0.0->  0.0 | 0.372/0.443 | -0.032/+0.030 | -0.056/+0.073 | 0.000/1.000 | 0.000/0.000 | 0.00/16497.00 | 0/2994 | 2932/2890 | 0.355/0.484 | 0.015/0.022 | 25/28 | 4/5 |  9/ 6 | 0/0
 
 VEREDICTO PRIMARIO (S): S crisis>0 7/10 | S calma<0 7/10 | PRIMARIA True
 SECUNDARIO (div%, no decide): sube 4/10 | empata 3/10 | baja 3/10 | sube>=8/10 False | no baja False | crisis<=calma>=6/10 True | extinciones crisis<=calma True | SECUNDARIA False
@@ -1235,8 +1443,12 @@ regenera en el sitio, memoria válida); en crisis el parche nuevo cae a ≥11
 tiles, fuera del horizonte del conformista y dentro del divergente, así que la
 copia vieja cuesta.
 
-**Confirmación N=50:** el motor admite `--individuos` hasta 100 como parámetro
-de medición; el default del juego sigue en 12 (concepto §1b). La señal S se
+**Confirmación N=50 (medición histórica):** el motor admite `--individuos`
+hasta 100 como parámetro de medición; el default del juego sigue en 12
+(concepto §1b). Es una corrida anterior al tope de una tradición por rama de
+F3-006: las columnas de nodos e imitaciones no se han vuelto a medir y se
+conservan como registro; los veredictos S sí se reprodujeron con el barrido
+actual. La señal S se
 refuerza (`S_fec > 0` en 9/10, `S_fec < 0` en 6/10), pero **crisis ≤ calma no
 se replica** (4/10) y hay una extinción en crisis: la condición de régimen
 favorable es dependiente de escala. Se publica como límite, no se oculta; la

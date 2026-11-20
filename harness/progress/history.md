@@ -1612,3 +1612,46 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 86 fi
 ```
 
 </details>
+
+## HARD-3 — Endurecimiento final: semilla, telemetria, README y docs
+
+- **Cerrada:** 2026-11-20
+- **Verificación:** ./init.sh en verde · 472 passed in 319.53s (0:05:19)
+- **Cambios:** tests/test_final.py (nuevo: 10 semillas, dos procesos, resumen y KPI byte-identicos, pct>0 y veredicto anclado); README (seccion Como ver el proyecto, orden verificado, salidas reales y brecha del modelo publicada, extra RAG); vault/01_PROYECTO/arquitectura.md §9 (estado final y limites abiertos); project.yml (project_version 0.1.34); harness/progress/implementer-HARD-3.md
+- **Decisiones:** El README se ordena por lo que el lector puede reproducir: primero la partida stub de 1200 ticks (export y consulta incluidos), despues la corrida real, y avisos explicitos de que la base se pisa y de que los contadores LLM dependen del timing. El test final no solo compara bytes: exige que el KPI sea positivo y que el veredicto sea coherente con hitos y umbral, de modo que guardar todos los nodos como arbol ya rompe la suite. La brecha real (14.8 por ciento, False) queda publicada en README y arquitectura; no se sustituye por el 50 por ciento del backend falso. El extra rag no se instala: se documenta el aviso y el comando. project.yml se sincroniza con la version real.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 472 passed
+
+$ test_final: 10 semillas con backend falso, dos procesos
+pytest tests/test_final.py -q -> 10 passed
+  por semilla 1..10 (1200 ticks, DB en tmp): resumen y report kpi --json byte-identicos
+  exige pct_fuera_arbol > 0.0 y veredicto == (all(hitos) and pct >= umbral)
+  mutacion origen="arbol" al guardar -> FALLA (0.0 > 0.0) ; revertida
+
+$ report telemetry --db / report kpi --db
+muestras 20, ticks 60..1200 ; herramienta_compuesta no ; 14.8 % (4/27) ; veredicto False
+en la partida real (3000 ticks, seed 1): nodos 32, aristas 34, KPI 14.8 % (4/27) False
+
+$ README verificado en orden
+§3 run+report db (seed 1, tick 1200, 18 vivos, 27 nodos, 24 aristas)
+§4 telemetria (20 muestras) y KPI ; §5 export 27/24/28 ; §6 culture ask (5 pasos, sin apagados)
+§7 corrida real (--llm http --ticks 3000 --seed 1 --crisis --fresh, 51.75 s): 32 nodos, 34 aristas,
+   KPI 4/27 14.8 % False ; los avisos de que base pisa y que contadores varian estan escritos
+arquitectura §9 conserva los limites abiertos (14.8 %, D3 no incluido, relaciones/recuerdos vacias,
+  tope de tradiciones, N=50 historico)
+
+$ rag index -> "chromadb no esta instalado. Ejecuta: uv sync --extra rag" (exit 1) ; README §9 lo explica
+$ doctor -> tribal v0.1.34, 7/7 OK
+$ uv run pytest -q
+1028 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 87 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 87 source files
+```
+
+</details>

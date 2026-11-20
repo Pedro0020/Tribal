@@ -1,6 +1,6 @@
 [project]
 name = "tribal"
-version = "0.1.34"
+version = "0.1.35"
 description = "Civilización emergente con agentes LLM: una tribu paleolítica en 2D."
 authors = [
   { name = "Pedro0020" }

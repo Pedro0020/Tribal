@@ -521,10 +521,13 @@
         "uv run python -m agents run rag index deja el historico del arnes indexado (o aviso claro de que falta el extra rag)",
         "harness gate success=true"
       ],
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "F3-006"
-      ]
+      ],
+      "started": "2026-11-20",
+      "review_rounds": 1,
+      "closed": "2026-11-20"
     },
     {
       "id": "SAVE-001",

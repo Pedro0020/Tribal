@@ -10,7 +10,7 @@ project_name: Tribal
 project_slug: tribal
 project_author_name: Pedro0020
 project_description: Civilización emergente con agentes LLM: una tribu paleolítica en 2D cuyo motor de reglas, cultura y memoria hacen que la civilización aparezca sola.
-project_version: 0.1.0
+project_version: 0.1.34
 # La versión del .venv. uv la resuelve desde requires-python en pyproject.toml.
 python_version: 3.12
 

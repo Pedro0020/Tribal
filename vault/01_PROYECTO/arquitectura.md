@@ -554,51 +554,57 @@ bueno. Eso son las puertas de concepto §15 y el líder de la fase.
 
 ## 9. Estado de implementación
 
-**Existe hoy (Fase 1 cerrada, sin LLM):**
+**Estado final: fases 0-3 cerradas en mecanismo.** Lo que existe hoy:
 
-- Paquete `tribal/` con `__init__.py` (versión), `__main__.py`, `paths.py`,
-  `config.py` (`SimConfig` inmutable y serializable a JSON) y `cli.py` con
-  `hello`, `run`, `report culture`, `report telemetry` y `report gate-f1`.
-- `tribal/core/`: mundo, recursos y parches, acciones, modelos, genoma con
-  mutación, habilidades y depredador.
-- `tribal/agents/`: necesidades e instinto (política sin LLM; la percepción
-  cambia con el temperamento, la decisión no).
-- `tribal/culture/`: árbol de plausibilidad con cinco ramas, grafo de nodos y
-  aristas con `origen`, combinaciones, utilidad situacional y tradiciones.
-- `tribal/sim.py`: `Simulacion` (motor de una partida), `run` (corrida
-  headless o con ventana), `run_muestreado` (telemetría por intervalo) y el
-  `resumen()` determinista que publica `run --json`.
-- `tribal/ui/`: bucle Pygame a 60 fps y render top-down; la UI lee el mundo y
-  no lo muta.
-- `tribal/llm/`: `esquema.py` (JSON schema, validación y few-shot) y
-  `cliente.py` (HTTP a Ollama con transporte inyectable y degradación sin
-  excepciones). `uv run python -m tribal llm selfcheck --json` informa del
-  servicio; la cola y la selección por saliencia son F2-002.
-- `tribal/gate_f1.py`: barrido calma/crisis por semilla y veredicto de la
-  puerta F1→F2.
-- Puerta del arnés en verde (`harness gate` → `ENTORNO LISTO`) y `pytest -q`
-  cubriendo motor, puertas F0/F1, genoma, habilidades, divergencia, utilidad,
-  ambiente, tradiciones, configuración y reproducibilidad por semilla.
+- **Fase 0 — motor.** `tribal/core/` (mundo, parches, genoma, habilidades,
+  depredador), `tribal/agents/instinto` (política sin LLM; la percepción cambia
+  con el temperamento, la decisión no), `tribal/ui/` (Pygame a 60 fps) y
+  `tribal/sim.py` (`Simulacion`, `run`, `run_muestreado` y el `resumen()`
+  determinista de `run --json`).
+- **Fase 1 — cultura sin LLM.** `tribal/culture/` con el árbol de cinco ramas,
+  grafo de nodos y aristas con `origen`, combinaciones, utilidad situacional y
+  tradiciones. Puertas F0→F1 y F1→F2 en §9.2/§9.3.
+- **Fase 2 — LLM local.** `tribal/llm/`: cliente HTTP a Ollama, cola asíncrona,
+  esquema y few-shot, selección por saliencia, diario narrado y embeddings en
+  CPU. Puerta F2→F3 en §9.4.
+- **Fase 3 — memoria y observación.** `tribal/store/` (SQLite: individuos,
+  recursos, mundo, nodos, aristas, recuerdos, diario y telemetría), `run --db`,
+  `report db`/`report telemetry --db`, `export obsidian`, `culture ask` y
+  `report kpi` (§9.5).
+- **Arnés.** `pytest -q`, `ruff`, `mypy` y `harness gate` en verde; el cierre
+  reproducible está en `tests/test_final.py` (10 semillas, dos procesos).
 
 Comandos de la fase:
 
 ```bash
-uv run python -m tribal run --headless --json --ticks 600 --seed 7
-uv run python -m tribal run --headless --config docs/config-ejemplo.json --json --ticks 600
-uv run python -m tribal report culture --json
-uv run python -m tribal report telemetry --json --ticks 600 --intervalo 60
+uv run python -m tribal run --headless --llm stub --llm-sincrono --ticks 1200 --seed 1 --db tribu.db --fresh
+uv run python -m tribal report db --db tribu.db
+uv run python -m tribal report telemetry --db tribu.db
+uv run python -m tribal report kpi --db tribu.db
+uv run python -m tribal export obsidian --db tribu.db --out vault-tribu/
+uv run python -m tribal culture ask --db tribu.db --query "que ruta llevo al fuego"
 uv run python -m tribal report gate-f1 --seeds 1-10 --ticks 8000
+uv run python -m tribal report gate-f2 --seeds 1-5 --ticks 3000
 ```
 
-**No existe todavía (y este documento no implementa):**
+**Límites abiertos (no se esconden):**
 
-- Capa LLM (`tribal/llm/`): cola asíncrona, selección por saliencia y
-  aplicación diferida. Empieza en Fase 2 (`F2-002`); `cliente.py` y
-  `esquema.py` ya existen. El id del modelo es `tribal-llm` (`tribal.Modelfile`
-  en la raíz del repo: `FROM qwen2.5:3b-instruct-q8_0` con `num_ctx 8192`).
-- Persistencia SQLite (`tribal/store/`), export a Obsidian y telemetría leída
-  de una partida guardada. Fase 3 (`F3-001`, `F3-003`, `F3-004`).
-- Diario narrado, memoria colectiva persistida y consulta del grafo. Fase 2–3.
+- **El modelo real no cierra el KPI.** La corrida `--llm http` (semilla 1, 3000
+  ticks, crisis) da **14.8 % (4/27) y `veredicto False`**: en la corrida
+  publicada, 17 peticiones, 0 aplicadas, 16 descartadas y 1 fallo de transporte
+  (los contadores dependen del timing). El mecanismo sí pasa con
+  el backend guionizado (50-55 %, `True`). La brecha es del modelo, no del KPI.
+- **La vista D3 no existe.** La observación es `export obsidian` (Markdown con
+  wikilinks) y los informes/`culture ask`; §5.6 sigue siendo una alternativa
+  descartada para la interfaz principal.
+- **`relaciones` y `recuerdos` se crean vacías.** El motor no guarda vínculos
+  sociales y el índice de embeddings no expone sus textos; `cargar()` devuelve
+  grafo y población para consultar, no para reanudar (SAVE-001).
+- **Una tradición por rama** es un tope deliberado: sin él, diez tradiciones y
+  veinte combinaciones desestabilizaban la ecología de 8000 ticks.
+- **N=50 no replica todas las condiciones** de la puerta F1: la señal S se
+  refuerza, pero `crisis <= calma` no; la puerta se cierra con N=12 y la
+  salvedad documentada.
 
 ### 9.1 Qué ramas avanza F1 y con qué prácticas
 
@@ -857,8 +863,9 @@ pct_fuera_arbol  14.8 % (4/27, umbral 50.0 %)
 veredicto        False
 ```
 
-Resumen LLM: 17 peticiones, **0 aplicadas**, 16 descartadas, 1 fallo; 3
-propuestas de nodo, 0 aceptadas y 1 rechazada por `transporte`. La corrida
+Resumen LLM de la corrida publicada: 17 peticiones, **0 aplicadas**, 16
+descartadas y 1 fallo (el timing varía); 3 propuestas de nodo, 0 aceptadas y 1
+rechazada por `transporte`. La corrida
 literal `run --headless --llm http` sin throttle da el mismo 14.8 % (7.04 s, 1
 petición, 0 aplicadas). El veredicto real es False y se publica tal cual; no se
 sustituye por el número del backend falso.

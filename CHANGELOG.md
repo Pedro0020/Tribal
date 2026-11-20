@@ -12,6 +12,7 @@ añade aquí una entrada por cada feature cerrada del arnés.
 
 ### Añadido
 
+- feat: endurecimiento final y README reproducible (HARD-3)
 - feat: criterio de exito medido y publicado (F3-006)
 
 ## [Unreleased] — 2026-11-19
