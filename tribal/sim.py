@@ -217,6 +217,15 @@ class Simulacion:
         self._pensamientos: dict[int, int] = {}
         self._max_pensando_visto = 0
         self._max_en_vuelo_visto = 0
+        #: Acciones decididas por el LLM frente al instinto (MEDIR-LLM). Una
+        #: acción cuenta para el LLM solo si aplicó una `intencion_llm` vigente:
+        #: encolar una petición no decide nada y corregirla tampoco. El
+        #: experimento de un divergente y el respaldo del motor cuentan instinto.
+        self.acciones_llm = 0
+        self.acciones_instinto = 0
+        self.acciones_totales = 0
+        #: Mismo recuento por tramo de `ticks_telemetria`, en orden de aparición.
+        self._acciones_tramo: dict[int, tuple[int, int]] = {}
         #: Ticks de crisis seguidos; al llegar a `saliencia.TICKS_CRISIS` los
         #: supervivientes ganan el hito y el contador vuelve a cero.
         self._crisis_ticks = 0
@@ -326,8 +335,10 @@ class Simulacion:
         descubierto = False
         for individuo in self.mundo.individuos:
             # Experimentar consume el tick: el divergente que prueba un cruce
-            # no come ni bebe en ese tick (concepto §9b).
+            # no come ni bebe en ese tick (concepto §9b). Lo decide el motor,
+            # así que cuenta como acción de instinto (MEDIR-LLM).
             if self._intentar_combinacion(individuo):
+                self._contar_accion(False)
                 continue
             efecto = beneficios[individuo.id]
             ya_se_movio = individuo.movido
@@ -345,6 +356,7 @@ class Simulacion:
                 bonus_caza=efecto.caza,
                 lenguaje=self.grafo.activo("proto_palabras"),
             )
+            decidida_llm = intencion is not None and aplicada
             if intencion is not None:
                 if aplicada and self.cola is not None:
                     self.cola.registrar_aplicada()
@@ -360,6 +372,7 @@ class Simulacion:
                         bonus_caza=efecto.caza,
                         lenguaje=self.grafo.activo("proto_palabras"),
                     )
+            self._contar_accion(decidida_llm)
             # Explorar es viaje: el tick de búsqueda cuesta energía de más. Lo
             # paga la conducta, no el rasgo: un conformista que se ve obligado a
             # buscar lejos paga lo mismo.
@@ -487,6 +500,10 @@ class Simulacion:
             "pensamientos": {str(k): v for k, v in self._pensamientos.items()},
             "max_pensando_visto": self._max_pensando_visto,
             "max_en_vuelo_visto": self._max_en_vuelo_visto,
+            "acciones_llm": self.acciones_llm,
+            "acciones_instinto": self.acciones_instinto,
+            "acciones_totales": self.acciones_totales,
+            "acciones_tramo": {str(k): list(v) for k, v in self._acciones_tramo.items()},
             "crisis_ticks": self._crisis_ticks,
             "propuestas_solicitadas": self.propuestas_solicitadas,
             "propuestas_aceptadas": self.propuestas_aceptadas,
@@ -541,6 +558,13 @@ class Simulacion:
         }
         self._max_pensando_visto = int(datos["max_pensando_visto"])
         self._max_en_vuelo_visto = int(datos["max_en_vuelo_visto"])
+        self.acciones_llm = int(datos["acciones_llm"])
+        self.acciones_instinto = int(datos["acciones_instinto"])
+        self.acciones_totales = int(datos["acciones_totales"])
+        self._acciones_tramo = {
+            int(tramo): (int(valores[0]), int(valores[1]))
+            for tramo, valores in datos["acciones_tramo"].items()
+        }
         self._crisis_ticks = int(datos["crisis_ticks"])
         self.propuestas_solicitadas = int(datos["propuestas_solicitadas"])
         self.propuestas_aceptadas = int(datos["propuestas_aceptadas"])
@@ -681,6 +705,24 @@ class Simulacion:
         """Indexa un hito de cultura (árbol, combinación o tradición); no-op sin LLM."""
         if self.recuerdos is not None:
             self.recuerdos.agregar(id, texto)
+
+    def _contar_accion(self, decidida_llm: bool) -> None:
+        """Suma una acción decidida al total y al tramo de `ticks_telemetria`.
+
+        MEDIR-LLM: el denominador son acciones, no peticiones. Una intención
+        encolada que no llega a aplicarse (fuera de ventana, verbo inválido o
+        corrección del motor) no es una decisión del LLM.
+        """
+        tramo = (self.mundo.tick - 1) // self.config.ticks_telemetria
+        llm, instinto = self._acciones_tramo.get(tramo, (0, 0))
+        if decidida_llm:
+            self.acciones_llm += 1
+            llm += 1
+        else:
+            self.acciones_instinto += 1
+            instinto += 1
+        self.acciones_totales += 1
+        self._acciones_tramo[tramo] = (llm, instinto)
 
     def _intencion_llm(self, individuo: Individuo) -> Accion | None:
         """Intención forzada si sigue dentro de su ventana; se consume al usarse.
@@ -1439,8 +1481,38 @@ class Simulacion:
                 "fallos": estadisticas["fallos"],
                 "corregidas": estadisticas["corregidas"],
                 "en_vuelo": estadisticas["en_vuelo"],
+                "acciones": self._acciones_json(),
             }
         return datos
+
+    def _acciones_json(self) -> dict[str, Any]:
+        """Decisiones del LLM frente al instinto, en total y por tramo (MEDIR-LLM).
+
+        El tramo es la ventana de `ticks_telemetria` (60 por defecto), la misma
+        granularidad con la que se muestrea la partida. `pct_llm` es el
+        porcentaje de acciones decididas por el LLM sobre las decididas en ese
+        tramo. Los tramos sin acciones (tribu extinta) también aparecen, con
+        total 0 y `pct_llm` 0.0, para que el eje temporal no tenga huecos.
+        """
+        tramos = (self.mundo.tick - 1) // self.config.ticks_telemetria + 1 if self.mundo.tick else 0
+        por_tramo = []
+        for tramo in range(tramos):
+            llm, instinto = self._acciones_tramo.get(tramo, (0, 0))
+            por_tramo.append(
+                {
+                    "tramo": tramo,
+                    "llm": llm,
+                    "instinto": instinto,
+                    "pct_llm": _pct(llm, llm + instinto),
+                }
+            )
+        return {
+            "llm": self.acciones_llm,
+            "instinto": self.acciones_instinto,
+            "total": self.acciones_totales,
+            "pct_llm": _pct(self.acciones_llm, self.acciones_totales),
+            "por_tramo": por_tramo,
+        }
 
     def _saliencia_json(self) -> dict[str, Any]:
         """Top-3 de peso narrativo y peticiones pensadas por individuo (§10b).
@@ -1574,6 +1646,11 @@ def run_muestreado(
 def _tramo(individuo: Individuo) -> str:
     """Temperamento para telemetría (no decide nada del motor)."""
     return modulo_genoma.temperamento(individuo.genoma)
+
+
+def _pct(parte: int, total: int) -> float:
+    """Porcentaje redondeado a una décima; 0.0 si no hubo acciones (MEDIR-LLM)."""
+    return round(100.0 * parte / total, 1) if total else 0.0
 
 
 def _hay_dilema(

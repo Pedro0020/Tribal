@@ -1372,7 +1372,9 @@ def _texto_resumen(resumen: dict[str, Any]) -> str:
         llm = resumen["llm"]
         lineas.append(
             f"llm peticiones {llm['peticiones']}  aplicadas {llm['aplicadas']}  "
-            f"descartadas {llm['descartadas']}  fallos {llm['fallos']}"
+            f"descartadas {llm['descartadas']}  fallos {llm['fallos']}  "
+            f"acciones {llm['acciones']['llm']}/{llm['acciones']['total']} "
+            f"llm ({llm['acciones']['pct_llm']} %)"
         )
     diario = resumen.get("diario")
     if diario and diario["entradas"]:

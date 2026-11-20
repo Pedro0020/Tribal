@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.38-green)
+![Version](https://img.shields.io/badge/Version-0.1.39-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -302,6 +302,37 @@ del cierre—, así que `en_vuelo` queda a 0 y no hay hilos vivos. Si el LLM no
 responde —Ollama caído, timeout de 3 s, JSON inválido— no hay excepción: el
 fallo se cuenta en `fallos` y la tribu sigue por instinto indefinidamente. **No
 hay backoff**: el presupuesto de peticiones en vuelo es el único freno.
+
+### Cuánto decide el LLM (telemetría de decisiones)
+
+Las peticiones no son decisiones. `resumen()["llm"]["acciones"]` mide cuántas
+acciones aplicó realmente el LLM frente a las que resolvió el instinto, en total
+y por tramo de `ticks_telemetria` (60 ticks por defecto):
+
+```json
+"acciones": {"llm": 1400, "instinto": 13359, "total": 14759, "pct_llm": 9.5,
+             "por_tramo": [{"tramo": 0, "llm": 0, "instinto": 720, "pct_llm": 0.0}, ...]}
+```
+
+Una acción cuenta para el LLM **solo si aplicó una `intencion_llm` vigente**. Encolar
+una petición no cuenta; tampoco una elección que el motor tuvo que corregir. El
+experimento de un divergente y cualquier respaldo del instinto cuentan instinto.
+Cada tramo cumple `llm + instinto == total` y `pct_llm` es su porcentaje redondeado
+a una décima; los tramos sin acciones (tribu extinta) aparecen con total 0, y sin
+capa LLM el bloque `llm` no aparece.
+
+```bash
+uv run python -m tribal run --headless --json --llm stub --llm-sincrono \
+  --ticks 1200 --seed 42
+# stub: 9.5 % (1400/14759)
+uv run python -m tribal run --headless --json --llm http --ticks 2000 --seed 1 --crisis
+# modelo real: 0.0 % (0/24972); 1 petición enviada y 3 descartadas al cerrar
+```
+
+Con `--llm http` el tick corre mucho más rápido que la inferencia: en una partida
+corta el modelo puede no llegar a decidir ninguna acción. La métrica lo deja a la
+vista en vez de contarlo como uso del LLM.
+
 
 ### Saliencia y pensamiento selectivo (concepto §9b y §10b)
 

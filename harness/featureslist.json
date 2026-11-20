@@ -864,8 +864,11 @@
         "auditoria-llm.md seccion 1 sustituye el ~5 por ciento por el numero medido con su comando de evidencia",
         "un test ancla que la metrica distingue instinto de LLM y cae si se finge"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-20",
+      "review_rounds": 1,
+      "closed": "2026-11-20"
     },
     {
       "id": "MEM-LOOP",
@@ -960,6 +963,18 @@
         "INVENTOR",
         "CONTENIDO"
       ]
+    },
+    {
+      "id": "LLM-CONFIG",
+      "title": "Reconciliar la configuracion del LLM",
+      "description": "dos inconsistencias que la auditoria seccion 2.1 flaggea y nadie resuelve: temperature 0.7 del Modelfile vs 0.3 de la peticion, y MAX_TOKENS 64/128 vs <=32 de stack",
+      "acceptance_criteria": [
+        "verificar que options.temperature de la peticion sobreescribe el temperature 0.7 del Modelfile",
+        "si no, quitar el temperature del Modelfile",
+        "MAX_TOKENS de cliente.py se reconcilia con el presupuesto de stack seccion 8 o se actualiza stack con la cifra real"
+      ],
+      "status": "pending",
+      "depends_on": []
     }
   ]
 }

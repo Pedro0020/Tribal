@@ -1776,3 +1776,42 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 90 so
 ```
 
 </details>
+
+## MEDIR-LLM — Medir el uso real del LLM
+
+- **Cerrada:** 2026-11-20
+- **Verificación:** ./init.sh en verde · 498 passed in 408.93s (0:06:48)
+- **Cambios:** tribal/sim.py (contadores acciones_llm/instinto y por_tramo; una accion es LLM solo si aplica una intencion vigente; serializacion para reanudar); tests/test_medir_llm.py (nuevo, 8 casos con mutaciones de caducada/encoladas/aplicadas); vault/01_PROYECTO/auditoria-llm.md (§1 numeros medidos y §2.12 corregido); README (cuanto decide el LLM)
+- **Decisiones:** El numero que faltaba ya es medido, no estimado: con el stub el LLM decide 9.5 por ciento de las acciones (1400/14759); con el modelo real, 0.0 por ciento (0/24972) porque la inferencia tarda mas que la ventana de 2000 ticks y la cola descarta. Una accion cuenta como LLM solo si aplica una intencion vigente: encolar, corregir o llegar tarde no suma, y hay un test por cada una de esas formas de fraude (la caducada era el hueco que el reviewer encontro). Los tramos vacios se publican con total 0 para que la serie no mienta por omision. Los contadores sobreviven a reanudar.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 498 passed
+
+$ metrica de decisiones (por tramo, no solo peticiones)
+stub 1200 ticks seed 42: llm 1400 / instinto 13359 / total 14759 = 9.5 %, 20 tramos sin huecos
+  peticiones 1415 != aplicadas 1400 = acciones LLM (no es alias)
+real 2000 ticks seed 1 crisis (--llm http): 1 peticion, 3 descartadas, 0 fallos
+  acciones 0 / 24972 = 0.0 %, 34 tramos coherentes
+LLM off: sin bloque llm, contadores 0, sin errores
+reanudar: 300 ticks 17/3583/3600, 5 tramos; Simulacion.reanudar devuelve el bloque identico
+
+$ auditoria-llm.md §1 y README publican AMBOS numeros con sus comandos; el ~5 % inventado desaparece
+§2.12 corregido: 100 % real / ~90.5 % stub
+
+$ ancla anti-fraude
+caducada -> instinto (llm 0, instinto 1, total 1, pct 0.0)
+mutaciones que caen: contar aplicadas/corregidas | encoladas | aplicar caducada | contar caducada como LLM
+(revertidas con hash identico)
+
+$ uv run pytest -q
+1054 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 91 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 91 source files
+```
+
+</details>

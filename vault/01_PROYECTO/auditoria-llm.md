@@ -5,8 +5,9 @@
 > soluciones completa, para que en el futuro se pueda volver aquí, auditar,
 > decidir y añadir tareas al backlog **a mano**. No se toca el backlog desde
 > aquí.
-> **Método:** análisis estático del código y de los documentos de diseño. No es
-> una prueba empírica contra el modelo real (eso queda pendiente, ver §H).
+> **Método:** análisis estático del código y de los documentos de diseño. §1
+> añade además la medición de acciones de MEDIR-LLM: una corrida real con
+> `--llm http` y otra con el stub determinista, con su comando.
 > **Alcance:** toda la capa `tribal/llm/`, sus puntos de integración en
 > `tribal/sim.py`, el instinto, la saliencia, la memoria, el diario, el árbol de
 > cultura y el KPI de emergencia.
@@ -28,9 +29,30 @@
 
 ## 1. Resumen ejecutivo (veredicto)
 
-**El LLM está infrautilizado: se usa en una fracción pequeña (~5%) de la vida de
-la simulación, y como un selector de candidatas, no como el "motor central" que
-promete `concepto.md §2`.**
+**El LLM está infrautilizado: decide el 0,0 % de las acciones en el modelo real
+y el 9,5 % con el stub determinista, y lo hace como un selector de candidatas,
+no como el "motor central" que promete `concepto.md §2`.**
+
+Medido con `resumen()["llm"]["acciones"]` (MEDIR-LLM), no con las peticiones
+enviadas: una acción cuenta para el LLM solo si aplicó una intención vigente;
+encolar no cuenta y una corrección del motor tampoco.
+
+| Corrida | Acciones LLM | Acciones instinto | % LLM |
+|---|---|---|---|
+| Modelo real `tribal-llm` | 0 | 24 972 | **0,0 %** |
+| Stub determinista | 1 400 | 13 359 | **9,5 %** |
+
+```bash
+# modelo real: 1 petición enviada, 3 descartadas al cerrar, 0 acciones decididas
+uv run python -m tribal run --headless --json --llm http --ticks 2000 --seed 1 --crisis
+# stub: techo del cableado, no del modelo
+uv run python -m tribal run --headless --json --llm stub --llm-sincrono --ticks 1200 --seed 42
+```
+
+En la corrida real el tick corre mucho más rápido que la inferencia: la partida
+termina antes de que el modelo responda. El 9,5 % del stub mide el cableado
+—qué decidiría si respondiera a tiempo—, no la calidad de `tribal-llm`.
+
 
 El modelo entra en exactamente **tres sitios** de `tribal/sim.py`, todos
 estrechísimos:
@@ -43,8 +65,8 @@ estrechísimos:
 
 Todo lo demás —beber, comer, huir, moverse, descansar, deambular, enseñar,
 cuidar, practicar— lo cubre `instinto.elegir`, una política **determinista sin
-LLM** (≈99% de los tick-individuo: 12 individuos × 3000 ticks ≈ 36.000 acciones
-por partida, de las que el LLM decide decenas).
+LLM** (≈100 % de las acciones en la corrida real y ≈90,5 % con el stub: 12
+individuos × 3000 ticks ≈ 36.000 acciones por partida).
 
 ### Los tres principios rectores que salen del análisis
 
@@ -178,8 +200,10 @@ por partida, de las que el LLM decide decenas).
   piensa "más profundo", solo "más a menudo".
 
 ### 2.12 El instinto — `tribal/agents/instinto.py`
-- Política determinista que cubre el 95%: sed→beber, hambre→comer, lobo→huir,
-  ocio→enseñar/cuidar/practicar/deambular.
+- Política determinista que cubre el resto de las acciones: sed→beber,
+  hambre→comer, lobo→huir, ocio→enseñar/cuidar/practicar/deambular. Medido con
+  `resumen()["llm"]["acciones"]` (MEDIR-LLM, §1): **100 % en la corrida real y
+  ≈90,5 % con el stub**.
 - **Observación (de fondo):** el instinto está **bien** y debe seguir como
   *sustrato determinista*. El error no es que exista, es que **no deja sitio** al
   LLM más que en un dilema estrecho. El instinto debería ser el nivel 0 de un
@@ -256,10 +280,14 @@ por partida, de las que el LLM decide decenas).
 
 ## 3. Diagnóstico del subuso (causas de raíz)
 
-1. **La conclusión de viabilidad se volvió techo.** `viabilidad-modelo.md` dijo
-   "el 3B no genera acciones desde cero, sí elige entre candidatas" y se optimizó
-   todo para esa debilidad, abandonando la fortaleza (lenguaje, significado,
-   rol, historia).
+1. **La conclusión de viabilidad se volvió techo — pero el diagnóstico es una
+   falsa dicotomía.** `viabilidad-modelo.md` dijo "el 3B no genera acciones
+   desde cero, sí elige entre candidatas" y se construyó el contrato
+   candidatas→elige para el rol *decidir*, que era lo correcto (generar desde
+   cero fallaba 1/6). Lo que nunca se construyó no fue eso, sino los otros roles
+   de `concepto.md §10` donde el modelo sí aporta: el diálogo (A) y el contenido
+   simbólico (E3). No se "abandonó una fortaleza a favor de una debilidad": se
+   construyó un canal y se dejaron los demás sin construir.
 2. **Gatillo del pensamiento estrecho** (`_hay_dilema`: dos condiciones AND).
 3. **Narración decorativa** (no retroalimenta el mundo).
 4. **Habla inexistente** (el `dialogo` no conversa con nadie).
@@ -424,41 +452,58 @@ memoria (D) un lugar natural donde vivir.
 
 ## 6. Hoja de ruta (orden y dependencias)
 
-1. **H1/H2** — medir la calidad real del 3B (y de un candidato) para decidir con
-   datos si hace falta el salto de modelo.
-2. **D1 + D2** — cerrar el bucle de memoria (contenido + escritura). Barato y
-   desbloquea casi todo lo demás.
-3. **C1** — prompt por individuo (persona).
-4. **A1 + A2** — habla y evolución del lenguaje.
-5. **G1 + G2** — router y modelos por rol.
-6. **E1 + E2 + E3** — despenalizar `origen=llm` y dar canal real a la innovación
-   y al contenido simbólico.
-7. **F1 + F2 + F3 + F4** — ramas/eras emergentes y KPI redefinido (el cambio de
-   rumbo grande).
-8. **G3 + G4** — offload y límites de hardware (cuando haya decisión de modelo).
-9. **I1** — medición del uso real.
+> Revisada: la secuencia original ponía H1/H2 primero, E1 en el paso 6 e I1 en el
+> 9. La corrección es: primero arreglar la medida (E1 + I1), luego el bucle y los
+> canales, y diferir G/H/nube. Cada paso ya es una feature del backlog (entre
+> paréntesis).
 
-Dependencias clave: F depende de E (hay que tener canal de innovación antes de
-que las categorías emerjan); G3 depende de H2 (la decisión de modelo).
+1. **E1 + I1 — medir de verdad, primero** (`F3-006` en curso, `MEDIR-LLM` ya
+   hecho). Despenalizar `origen=llm` (E1) y medir el uso real por acciones, no
+   peticiones (I1). Sin esto no se sabe si el resto de la auditoría arregla algo.
+2. **D1 + D2 + D3 — cerrar el bucle de memoria** (`MEM-LOOP`). Contenido, no IDs;
+   escribir lo producido; memoria por individuo. Barato y desbloquea casi todo.
+3. **C1 — prompt por individuo** (`PERSONA`, depende de `MEM-LOOP`).
+4. **A1 + A2 — habla y evolución del lenguaje** (`HABLA`, depende de `MEM-LOOP` y
+   `PERSONA`). El canal de §10 que no existe.
+5. **E3 — contenido simbólico real** (`CONTENIDO`, depende de `PERSONA`). Mito o
+   rito con texto del LLM, no plantilla fija.
+6. **E2 — inventor sin prioridad de catálogo** (`INVENTOR`, depende de `PERSONA`).
+7. **F1 + F2 + F3 + F4 — ramas/eras emergentes + KPI contra el seed**
+   (`RAMAS-EMERGENTES`, depende de `INVENTOR` y `CONTENIDO`). El cambio de rumbo
+   grande.
+8. **Motor social** (`SOCIAL`, depende de `MEM-LOOP`). Prestigio + necesidad
+   social + edad; son los ejes 2 y 4 de `refinamiento-hoja-de-ruta.md`, ausentes
+   de esta auditoría y necesarios para que `interaccion` sea real.
 
-**Camino nube (alternativa, §10):** O1–O5 (optimizar tokens) → N1 (adapter) →
-N2 (proveedor) → N3 (medir coste). Se activa solo si se quiere el PC aparte; la
-optimización de tokens (O*) también beneficia al camino local.
+**Diferido (no ahora):** G1–G4 (router, modelos por rol, offload, freno térmico),
+H1/H2 (catálogo y comparación de modelos), N1–N3 (nube) y O1–O5 (tokens). Son
+prematuros: pulen hardware/proveedor antes de arreglar el experimento. Se retoman
+cuando lo anterior esté medido.
+
+Dependencias clave: F depende de E (canal de innovación antes de que las
+categorías emerjan); el bucle D alimenta a C, A y SOCIAL.
+
+**Camino nube (alternativa, §10):** O1–O5 → N1 → N2 → N3. Diferido; se activa
+solo si se quiere el PC aparte.
 
 ---
 
 ## 7. Decisiones pendientes (cuando se retome)
 
-- ¿Se confirma que `options.temperature` sobreescribe el default del alias, o hay
-  que quitar `temperature 0.7` del Modelfile? (§2.1)
-- ¿Se corrige `MAX_TOKENS` a 32 (stack §8) o se actualiza stack? (§2.1)
-- ¿El KPI se redefine a "% fuera del seed" (F4) o se mantiene "% fuera del
-  árbol" y solo se añade `origen=llm` (E1)? (§2.18, §4)
-- ¿Salto a `qwen3:8b`/`qwen3.5:9b` con offload, o se queda el 3B y se separan
-  roles? Ver §9 (catálogo) y §H2 (medir antes de decidir).
-- ¿Las ramas emergentes (F) son una feature nueva o una reescritura de
-  `arbol.py`? Implica tocar `RAMAS`, `ARBOL`, `propuestas.py` y el KPI a la vez.
-- ¿Nube como sustituta (solo nube) o híbrida (router local+nube, §G)? Ver §10.
+- **E1 y F4 no son alternativas: son secuenciales.** E1 (añadir `origen=llm` al
+  numerador) es el arreglo inmediato de la métrica y va primero; F4 (redefinir a
+  "% fuera del seed") es el cambio profundo que llega después, cuando las ramas
+  emerjan (§2.18, §4).
+- **Temperatura y tokens** — ahora `LLM-CONFIG` en el backlog: confirmar que
+  `options.temperature` sobreescribe el default 0.7 del Modelfile (si no,
+  quitarlo) y reconciliar `MAX_TOKENS` 64/128 con el presupuesto ≤32 de stack §8.
+  (§2.1)
+- **Diferido (no se decide hasta que lo anterior esté medido):** salto a
+  `qwen3:8b`/`qwen3.5:9b` u otro modelo, con offload o roles separados (§9, §H2);
+  y nube sustituta o híbrida (§10). Ambas exigen medir primero, no al revés.
+- **Ramas emergentes (F): ¿feature nueva o reescritura de `arbol.py`?** Implica
+  tocar `RAMAS`, `ARBOL`, `propuestas.py` y el KPI a la vez. Se decide al abrir
+  `RAMAS-EMERGENTES`.
 
 ---
 

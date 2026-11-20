@@ -252,6 +252,7 @@ def test_cli_json_con_stub_reporta_la_capa_llm(capsys: pytest.CaptureFixture[str
         "fallos",
         "corregidas",
         "en_vuelo",
+        "acciones",
     }
     assert llm["peticiones"] > 0
     assert llm["en_vuelo"] == 0
