@@ -240,11 +240,27 @@ y `popularidad` son las veces usado. `genoma`, `habilidades`, `personalidad`,
 motor a la base y `report db` la lee sin simular ni ejecutar DDL (`crear=False`
 valida las tablas), con código 2 si el fichero no es una partida válida.
 
-Límite deliberado: **no se reanuda la partida**. `cargar()` reconstruye el
-grafo y la población para leer y verificar; el mundo (tiles, recursos, azar) no
-se rehidrata y seguir jugando es SAVE-001. `relaciones` y `recuerdos` existen
-con su esquema, pero aún se escriben vacías: el motor no guarda vínculos y el
-índice de recuerdos solo expone vectores, no los textos.
+Límite deliberado hasta SAVE-001: **no se reanudaba la partida**. `cargar()`
+reconstruía el grafo y la población para leer y verificar, pero el mundo
+(tiles, recursos, azar) no se rehidrataba.
+
+**Guardar y reanudar (SAVE-001).** `cargar()` devuelve ahora `Estado.partida`
+con el `Mundo` completo (tiles, recursos con capacidad/regeneración/alcance,
+parches, depredadores, estación y el estado exacto de `random.Random`),
+`Grafo` (incluidos `veces_usado`, `imitado`, `imitadores`, `ultimo_imitador` e
+`imitaciones_tick`), `Diario`, telemetría y los contadores de `Simulacion` que
+no viven en el mundo (nacimientos, muertes, hitos, medias acumuladas,
+presupuestos de pensamiento). `Simulacion.reanudar` reconstruye la partida y
+`run --db ... --resume` suma ticks desde el guardado. El determinismo es el
+criterio: 300 + cerrar + reanudar 300 da el mismo `resumen()` y el mismo
+`report kpi` que 600 seguidos con el mismo seed y sin LLM. `save_meta.json`,
+junto a la base, es un resumen (`version`, `seed`, `tick`, `config`, `rng`,
+`creado`/`actualizado`) escrito después del `COMMIT` con `os.replace`; si el
+proceso muere antes o la escritura falla, la base sigue siendo válida y solo se
+emite un `warning` (la meta no es la fuente de verdad). `relaciones` y `recuerdos`
+siguen escribiéndose vacías: el motor no guarda vínculos y el índice de
+recuerdos no expone los textos, así que reanudar con LLM encendido no conserva
+la memoria indexada.
 
 **Export (F3-003).** `export.py` lee nodos y aristas con `Repositorio` y
 escribe `out/<slug>.md` + `index.md`: frontmatter con los datos de nacimiento,
@@ -521,7 +537,7 @@ Fase 0–1.
 
 | Decisión | Por qué se aplaza | Cuándo se decide |
 |---|---|---|
-| **Persistencia entre sesiones** (¿cargar la tribu donde se quedó?) | Fase 0 mide una partida; guardar/reanudar añade versionado del esquema | Al cerrar Fase 1, con el esquema ya estable |
+| **Persistencia entre sesiones** (¿cargar la tribu donde se quedó?) | Fase 0 mide una partida; guardar/reanudar añade versionado del esquema | Hecho en SAVE-001 (§2.5): `run --resume` y `save_meta.json` |
 | **Nombre definitivo** del producto | `Tribal` es el nombre de trabajo y ya está en `project.yml`, el paquete y el repositorio | Cuando haya algo que enseñar; cambiarlo es un renombrado mecánico (DESIGN-001 ya dejó el paquete coherente) |
 | **Escala temporal** (¿cuánto real es un día o una estación?) | Es un parámetro de juego, no de arquitectura; se calibra mirando | Al ajustar la puerta F0→F1 |
 | **D3 / FastAPI** para el grafo en vivo | Es la única pieza nueva real de Fase 3 y no toca el bucle | Fase 3 |

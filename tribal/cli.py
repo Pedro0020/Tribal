@@ -119,6 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Borra la base indicada por --db antes de empezar una partida nueva.",
     )
+    run.add_argument(
+        "--resume",
+        action="store_true",
+        help="Reanuda la partida de --db desde el tick guardado y suma --ticks.",
+    )
     run.add_argument("--benchmark", action="store_true", help="Falla si no cabe en 16.67 ms/tick.")
     run.add_argument(
         "--llm",
@@ -596,17 +601,42 @@ def _run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if args.db is not None:
+    if args.db is None and not args.headless:
+        # La sesión con ventana guarda por defecto en `data/world.db`; el modo
+        # headless sin `--db` sigue siendo solo RAM (medición, tests).
+        args.db = Path("data") / "world.db"
+    if args.resume:
+        if args.db is None:
+            print("error: --resume necesita --db", file=sys.stderr)
+            return 2
+        if args.fresh:
+            print("error: --resume y --fresh son excluyentes", file=sys.stderr)
+            return 2
+        if not args.db.exists():
+            print(f"error: no existe la base {args.db}", file=sys.stderr)
+            return 2
+        if args.seed is not None or args.individuos is not None or args.config is not None:
+            print(
+                "error: al reanudar, semilla, poblacion y config salen de la base; "
+                "no se pueden cambiar",
+                file=sys.stderr,
+            )
+            return 2
+    elif args.db is not None:
         if args.fresh:
             try:
                 for sufijo in ("", "-wal", "-shm"):
                     Path(f"{args.db}{sufijo}").unlink(missing_ok=True)
+                # La meta es por directorio: si sobrevive al borrado, describe
+                # una partida que ya no existe hasta el primer guardado nuevo.
+                (args.db.parent / "save_meta.json").unlink(missing_ok=True)
             except OSError as exc:
                 print(f"error: no puedo borrar {args.db}: {exc}", file=sys.stderr)
                 return 2
         elif args.db.exists():
             print(
-                f"error: la base {args.db} ya existe; usa --fresh para empezar de cero",
+                f"error: la base {args.db} ya existe; usa --fresh para empezar de cero "
+                "o --resume para continuarla",
                 file=sys.stderr,
             )
             return 2
@@ -630,9 +660,10 @@ def _run(args: argparse.Namespace) -> int:
             seed,
             args.headless,
             individuos=individuos,
-            config=config,
+            config=None if args.resume else config,
             cola=cola,
             db=args.db,
+            resume=args.resume,
         )
     except BaseInvalida as exc:
         print(f"error: {exc}", file=sys.stderr)

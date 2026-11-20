@@ -40,7 +40,7 @@ from tribal.culture.propuestas import PropuestaInvalida
 from tribal.llm import candidatas as modulo_candidatas
 from tribal.llm.cola import ColaLLM, Peticion, PeticionNarracion, PeticionNodo, PropuestaNodo
 from tribal.llm.embeddings import IndiceRecuerdos, embedder_por_defecto
-from tribal.store.repositorio import Repositorio
+from tribal.store.repositorio import BaseInvalida, Repositorio
 
 #: Presupuesto de frame a 60 fps.
 MS_FRAME = 16.67
@@ -134,12 +134,18 @@ class Simulacion:
         config: SimConfig | None = None,
         cola: ColaLLM | None = None,
         db: Path | None = None,
+        *,
+        repositorio: Repositorio | None = None,
     ) -> None:
         self.mundo = mundo
         #: Capa LLM activa, si la hay. Sin ella el tick es el de siempre.
         self.cola = cola
         #: Espejo en SQLite (`run --db`). `None` = partida solo en RAM.
-        self._repositorio = Repositorio(db) if db is not None else None
+        self._repositorio = (
+            repositorio
+            if repositorio is not None
+            else (Repositorio(db) if db is not None else None)
+        )
         #: Muestras de telemetría que se escriben con la partida (una por
         #: `ticks_telemetria`, más el cierre si cae fuera de intervalo).
         self._telemetria: list[dict[str, Any]] = []
@@ -439,8 +445,159 @@ class Simulacion:
         if self._repositorio is None:
             return
         self._repositorio.guardar(
-            self.mundo, self.grafo, self.diario, self._telemetria, config=self.config
+            self.mundo,
+            self.grafo,
+            self.diario,
+            self._telemetria,
+            config=self.config,
+            contadores=self._contadores_a_json(),
         )
+
+    def _contadores_a_json(self) -> dict[str, Any]:
+        """Estado de la simulación que no vive en el `Mundo`, serializable.
+
+        Es lo que hace que 300 + reanudar 300 dé el mismo `resumen()` que 600
+        seguidos: contadores, conjuntos y medias acumuladas viajan con la
+        partida. Las claves de diccionarios con id se escriben como texto
+        (JSON no admite claves enteras) y se restauran al leer.
+        """
+        return {
+            "poblacion_inicial": self.poblacion_inicial,
+            "muertes": self.muertes,
+            "nacimientos": self.nacimientos,
+            "agrupamiento_max": self.agrupamiento_max,
+            "huidas": self.huidas,
+            "intentos_divergentes": self.intentos_divergentes,
+            "combinaciones_logradas": self.combinaciones_logradas,
+            "tradiciones": self.tradiciones,
+            "migraciones": self.migraciones,
+            "movidos": self._movidos,
+            "hitos_vistos": sorted(self._hitos_vistos),
+            "descubridores": sorted(self._descubridores),
+            "registrados": sorted(self._registrados),
+            "div_inicial": self._div_inicial,
+            "div_nacidos": list(self._div_nacidos),
+            "div_reproductores": {str(k): v for k, v in self._div_reproductores.items()},
+            "tramo_registrados": dict(self._tramo_registrados),
+            "descubrimientos_tramo": dict(self._descubrimientos_tramo),
+            "longevidad_descubridores": list(self._longevidad_descubridores),
+            "longevidad_conformistas": list(self._longevidad_conformistas),
+            "utilidad_suma": dict(self._utilidad_suma),
+            "utilidad_cuenta": dict(self._utilidad_cuenta),
+            "pensamientos": {str(k): v for k, v in self._pensamientos.items()},
+            "max_pensando_visto": self._max_pensando_visto,
+            "max_en_vuelo_visto": self._max_en_vuelo_visto,
+            "crisis_ticks": self._crisis_ticks,
+            "propuestas_solicitadas": self.propuestas_solicitadas,
+            "propuestas_aceptadas": self.propuestas_aceptadas,
+            "propuestas_rechazadas": self.propuestas_rechazadas,
+            "propuestas_por_origen": dict(self.propuestas_por_origen),
+            "propuestas_rechazos": dict(self._propuestas_rechazos),
+            "propuesta_pedida_tick": self._propuesta_pedida_tick,
+            "saliencia_acumulada": {str(k): v for k, v in self._saliencia_acumulada.items()},
+            "sin_portadores": dict(self._sin_portadores),
+            "recuperaciones": self._recuperaciones,
+            "peticion_id": self._peticion_id,
+        }
+
+    def _aplicar_contadores(self, datos: dict[str, Any]) -> None:
+        """Restaura `_contadores_a_json`; claves ausentes conservan el default."""
+        if not datos:
+            return
+        self.poblacion_inicial = int(datos["poblacion_inicial"])
+        self.muertes = int(datos["muertes"])
+        self.nacimientos = int(datos["nacimientos"])
+        self.agrupamiento_max = int(datos["agrupamiento_max"])
+        self.huidas = int(datos["huidas"])
+        self.intentos_divergentes = int(datos["intentos_divergentes"])
+        self.combinaciones_logradas = int(datos["combinaciones_logradas"])
+        self.tradiciones = int(datos["tradiciones"])
+        self.migraciones = int(datos["migraciones"])
+        self._movidos = int(datos["movidos"])
+        self._hitos_vistos = set(datos["hitos_vistos"])
+        self._descubridores = {int(quien) for quien in datos["descubridores"]}
+        self._registrados = {int(quien) for quien in datos["registrados"]}
+        self._div_inicial = float(datos["div_inicial"])
+        self._div_nacidos = [float(valor) for valor in datos["div_nacidos"]]
+        self._div_reproductores = {
+            int(quien): float(valor) for quien, valor in datos["div_reproductores"].items()
+        }
+        self._tramo_registrados = {
+            str(clave): int(valor) for clave, valor in datos["tramo_registrados"].items()
+        }
+        self._descubrimientos_tramo = {
+            str(clave): int(valor) for clave, valor in datos["descubrimientos_tramo"].items()
+        }
+        self._longevidad_descubridores = [int(valor) for valor in datos["longevidad_descubridores"]]
+        self._longevidad_conformistas = [int(valor) for valor in datos["longevidad_conformistas"]]
+        self._utilidad_suma = {
+            str(clave): float(valor) for clave, valor in datos["utilidad_suma"].items()
+        }
+        self._utilidad_cuenta = {
+            str(clave): int(valor) for clave, valor in datos["utilidad_cuenta"].items()
+        }
+        self._pensamientos = {
+            int(quien): int(valor) for quien, valor in datos["pensamientos"].items()
+        }
+        self._max_pensando_visto = int(datos["max_pensando_visto"])
+        self._max_en_vuelo_visto = int(datos["max_en_vuelo_visto"])
+        self._crisis_ticks = int(datos["crisis_ticks"])
+        self.propuestas_solicitadas = int(datos["propuestas_solicitadas"])
+        self.propuestas_aceptadas = int(datos["propuestas_aceptadas"])
+        self.propuestas_rechazadas = int(datos["propuestas_rechazadas"])
+        self.propuestas_por_origen = {
+            str(clave): int(valor) for clave, valor in datos["propuestas_por_origen"].items()
+        }
+        self._propuestas_rechazos = {
+            str(clave): int(valor) for clave, valor in datos["propuestas_rechazos"].items()
+        }
+        self._propuesta_pedida_tick = int(datos["propuesta_pedida_tick"])
+        self._saliencia_acumulada = {
+            int(quien): float(valor) for quien, valor in datos["saliencia_acumulada"].items()
+        }
+        self._sin_portadores = {
+            str(nodo): int(tick) for nodo, tick in datos["sin_portadores"].items()
+        }
+        self._recuperaciones = int(datos["recuperaciones"])
+        self._peticion_id = int(datos["peticion_id"])
+
+    @classmethod
+    def reanudar(
+        cls,
+        db: str | Path,
+        config: SimConfig | None = None,
+        cola: ColaLLM | None = None,
+    ) -> Simulacion:
+        """Abre una partida guardada y devuelve la simulación en su tick.
+
+        La semilla, la config y el estado del RNG salen de la base: reanudar no
+        admite cambiarlos, porque dejarían de ser la misma partida. La base se
+        abre sin DDL destructivo (`crear=False`) y el repositorio queda dentro
+        de la simulación, que lo cerrará en `cerrar()`.
+        """
+        repositorio = Repositorio(db, crear=False)
+        try:
+            estado = repositorio.cargar()
+            if estado.partida is None:
+                raise BaseInvalida(
+                    f"{db}: la partida no tiene volcado completo; no se puede reanudar"
+                )
+            if config is None:
+                config = SimConfig(**estado.config)
+            simulacion = cls(
+                estado.partida.mundo,
+                config,
+                cola,
+                repositorio=repositorio,
+            )
+        except BaseException:
+            repositorio.cerrar()
+            raise
+        simulacion.grafo = estado.partida.grafo
+        simulacion.diario = estado.partida.diario
+        simulacion._telemetria = estado.partida.telemetria
+        simulacion._aplicar_contadores(estado.partida.contadores)
+        return simulacion
 
     def cerrar(self) -> None:
         """Vuelca el estado final y cierra la base. Sin `--db` no hace nada."""
@@ -1347,15 +1504,24 @@ def run(
     config: SimConfig | None = None,
     cola: ColaLLM | None = None,
     db: Path | None = None,
+    resume: bool = False,
 ) -> Simulacion:
     """Corre la partida `ticks` ticks (`0` = sin límite) y devuelve la simulación.
 
     En modo ventana el límite lo pone el usuario con ESC o cerrando la ventana;
     `ticks` sigue sirviendo como tope opcional. Si hay cola LLM, se cierra aquí:
     al volver no queda hilo vivo y `resumen()` publica `en_vuelo` a 0. Con `db`
-    la partida se vuelca al cerrar (y cada `config.ticks_guardado` ticks).
+    la partida se vuelca al cerrar (y cada `config.ticks_guardado` ticks). Con
+    `resume` la partida se reanuda desde `db` (el tick guardado) y `ticks` se
+    suman a los ya vividos; `seed`, `individuos` y `config` se ignoran porque
+    salen de la base.
     """
-    simulacion = crear(seed, individuos, config, cola, db)
+    if resume:
+        if db is None:
+            raise ValueError("reanudar necesita una base de datos")
+        simulacion = Simulacion.reanudar(db, config=config, cola=cola)
+    else:
+        simulacion = crear(seed, individuos, config, cola, db)
     try:
         if headless:
             for _ in range(ticks):

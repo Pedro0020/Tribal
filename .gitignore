@@ -77,6 +77,8 @@ logs/
 *.db
 *.db-wal
 *.db-shm
+# La meta acompaña a la base y no se versiona: una partida no es fuente.
+data/save_meta.json
 
 # --- Secretos / credenciales ---
 .env

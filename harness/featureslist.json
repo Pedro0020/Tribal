@@ -539,8 +539,11 @@
         "la semilla y el estado del RNG se guardan y restauran (test de determinismo)",
         "make check pasa"
       ],
-      "status": "pending",
-      "depends_on": []
+      "status": "done",
+      "depends_on": [],
+      "started": "2026-11-20",
+      "review_rounds": 0,
+      "closed": "2026-11-20"
     },
     {
       "id": "RESET-001",

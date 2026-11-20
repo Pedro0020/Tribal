@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.35-green)
+![Version](https://img.shields.io/badge/Version-0.1.36-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -87,11 +87,11 @@ uv run python -m tribal run --headless --llm stub --llm-sincrono \
 ```
 
 `--db` escribe la partida en SQLite y se niega a pisar una base existente sin
-`--fresh`. `--llm stub --llm-sincrono` es el modo reproducible: backend falso,
-sin red, decisión resuelta en el tick. El resumen incluye población, genoma,
-habilidades, nodos por origen, diario, memoria y los contadores del LLM. Las
-secciones §4-§6 leen esa misma base; §7 la sustituye por la corrida real con
-`--fresh`.
+`--fresh`; `--resume` la continúa desde el tick guardado. `--llm stub
+--llm-sincrono` es el modo reproducible: backend falso, sin red, decisión
+resuelta en el tick. El resumen incluye población, genoma, habilidades, nodos
+por origen, diario, memoria y los contadores del LLM. Las secciones §4-§6 leen
+esa misma base; §7 la sustituye por la corrida real con `--fresh`.
 
 Para volver a mirar esa partida sin simular:
 
@@ -581,7 +581,8 @@ Opciones de `run`: `--seed` (default 42), `--individuos` (8–15, default 12),
 `--config` (fichero JSON), `--ticks` (`0` = sin límite en ventana; obligatorio
 > 0 con `--headless`), `--crisis` (sequía: menos capacidad de carga de agua y
 bayas, más sed y más intentos divergentes), `--headless`, `--json`, `--db`
-(escribe la partida en SQLite) y `--benchmark`.
+(escribe la partida en SQLite), `--fresh` (borra esa base), `--resume` (sigue
+desde el tick guardado) y `--benchmark`.
 
 ## Árbol de conocimiento (Fase 1)
 
@@ -782,7 +783,7 @@ uv run python -m tribal report telemetry --db tribu.db --csv         # CSV a std
 uv run python -m tribal report telemetry --db tribu.db --csv out/telemetria.csv
 ```
 
-## Persistencia: la partida en SQLite (F3-001)
+## Persistencia: guardar y reanudar (F3-001, SAVE-001)
 
 `run --db tribu.db` escribe la partida en una base SQLite (stdlib, sin
 dependencias). El volcado es en lote —cada `ticks_guardado` ticks (300 por
@@ -795,10 +796,12 @@ resto del producto trabaja contra `Repositorio` (`guardar`, `cargar`,
 
 El esquema es el de stack §5 (`tribal/store/esquema.py`): `individuos`,
 `relaciones`, `recursos`, `mundo`, `nodos`, `aristas`, `recuerdos`, `diario` y
-`telemetria`. `genoma`, `habilidades`, `personalidad`, `contenido`,
-`requisitos`, `clima` y `config` van como JSON; `nodos` guarda además `origen`,
-`autor` y `tick` en columnas propias porque son datos de nacimiento y de ellos
-sale el KPI. La base se abre con `journal_mode=WAL`.
+`telemetria`; `contadores` guarda el estado de `Simulacion` que no vive en el
+mundo. `genoma`, `habilidades`, `personalidad`, `contenido`, `requisitos`,
+`clima`, `config`, `tiles`, `rng`, `parches` y `depredadores` van como JSON;
+`nodos` guarda además `origen`, `autor` y `tick` en columnas propias porque son
+datos de nacimiento y de ellos sale el KPI. La base se abre con
+`journal_mode=WAL`.
 
 ```bash
 uv run python -m tribal run --headless --ticks 600 --db tribu.db
@@ -807,9 +810,38 @@ uv run python -m tribal report db --db tribu.db --json   # recuentos
 ```
 
 `run --db` **no pisa una partida existente**: si el fichero ya está, sale con
-**2** y pide `--fresh`. `--fresh` borra esa base y empieza de cero; es la única
-vía destructiva y hay que pedirla explícitamente. Así el histórico de
-`telemetria` no desaparece por relanzar una simulación.
+**2** y pide `--fresh` para empezar de cero o `--resume` para continuarla.
+`--fresh` borra esa base y empieza de cero; es la única vía destructiva y hay
+que pedirla explícitamente.
+
+### Reanudar (SAVE-001)
+
+`run --db tribu.db --resume` abre la partida y sigue desde el tick guardado,
+sumando `--ticks` a los ya vividos. La semilla, la configuración y el estado del
+RNG salen de la base, así que reanudar no admite cambiarlos: 300 ticks + cerrar
++ reanudar otros 300 produce el mismo `resumen()` y el mismo `report kpi` que
+600 seguidos (mismo seed, sin LLM). El volcado incluye individuos completos
+(genoma, necesidades, habilidades, edad, cooldown, saliencia, posición, paseo e
+intención), mundo (tiles, recursos, parches, depredadores, estación), grafo,
+diario, telemetría y los contadores de la simulación.
+
+```bash
+uv run python -m tribal run --headless --ticks 300 --db tribu.db   # primera sesión
+uv run python -m tribal run --headless --ticks 300 --db tribu.db --resume
+```
+
+Junto a la base se escribe `save_meta.json` en cada volcado, **después** del
+`COMMIT` y de forma atómica (temporal + `os.replace`). Es un resumen legible,
+no la fuente de verdad: `nombre`, `version` del formato, `seed`, `tick`,
+`poblacion`, `nodos`, `config` completa, `rng` (versión, 625 enteros y
+`gauss_next` de `random.Random.getstate()`) y `creado`/`actualizado`. Si el
+proceso muere antes de escribirlo, la base ya está consistente y se puede
+reabrir; un fallo al escribirla solo emite un `warning`, no aborta la sesión,
+porque la meta es un resumen y no la fuente de verdad.
+
+Sin `--db`, `run --headless` sigue siendo una corrida solo en RAM (medición y
+tests). La sesión con ventana usa `data/world.db` por defecto si no se pasa
+`--db`.
 
 Salida real de `report db` sobre la partida de 600 ticks:
 
@@ -822,12 +854,10 @@ diario 5  telemetria 10  recursos 89  recuerdos 0
 `report db` no simula ni escribe: abre la base y cuenta. Sale con **2** si el
 fichero no existe, no es SQLite o no tiene las tablas de la partida.
 
-**Límite deliberado:** reabrir devuelve el grafo —con el `origen`, el `autor` y
-el `tick` de cada nodo— y la población para consultarlos, no para seguir
-jugando. Reanudar el mundo es SAVE-001; `cargar()` deja
-`Estado(mundo, grafo, poblacion, tick, seed, config)`. `relaciones` y
-`recuerdos` se crean vacías: el motor todavía no guarda vínculos y el índice de
-recuerdos no expone los textos.
+`relaciones` y `recuerdos` se crean vacías: el motor todavía no guarda vínculos
+y el índice de recuerdos no expone los textos. Reanudar con LLM encendido
+reconstruye el mundo pero no la memoria indexada: la garantía de partida exacta
+es con la capa LLM apagada.
 
 Dos partidas con semilla distinta producen bases distintas; la misma semilla y
 la misma configuración, el mismo estado. `ticks_guardado` se ajusta en el

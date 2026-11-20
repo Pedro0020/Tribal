@@ -10,8 +10,12 @@ motor llama a `guardar` cada `ticks_guardado` ticks y al cerrar, y cada volcado
 sustituye el estado anterior dentro de una sola transacción. Reabrir la partida
 reconstruye el grafo con el `origen`, el `autor` y el `tick` de cada nodo, que
 es lo que el KPI necesita, y con su `tick_apagado`/`motivo_apagado` si la
-técnica se perdió (F3-002). **No** se reanuda la simulación: este módulo deja el
-estado consultable para `report db` y los tests; reanudar es SAVE-001.
+técnica se perdió (F3-002). Desde SAVE-001 `cargar()` devuelve además
+`Estado.partida`: el `Mundo`, el `Grafo`, el `Diario` y la telemetría
+rehidratados, con el estado del RNG, para que `tribal.sim` pueda seguir desde
+el tick guardado. El `save_meta.json` se escribe **después** del `COMMIT`, de
+forma atómica, y es un resumen legible, no la fuente de verdad: si el proceso
+muere antes, la base sigue siendo válida.
 
 Una base creada antes de F3-002 no tiene las columnas de apagado: al abrirla se
 añaden con `ALTER TABLE` (`_migrar_apagado`), tanto en lectura como en escritura,
@@ -22,20 +26,36 @@ con las columnas de F3-004. Así la partida vieja no se rechaza ni se recrea.
 from __future__ import annotations
 
 import json
+import os
+import random
 import sqlite3
+import sys
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
 from tribal.config import SimConfig
-from tribal.core.genoma import temperamento
-from tribal.core.habilidades import Rama
-from tribal.core.modelos import Individuo, Mundo
+from tribal.core.genoma import Genoma, temperamento
+from tribal.core.habilidades import Habilidades, Rama
+from tribal.core.modelos import (
+    Depredador,
+    Individuo,
+    Mundo,
+    Necesidades,
+    Parche,
+    Recurso,
+    TipoRecurso,
+    TipoTile,
+)
 from tribal.culture.arbol import ORIGENES, Nodo, Origen
 from tribal.culture.arbol import Estado as EstadoNodo
-from tribal.culture.diario import Diario
+from tribal.culture.diario import Diario, Entrada
 from tribal.culture.grafo import Arista, Grafo
 from tribal.store.esquema import ESQUEMA, PRAGMAS, TABLAS
+
+#: Versión del formato de `save_meta.json`. Cambia cuando cambie el contrato.
+SAVE_VERSION = 1
 
 #: Orden de borrado: primero quien referencia, luego quien es referenciado.
 _ORDEN_BORRADO: tuple[str, ...] = (
@@ -48,6 +68,7 @@ _ORDEN_BORRADO: tuple[str, ...] = (
     "individuos",
     "recursos",
     "mundo",
+    "contadores",
 )
 
 
@@ -74,8 +95,19 @@ class IndividuoGuardado:
 
 
 @dataclass(frozen=True, slots=True)
+class EstadoPartida:
+    """Estado rehidratado para reanudar: mundo, grafo, diario y telemetría."""
+
+    mundo: Mundo
+    grafo: Grafo
+    diario: Diario
+    telemetria: list[dict[str, Any]]
+    contadores: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class Estado:
-    """Lo que se puede reabrir de una partida, sin reanudarla."""
+    """Lo que se puede reabrir de una partida."""
 
     mundo: dict[str, Any]
     grafo: Grafo
@@ -83,6 +115,7 @@ class Estado:
     tick: int
     seed: int
     config: dict[str, Any]
+    partida: EstadoPartida | None = None
 
 
 class Repositorio:
@@ -91,6 +124,7 @@ class Repositorio:
     def __init__(self, ruta: str | Path, *, crear: bool = True) -> None:
         self.ruta = Path(ruta)
         self._con: sqlite3.Connection | None = None
+        self.ruta.parent.mkdir(parents=True, exist_ok=True)
         conexion = sqlite3.connect(self.ruta)
         conexion.row_factory = sqlite3.Row
         try:
@@ -100,6 +134,7 @@ class Repositorio:
                 conexion.executescript(ESQUEMA)
                 _migrar_apagado(conexion)
                 _migrar_telemetria(conexion)
+                _migrar_save(conexion)
                 conexion.commit()
             else:
                 self._comprobar_esquema(conexion)
@@ -107,6 +142,7 @@ class Repositorio:
                 # columnas nuevas se añaden sin tocar las filas existentes.
                 _migrar_apagado(conexion)
                 _migrar_telemetria(conexion)
+                _migrar_save(conexion)
                 conexion.commit()
         except sqlite3.DatabaseError as exc:
             conexion.close()
@@ -121,15 +157,24 @@ class Repositorio:
         telemetria: list[dict[str, Any]],
         *,
         config: SimConfig | None = None,
+        contadores: dict[str, Any] | None = None,
     ) -> None:
-        """Vuelca el estado completo en una transacción (volcado, no delta)."""
+        """Vuelca el estado completo en una transacción (volcado, no delta).
+
+        `contadores` es el estado de `Simulacion` que no vive en el mundo
+        (nacimientos, muertes, hitos, presupuestos...); sin él la partida se
+        puede consultar pero no reanudar con el mismo `resumen()`. El
+        `save_meta.json` se escribe después del `COMMIT`: si falla, la base ya
+        está consistente.
+        """
         conexion = self._conexion()
         with conexion:
             for tabla in _ORDEN_BORRADO:
                 conexion.execute(f"DELETE FROM {tabla}")
             conexion.execute(
-                "INSERT INTO mundo (tick, seed, ancho, alto, estacion, clima, config) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO mundo (tick, seed, ancho, alto, estacion, clima, config, "
+                "tiles, rng, parches, depredadores) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     mundo.tick,
                     mundo.seed,
@@ -138,25 +183,42 @@ class Repositorio:
                     mundo.estacion,
                     _json({"estacion": mundo.estacion, "depredadores": len(mundo.depredadores)}),
                     _json({} if config is None else config.a_json()),
+                    _json([[int(tipo) for tipo in fila] for fila in mundo.tiles]),
+                    _json(_rng_a_json(mundo.azar)),
+                    _json([_parche_a_json(parche) for parche in mundo.parches]),
+                    _json([asdict(depredador) for depredador in mundo.depredadores]),
                 ),
             )
             conexion.executemany(
                 "INSERT INTO individuos (id, nombre, edad, sexo, energia, salud, sed, genoma, "
-                "habilidades, personalidad, divergencia, saliencia, estado) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "habilidades, personalidad, divergencia, saliencia, estado, x, y, madurez, "
+                "cooldown_reproduccion, huyendo, movido, paseo, ultimo_recurso, ultimo_parche, "
+                "ultimo_parche_migracion, intencion_llm) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [_fila_individuo(individuo) for individuo in mundo.individuos],
             )
             conexion.executemany(
-                "INSERT INTO recursos (id, tipo, x, y, cantidad) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO recursos (id, tipo, x, y, cantidad, capacidad, regeneracion, alcance) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    (recurso.id, recurso.tipo.name.lower(), recurso.x, recurso.y, recurso.cantidad)
+                    (
+                        recurso.id,
+                        recurso.tipo.name.lower(),
+                        recurso.x,
+                        recurso.y,
+                        recurso.cantidad,
+                        recurso.capacidad,
+                        recurso.regeneracion,
+                        recurso.alcance,
+                    )
                     for recurso in mundo.recursos
                 ],
             )
             conexion.executemany(
                 "INSERT INTO nodos (id, tipo, titulo, contenido, popularidad, estado, origen, "
-                "autor, tick, nivel, requisitos, tick_apagado, motivo_apagado) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "autor, tick, nivel, requisitos, tick_apagado, motivo_apagado, imitado, "
+                "imitadores, ultimo_imitador, imitaciones_tick) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         nodo.id,
@@ -172,6 +234,10 @@ class Repositorio:
                         _json(list(nodo.requisitos)),
                         nodo.tick_apagado,
                         nodo.motivo_apagado,
+                        grafo.imitado.get(nodo.id, 0),
+                        _json(sorted(grafo.imitadores.get(nodo.id, ()))),
+                        grafo.ultimo_imitador.get(nodo.id),
+                        _json(grafo.imitaciones_tick.get(nodo.id, [])),
                     )
                     for nodo in grafo.nodos.values()
                 ],
@@ -215,9 +281,27 @@ class Repositorio:
                     for muestra in telemetria
                 ],
             )
+            conexion.execute(
+                "INSERT OR REPLACE INTO contadores (id, datos) VALUES (1, ?)",
+                (_json({} if contadores is None else contadores),),
+            )
+        try:
+            _escribir_meta(
+                self.ruta,
+                mundo,
+                grafo,
+                {} if config is None else config.a_json(),
+            )
+        except OSError as exc:
+            # La meta es un resumen, no la fuente de verdad: la base ya está
+            # commiteada y reanudar no la necesita. No se aborta la sesión.
+            print(
+                f"warning: no pude escribir {self.ruta.parent / 'save_meta.json'}: {exc}",
+                file=sys.stderr,
+            )
 
     def cargar(self) -> Estado:
-        """Reconstruye el grafo y la población guardados, sin tocarlos."""
+        """Reconstruye el grafo, la población y, si hay volcado completo, el mundo."""
         conexion = self._conexion()
         mundo = self._leer_mundo(conexion)
         grafo = self._leer_grafo(conexion)
@@ -229,6 +313,7 @@ class Repositorio:
             tick=int(mundo.get("tick", 0)),
             seed=int(mundo.get("seed", 0)),
             config=cast(dict[str, Any], mundo.get("config", {})),
+            partida=_leer_partida(conexion, grafo) if mundo else None,
         )
 
     def instantanea(self) -> dict[str, Any]:
@@ -305,8 +390,8 @@ class Repositorio:
 
     def _leer_mundo(self, conexion: sqlite3.Connection) -> dict[str, Any]:
         fila = conexion.execute(
-            "SELECT tick, seed, ancho, alto, estacion, clima, config FROM mundo "
-            "ORDER BY tick DESC LIMIT 1"
+            "SELECT tick, seed, ancho, alto, estacion, clima, config, tiles, rng, parches, "
+            "depredadores FROM mundo ORDER BY tick DESC LIMIT 1"
         ).fetchone()
         if fila is None:
             return {}
@@ -318,6 +403,10 @@ class Repositorio:
             "estacion": fila["estacion"],
             "clima": json.loads(fila["clima"]),
             "config": json.loads(fila["config"]),
+            "tiles": json.loads(fila["tiles"]) if fila["tiles"] else [],
+            "rng": json.loads(fila["rng"]) if fila["rng"] else None,
+            "parches": json.loads(fila["parches"]) if fila["parches"] else [],
+            "depredadores": json.loads(fila["depredadores"]) if fila["depredadores"] else [],
         }
 
     def _leer_grafo(self, conexion: sqlite3.Connection) -> Grafo:
@@ -332,7 +421,8 @@ class Repositorio:
         )
         for fila in conexion.execute(
             "SELECT id, tipo, titulo, contenido, popularidad, estado, origen, autor, tick, "
-            f"nivel, requisitos, {apagado} FROM nodos"
+            f"nivel, requisitos, {apagado}, imitado, imitadores, ultimo_imitador, "
+            "imitaciones_tick FROM nodos"
         ):
             nodo = Nodo(
                 id=str(fila["id"]),
@@ -351,6 +441,16 @@ class Repositorio:
             grafo.nodos[nodo.id] = nodo
             if fila["popularidad"]:
                 grafo.veces_usado[nodo.id] = int(fila["popularidad"])
+            if fila["imitado"]:
+                grafo.imitado[nodo.id] = int(fila["imitado"])
+            if fila["imitadores"]:
+                grafo.imitadores[nodo.id] = {int(quien) for quien in json.loads(fila["imitadores"])}
+            if fila["ultimo_imitador"] is not None:
+                grafo.ultimo_imitador[nodo.id] = int(fila["ultimo_imitador"])
+            if fila["imitaciones_tick"]:
+                grafo.imitaciones_tick[nodo.id] = [
+                    int(momento) for momento in json.loads(fila["imitaciones_tick"])
+                ]
         for fila in conexion.execute("SELECT id_origen, id_destino FROM aristas"):
             grafo.aristas.append(Arista(str(fila["id_origen"]), str(fila["id_destino"])))
         return grafo
@@ -394,11 +494,243 @@ def _fila_individuo(individuo: Individuo) -> tuple[Any, ...]:
         individuo.genoma.divergencia,
         individuo.saliencia,
         "vivo" if individuo.vivo else "muerto",
+        individuo.x,
+        individuo.y,
+        individuo.madurez,
+        individuo.cooldown_reproduccion,
+        int(individuo.huyendo),
+        int(individuo.movido),
+        _json(individuo.paseo),
+        _json(individuo.ultimo_recurso),
+        individuo.ultimo_parche,
+        individuo.ultimo_parche_migracion,
+        _json(individuo.intencion_llm),
     )
 
 
 def _json(valor: object) -> str:
     return json.dumps(valor, ensure_ascii=False, sort_keys=True)
+
+
+def _leer_partida(conexion: sqlite3.Connection, grafo: Grafo) -> EstadoPartida | None:
+    """Rehidrata mundo, grafo, diario y contadores si el volcado es completo.
+
+    Una base anterior a SAVE-001 no tiene `tiles`/`rng`: se puede consultar,
+    pero no reanudar, y `Estado.partida` se queda en `None`.
+    """
+    fila = conexion.execute(
+        "SELECT tick, seed, ancho, alto, estacion, tiles, rng, parches, depredadores "
+        "FROM mundo ORDER BY tick DESC LIMIT 1"
+    ).fetchone()
+    if fila is None or not fila["tiles"]:
+        return None
+    tiles = [
+        [TipoTile(int(tipo)) for tipo in fila_tiles]
+        for fila_tiles in cast(list[list[int]], json.loads(fila["tiles"]))
+    ]
+    mundo = Mundo(
+        ancho=int(fila["ancho"]),
+        alto=int(fila["alto"]),
+        tiles=tiles,
+        recursos=_leer_recursos(conexion),
+        individuos=_leer_individuos(conexion),
+        azar=_rng_desde_json(json.loads(fila["rng"])),
+        seed=int(fila["seed"]),
+        tick=int(fila["tick"]),
+        depredadores=[Depredador(**datos) for datos in json.loads(fila["depredadores"])],
+        parches=[_parche_desde_json(datos) for datos in json.loads(fila["parches"])],
+        estacion=fila["estacion"],
+    )
+    diario = Diario()
+    for entrada in conexion.execute(
+        "SELECT tick, tipo_evento, narracion, individuo_id, narrador_id, narrada "
+        "FROM diario ORDER BY id"
+    ):
+        diario.entradas.append(
+            Entrada(
+                tick=int(entrada["tick"]),
+                tipo=str(entrada["tipo_evento"]),
+                texto=str(entrada["narracion"]),
+                individuo_id=None
+                if entrada["individuo_id"] is None
+                else int(entrada["individuo_id"]),
+                narrador_id=None if entrada["narrador_id"] is None else int(entrada["narrador_id"]),
+                narrada=bool(entrada["narrada"]),
+            )
+        )
+    fila_contadores = conexion.execute("SELECT datos FROM contadores WHERE id = 1").fetchone()
+    contadores = {} if fila_contadores is None else json.loads(fila_contadores["datos"])
+    return EstadoPartida(
+        mundo=mundo,
+        grafo=grafo,
+        diario=diario,
+        telemetria=_leer_telemetria(conexion),
+        contadores=cast(dict[str, Any], contadores),
+    )
+
+
+def _leer_recursos(conexion: sqlite3.Connection) -> list[Recurso]:
+    return [
+        Recurso(
+            id=int(fila["id"]),
+            tipo=TipoRecurso[str(fila["tipo"]).upper()],
+            x=int(fila["x"]),
+            y=int(fila["y"]),
+            cantidad=int(fila["cantidad"]),
+            capacidad=int(fila["capacidad"]),
+            regeneracion=int(fila["regeneracion"]),
+            alcance=float(fila["alcance"]),
+        )
+        for fila in conexion.execute(
+            "SELECT id, tipo, x, y, cantidad, capacidad, regeneracion, alcance "
+            "FROM recursos ORDER BY id"
+        )
+    ]
+
+
+def _leer_individuos(conexion: sqlite3.Connection) -> list[Individuo]:
+    """Individuos completos, en orden de id, listos para el motor."""
+    individuos = []
+    for fila in conexion.execute(
+        "SELECT id, sexo, genoma, habilidades, saliencia, x, y, madurez, "
+        "cooldown_reproduccion, huyendo, movido, paseo, ultimo_recurso, ultimo_parche, "
+        "ultimo_parche_migracion, intencion_llm, energia, salud, sed, estado, edad "
+        "FROM individuos ORDER BY id"
+    ):
+        individuos.append(
+            Individuo(
+                id=int(fila["id"]),
+                sexo=cast(Any, str(fila["sexo"])),
+                genoma=Genoma(**json.loads(fila["genoma"])),
+                necesidades=Necesidades(
+                    energia=float(fila["energia"]),
+                    sed=float(fila["sed"]),
+                    salud=float(fila["salud"]),
+                ),
+                x=float(fila["x"]),
+                y=float(fila["y"]),
+                vivo=str(fila["estado"]) == "vivo",
+                movido=bool(fila["movido"]),
+                edad=int(fila["edad"]),
+                madurez=int(fila["madurez"]),
+                cooldown_reproduccion=int(fila["cooldown_reproduccion"]),
+                huyendo=bool(fila["huyendo"]),
+                habilidades=Habilidades(set(json.loads(fila["habilidades"]))),
+                paseo=_par(fila["paseo"]),
+                ultimo_recurso=_par(fila["ultimo_recurso"]),
+                ultimo_parche=None if fila["ultimo_parche"] is None else int(fila["ultimo_parche"]),
+                ultimo_parche_migracion=int(fila["ultimo_parche_migracion"]),
+                intencion_llm=_intencion(fila["intencion_llm"]),
+                saliencia=float(fila["saliencia"]),
+            )
+        )
+    return individuos
+
+
+def _leer_telemetria(conexion: sqlite3.Connection) -> list[dict[str, Any]]:
+    return [
+        {
+            "tick": int(fila["tick"]),
+            "poblacion": int(fila["poblacion"]),
+            "divergentes": int(fila["n_divergentes"]),
+            "conformistas": int(fila["n_conformistas"]),
+            "neutros": int(fila["n_neutros"]),
+            "nodos": int(fila["n_nodos"]),
+            "aristas": int(fila["n_aristas"]),
+            "media_energia": float(fila["media_energia"]),
+            "media_sed": float(fila["media_sed"]),
+        }
+        for fila in conexion.execute(
+            "SELECT tick, poblacion, n_divergentes, n_conformistas, n_neutros, n_nodos, "
+            "n_aristas, media_energia, media_sed FROM telemetria ORDER BY tick"
+        )
+    ]
+
+
+def _par(valor: Any) -> tuple[float, float] | None:
+    if valor in (None, "", "null"):
+        return None
+    datos = json.loads(valor)
+    return (float(datos[0]), float(datos[1]))
+
+
+def _intencion(valor: Any) -> tuple[str, int] | None:
+    if valor in (None, "", "null"):
+        return None
+    datos = json.loads(valor)
+    return (str(datos[0]), int(datos[1]))
+
+
+def _parche_a_json(parche: Parche) -> dict[str, Any]:
+    return {
+        "id": parche.id,
+        "tipo": parche.tipo.name.lower(),
+        "x": parche.x,
+        "y": parche.y,
+        "radio": parche.radio,
+        "fuentes": list(parche.fuentes),
+        "migraciones": parche.migraciones,
+        "tick_migracion": parche.tick_migracion,
+    }
+
+
+def _parche_desde_json(datos: dict[str, Any]) -> Parche:
+    return Parche(
+        id=int(datos["id"]),
+        tipo=TipoRecurso[str(datos["tipo"]).upper()],
+        x=float(datos["x"]),
+        y=float(datos["y"]),
+        radio=float(datos["radio"]),
+        fuentes=[int(fuente) for fuente in datos["fuentes"]],
+        migraciones=int(datos["migraciones"]),
+        tick_migracion=int(datos["tick_migracion"]),
+    )
+
+
+def _rng_a_json(azar: random.Random) -> list[Any]:
+    version, estado, gauss = azar.getstate()
+    return [int(version), [int(valor) for valor in estado], gauss]
+
+
+def _rng_desde_json(datos: list[Any]) -> random.Random:
+    version, estado, gauss = datos
+    azar = random.Random()
+    azar.setstate((int(version), tuple(int(valor) for valor in estado), gauss))
+    return azar
+
+
+def _escribir_meta(ruta: Path, mundo: Mundo, grafo: Grafo, config: dict[str, Any]) -> None:
+    """Escribe `save_meta.json` junto a la base, ya commiteada y de forma atómica.
+
+    Es un resumen legible, no la fuente de verdad: `cargar()` lee la base. Se
+    escribe con `os.replace` después del `COMMIT`, así que un fallo aquí no deja
+    la partida a medias.
+    """
+    destino = ruta.parent / "save_meta.json"
+    ahora = datetime.now(UTC).isoformat(timespec="seconds")
+    creado = ahora
+    try:
+        anterior = json.loads(destino.read_text(encoding="utf-8"))
+        creado = str(anterior.get("creado") or ahora)
+    except (OSError, ValueError):
+        pass
+    datos = {
+        "version": SAVE_VERSION,
+        "nombre": ruta.stem,
+        "seed": mundo.seed,
+        "tick": mundo.tick,
+        "poblacion": len(mundo.individuos),
+        "nodos": len(grafo.nodos),
+        "config": config,
+        "rng": _rng_a_json(mundo.azar),
+        "creado": creado,
+        "actualizado": ahora,
+    }
+    temporal = destino.with_name(f"{destino.name}.tmp")
+    temporal.write_text(
+        json.dumps(datos, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    os.replace(temporal, destino)
 
 
 #: Columnas de apagado que llegaron en F3-002, con su valor por defecto. Una
@@ -433,6 +765,57 @@ def _migrar_telemetria(conexion: sqlite3.Connection) -> None:
     for nombre, tipo in _COLUMNAS_TELEMETRIA:
         if nombre not in columnas:
             conexion.execute(f"ALTER TABLE telemetria ADD COLUMN {nombre} {tipo}")
+
+
+#: Columnas que llegaron con SAVE-001 para reanudar: posición y conducta de cada
+#: individuo, estado del RNG, tiles, parches, depredadores y los contadores del
+#: grafo. Una base anterior las recibe con su valor por defecto y sigue siendo
+#: consultable; `Estado.partida` solo aparece cuando `tiles`/`rng` ya existen.
+_COLUMNAS_SAVE: dict[str, tuple[tuple[str, str], ...]] = {
+    "mundo": (
+        ("tiles", "TEXT NOT NULL DEFAULT ''"),
+        ("rng", "TEXT NOT NULL DEFAULT ''"),
+        ("parches", "TEXT NOT NULL DEFAULT ''"),
+        ("depredadores", "TEXT NOT NULL DEFAULT ''"),
+    ),
+    "individuos": (
+        ("x", "REAL NOT NULL DEFAULT 0"),
+        ("y", "REAL NOT NULL DEFAULT 0"),
+        ("madurez", "INTEGER NOT NULL DEFAULT 300"),
+        ("cooldown_reproduccion", "INTEGER NOT NULL DEFAULT 0"),
+        ("huyendo", "INTEGER NOT NULL DEFAULT 0"),
+        ("movido", "INTEGER NOT NULL DEFAULT 0"),
+        ("paseo", "TEXT NOT NULL DEFAULT ''"),
+        ("ultimo_recurso", "TEXT NOT NULL DEFAULT ''"),
+        ("ultimo_parche", "INTEGER"),
+        ("ultimo_parche_migracion", "INTEGER NOT NULL DEFAULT -1"),
+        ("intencion_llm", "TEXT NOT NULL DEFAULT ''"),
+    ),
+    "recursos": (
+        ("capacidad", "INTEGER NOT NULL DEFAULT 0"),
+        ("regeneracion", "INTEGER NOT NULL DEFAULT 0"),
+        ("alcance", "REAL NOT NULL DEFAULT 0"),
+    ),
+    "nodos": (
+        ("imitado", "INTEGER NOT NULL DEFAULT 0"),
+        ("imitadores", "TEXT NOT NULL DEFAULT ''"),
+        ("ultimo_imitador", "INTEGER"),
+        ("imitaciones_tick", "TEXT NOT NULL DEFAULT ''"),
+    ),
+}
+
+
+def _migrar_save(conexion: sqlite3.Connection) -> None:
+    """Añade las columnas de SAVE-001 y la tabla `contadores` sin tocar filas."""
+    for tabla, columnas_nuevas in _COLUMNAS_SAVE.items():
+        existentes = {str(fila[1]) for fila in conexion.execute(f"PRAGMA table_info({tabla})")}
+        for nombre, tipo in columnas_nuevas:
+            if nombre not in existentes:
+                conexion.execute(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}")
+    conexion.execute(
+        "CREATE TABLE IF NOT EXISTS contadores ("
+        "id INTEGER PRIMARY KEY CHECK (id = 1), datos TEXT NOT NULL)"
+    )
 
 
 def _contar(conexion: sqlite3.Connection, tabla: str, donde: str | None = None) -> int:

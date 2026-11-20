@@ -1655,3 +1655,49 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 87 so
 ```
 
 </details>
+
+## SAVE-001 — Guardar y cerrar: persistencia entre sesiones
+
+- **Cerrada:** 2026-11-20
+- **Verificación:** ./init.sh en verde · 481 passed in 323.16s (0:05:23)
+- **Cambios:** tribal/store/esquema.py (columnas de posicion/conducta, tiles, RNG, parches, depredadores, imitacion y tabla contadores); tribal/store/repositorio.py (volcado completo, save_meta.json atomico tras COMMIT, cargar con partida y RNG); tribal/sim.py (contadores, reanudar, run(resume=True)); tribal/cli.py (run --db --resume, data/world.db por defecto); tests/test_save.py (nuevo, 600 vs 300+300, RNG, KPI, meta, fallo y muerte brusca); .gitignore; README; arquitectura.md §2.5/§7
+- **Decisiones:** La BD es la fuente de verdad y save_meta.json es un resumen reescribible: si la meta falta o falla, se avisa y la partida sigue siendo reanudable. El volcado guarda el estado completo (individuos con genoma/necesidades/habilidades/edad/saliencia/paseo/intencion, mundo con tiles y parches, grafo, diario, telemetria, contadores) y el estado del RNG, y el test lo demuestra con 600 seguidos frente a 300+300 en cuatro combinaciones semilla/crisis, incluyendo muerte brusca con WAL. La memoria LLM no se rehidrata (documentado): la exactitud se garantiza con LLM off, que es donde el determinismo es una promesa; con LLM el tick de llegada ya varia en la propia sesion.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 481 passed
+
+$ guardar y reanudar (LLM off)
+600 ticks seguidos == 300 + guardar/cerrar + reanudar 300
+  resumen() identico (dif []), report kpi identico, random.getstate() final identico,
+  RNG (v3, 625 enteros + gauss_next) restaurado
+probado seed 42 y 7, crisis si/no; dos reanudaciones desde copia de la misma base identicas
+350 seguidos == muerte brusca en 300 (os._exit con WAL) + reanudar 50
+
+$ save_meta.json
+campos tick/seed/config/rng/poblacion/nodos coinciden con la BD, escritura atomica (tmp + os.replace)
+fallo de meta (tmp ocupado): warning, base commiteada, integrity_check=ok, reanudable (120 -> 130)
+muerte brusca con WAL sin checkpoint: integrity_check=ok, reanuda
+meta falsa (tick 1, seed 999) no manda: la base es la fuente de verdad y la meta se reescribe
+
+$ CLI
+run --db --resume: 60+60=120 ; sin base / con --fresh / con --seed|--config|--individuos -> rc 2 con mensaje
+--fresh borra la meta vieja (tick 60 -> 30) ; telemetria sin duplicados: 300+300 == 600
+
+$ limites documentados
+la memoria LLM no se rehidrata (IndexRecuerdos vacio, recuerdos 15 -> 7); relaciones/recuerdos vacias;
+ms_acumulados fuera del resumen por ser reloj de pared
+
+$ .gitignore cubre data/save_meta.json ; README sin linea duplicada
+
+$ uv run pytest -q
+1037 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 88 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 88 source files
+```
+
+</details>

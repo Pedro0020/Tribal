@@ -42,7 +42,11 @@ CREATE TABLE IF NOT EXISTS mundo (
     alto INTEGER NOT NULL,
     estacion TEXT,
     clima TEXT NOT NULL,
-    config TEXT NOT NULL
+    config TEXT NOT NULL,
+    tiles TEXT NOT NULL DEFAULT '',
+    rng TEXT NOT NULL DEFAULT '',
+    parches TEXT NOT NULL DEFAULT '',
+    depredadores TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS individuos (
@@ -58,7 +62,18 @@ CREATE TABLE IF NOT EXISTS individuos (
     personalidad TEXT NOT NULL,
     divergencia REAL NOT NULL,
     saliencia REAL NOT NULL,
-    estado TEXT NOT NULL
+    estado TEXT NOT NULL,
+    x REAL NOT NULL DEFAULT 0,
+    y REAL NOT NULL DEFAULT 0,
+    madurez INTEGER NOT NULL DEFAULT 300,
+    cooldown_reproduccion INTEGER NOT NULL DEFAULT 0,
+    huyendo INTEGER NOT NULL DEFAULT 0,
+    movido INTEGER NOT NULL DEFAULT 0,
+    paseo TEXT NOT NULL DEFAULT '',
+    ultimo_recurso TEXT NOT NULL DEFAULT '',
+    ultimo_parche INTEGER,
+    ultimo_parche_migracion INTEGER NOT NULL DEFAULT -1,
+    intencion_llm TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS relaciones (
@@ -74,7 +89,10 @@ CREATE TABLE IF NOT EXISTS recursos (
     tipo TEXT NOT NULL,
     x REAL NOT NULL,
     y REAL NOT NULL,
-    cantidad INTEGER NOT NULL
+    cantidad INTEGER NOT NULL,
+    capacidad INTEGER NOT NULL DEFAULT 0,
+    regeneracion INTEGER NOT NULL DEFAULT 0,
+    alcance REAL NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS nodos (
@@ -90,7 +108,11 @@ CREATE TABLE IF NOT EXISTS nodos (
     nivel INTEGER NOT NULL,
     requisitos TEXT NOT NULL,
     tick_apagado INTEGER NOT NULL DEFAULT 0,
-    motivo_apagado TEXT NOT NULL DEFAULT ''
+    motivo_apagado TEXT NOT NULL DEFAULT '',
+    imitado INTEGER NOT NULL DEFAULT 0,
+    imitadores TEXT NOT NULL DEFAULT '',
+    ultimo_imitador INTEGER,
+    imitaciones_tick TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS aristas (
@@ -131,6 +153,11 @@ CREATE TABLE IF NOT EXISTS telemetria (
     n_aristas INTEGER NOT NULL,
     media_energia REAL NOT NULL,
     media_sed REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS contadores (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    datos TEXT NOT NULL
 );
 """
 
