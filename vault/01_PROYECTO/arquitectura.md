@@ -262,6 +262,20 @@ siguen escribiéndose vacías: el motor no guarda vínculos y el índice de
 recuerdos no expone los textos, así que reanudar con LLM encendido no conserva
 la memoria indexada.
 
+**Nuevo mundo (RESET-001).** `world reset` es la vía explícita de concepto §17:
+archiva (default) o borra la partida de `--db` con su `save_meta.json` y crea
+una tribu nueva en tick 0 con 12 individuos. Archivar mueve la base, sus
+sidecars `-wal`/`-shm` y la meta a `archivo/world-<marca UTC>.db` y
+`.meta.json` junto a la base; `--borrar` los elimina. La partida nueva se crea
+cerrando una simulación de cero ticks, así que pasa por el mismo camino que
+`run --db` (esquema, volcado y meta) en vez de escribir SQLite a mano. Sin
+`--seed` la semilla sale de `random.SystemRandom()` —entropía del sistema, no
+reproducible— y el comando la imprime para poder repetir el mundo. Sin base que
+archivar no se crea `archivo/` y el mensaje dice que no había partida previa;
+sin `--db` usa `data/world.db` relativo al cwd y lo avisa. La confirmación es
+del comando, no de la puerta de `agents/contracts`: esa protege a los agentes
+del arnés y esta es la CLI del juego; sin `--yes` no se toca nada y sale con 2.
+
 **Export (F3-003).** `export.py` lee nodos y aristas con `Repositorio` y
 escribe `out/<slug>.md` + `index.md`: frontmatter con los datos de nacimiento,
 cuerpo con el contenido y una sección de relaciones con un `[[wikilink]]` por
@@ -283,8 +297,8 @@ publica tabla, lista JSON o CSV (UTF-8, LF, cabecera), sin resimular. Abrir una
 base anterior a F3-004 —también en lectura— añade las columnas nuevas con
 `ALTER TABLE` sin borrar filas, así que las muestras heredadas leen sus tres
 campos nuevos a cero. Sobre una base existente `run --db` se niega a continuar
-(exit 2) para no sustituir el histórico; `--fresh` es la única vía que borra y
-empieza de cero.
+(exit 2) para no sustituir el histórico; `--fresh` es la única vía de `run` que
+borra y empieza de cero (`world reset` es la otra, explícita).
 
 ### 2.6 Observación — `tribal/ui/`
 

@@ -392,3 +392,10 @@ diario y telemetría. Además:
 - Al arrancar con un mundo existente: **Continuar / Nuevo mundo**.
 - **Guardar y salir** con una tecla/menú, y **confirmación explícita** antes de
   **Nuevo mundo** (es destructivo e irreversible).
+
+### Estado
+
+Implementado como `tribal world reset` (RESET-001): archiva por defecto en
+`archivo/world-<marca UTC>.db` (con la meta), `--borrar` elimina, `--seed` fija
+la semilla y sin `--yes` no toca nada (sale con 2). La ventana aún no ofrece el
+menú; la confirmación es la de la CLI.

@@ -1,7 +1,7 @@
 # 🏹 Tribal
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue?logo=python&logoColor=white)
-![Version](https://img.shields.io/badge/Version-0.1.36-green)
+![Version](https://img.shields.io/badge/Version-0.1.37-green)
 ![Author](https://img.shields.io/badge/Author-Pedro0020-blueviolet)
 
 > Una banda de homínidos despierta en un mundo hostil sin nada y, generación tras generación, **la civilización aparece sola**.
@@ -811,8 +811,8 @@ uv run python -m tribal report db --db tribu.db --json   # recuentos
 
 `run --db` **no pisa una partida existente**: si el fichero ya está, sale con
 **2** y pide `--fresh` para empezar de cero o `--resume` para continuarla.
-`--fresh` borra esa base y empieza de cero; es la única vía destructiva y hay
-que pedirla explícitamente.
+`--fresh` borra esa base y empieza de cero; es la única vía destructiva de
+`run` y hay que pedirla explícitamente (`world reset` es la otra).
 
 ### Reanudar (SAVE-001)
 
@@ -842,6 +842,26 @@ porque la meta es un resumen y no la fuente de verdad.
 Sin `--db`, `run --headless` sigue siendo una corrida solo en RAM (medición y
 tests). La sesión con ventana usa `data/world.db` por defecto si no se pasa
 `--db`.
+
+### Nuevo mundo (RESET-001)
+
+`world reset` deja la partida actual a un lado y crea una tribu nueva en tick 0
+con 8-15 individuos (12 por defecto), según concepto §17:
+
+```bash
+uv run python -m tribal world reset --db data/world.db           # dice qué haría; sale con 2
+uv run python -m tribal world reset --db data/world.db --yes     # archiva y crea otra
+uv run python -m tribal world reset --db data/world.db --borrar --yes --seed 99
+```
+
+Por defecto **archiva**: mueve `world.db` (con sus `-wal`/`-shm`) y su
+`save_meta.json` a `archivo/world-<marca UTC>.db` y
+`archivo/world-<marca UTC>.meta.json` junto a la base; `--borrar` los elimina en
+vez de archivarlos. Si no había partida, no crea `archivo/` y lo dice («no
+habia partida previa»). Como es destructivo, sin `--yes` no toca nada y sale con
+**2**. Sin `--db` usa `data/world.db` relativo al directorio actual y lo avisa.
+La semilla nueva, si no se pasa `--seed`, sale de `random.SystemRandom()`
+(entropía del sistema operativo) y se imprime para poder repetir el mundo.
 
 Salida real de `report db` sobre la partida de 600 ticks:
 

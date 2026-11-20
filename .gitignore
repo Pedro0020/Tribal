@@ -77,8 +77,10 @@ logs/
 *.db
 *.db-wal
 *.db-shm
-# La meta acompaña a la base y no se versiona: una partida no es fuente.
-data/save_meta.json
+# La meta acompaña a la base y no se versiona: una partida no es fuente. Un
+# `world reset` deja `archivo/world-<marca>.meta.json` junto a la base.
+data/
+*.meta.json
 
 # --- Secretos / credenciales ---
 .env

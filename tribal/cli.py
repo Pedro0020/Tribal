@@ -6,8 +6,9 @@ arranca la simulación en ventana o en modo headless, `report culture` resume
 el árbol de conocimiento de una corrida headless corta, `report diary` publica
 los últimos hitos narrados, `report gate-f1` / `report gate-f2` publican los
 barridos de las puertas F1→F2 y F2→F3 con su veredicto, `report kpi` publica el
-criterio de hecho de `objetivo.md` §3 y `export obsidian` vuelca el grafo de una
-partida a Markdown para la bóveda de la tribu.
+criterio de hecho de `objetivo.md` §3, `world reset` archiva o borra la partida
+y crea una tribu nueva (§17) y `export obsidian` vuelca el grafo de una partida
+a Markdown para la bóveda de la tribu.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from tribal import __version__
+from tribal import reset as modulo_reset
 from tribal.config import MAX_INDIVIDUOS, MIN_INDIVIDUOS, SimConfig
 from tribal.culture.consulta import consultar
 from tribal.culture.kpi import KPI
@@ -142,6 +144,49 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=MAX_EN_VUELO_POR_DEFECTO,
         help=f"Peticiones aceptadas sin respuesta (default {MAX_EN_VUELO_POR_DEFECTO}).",
+    )
+
+    world = sub.add_parser("world", help="El mundo guardado: empezar de cero.")
+    world_sub = world.add_subparsers(dest="world", required=True)
+    reset = world_sub.add_parser(
+        "reset",
+        help="Nuevo mundo: archiva o borra la partida y crea una tribu nueva.",
+        description=(
+            "Archiva (default) o borra la partida de --db (con sus sidecars -wal/-shm y "
+            "su save_meta.json) y crea un mundo nuevo en tick 0 con una tribu de 12 "
+            "individuos (8-15). Archivar mueve la partida a archivo/ junto a la base; si "
+            "no había partida, no se crea archivo/. La semilla nueva sale de "
+            "random.SystemRandom() si no se pasa --seed, y se imprime para poder repetir "
+            "el mundo. Es destructivo: sin --yes no toca nada y sale con 2 (concepto §17)."
+        ),
+    )
+    reset.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="Base de la partida (default data/world.db, relativo al directorio actual).",
+    )
+    reset.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Semilla del mundo nuevo; si no se pasa, una aleatoria que se imprime.",
+    )
+    modo = reset.add_mutually_exclusive_group()
+    modo.add_argument(
+        "--archivar",
+        action="store_true",
+        help="Mueve la partida vieja a archivo/ junto a la base (default).",
+    )
+    modo.add_argument(
+        "--borrar",
+        action="store_true",
+        help="Elimina la partida vieja en vez de archivarla.",
+    )
+    reset.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirma la acción destructiva; sin esto el comando no toca nada.",
     )
 
     culture = sub.add_parser(
@@ -545,6 +590,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "run":
         return _run(args)
+    if args.command == "world":
+        return _world_reset(args)
     if args.command == "culture":
         return _culture_ask(args)
     if args.command == "report":
@@ -682,6 +729,58 @@ def _run(args: argparse.Namespace) -> int:
 
     if args.benchmark:
         return _benchmark(simulacion.ms_tick_medio)
+    return 0
+
+
+def _world_reset(args: argparse.Namespace) -> int:
+    """`world reset`: archiva o borra la partida y crea una tribu nueva (§17).
+
+    La acción es destructiva, así que sin `--yes` el comando solo dice qué haría
+    y sale con 2 sin tocar nada. La puerta de permisos de `agents/contracts`
+    protege a los agentes del arnés, no a la CLI del juego: la confirmación es
+    esta. La semilla se sortea después de confirmar, para no anunciar una que
+    no se llegó a usar.
+    """
+    db = args.db if args.db is not None else Path("data") / "world.db"
+    if args.db is None:
+        print(
+            f"aviso: sin --db se usa {db} relativo al directorio actual",
+            file=sys.stderr,
+        )
+    existia = db.is_file()
+
+    if not args.yes:
+        if not existia:
+            print(
+                f"error: no hay partida en {db}; `world reset` creará un mundo nuevo y no "
+                "archiva nada; pasa --yes para confirmar",
+                file=sys.stderr,
+            )
+            return 2
+        accion = "borrar" if args.borrar else "archivar"
+        destino = "" if args.borrar else " en archivo/"
+        print(
+            f"error: `world reset` va a {accion} {db} (con sus sidecars -wal/-shm y su "
+            f"save_meta.json){destino} y a crear un mundo nuevo en su lugar; pasa --yes "
+            "para confirmar",
+            file=sys.stderr,
+        )
+        return 2
+
+    seed = modulo_reset.semilla_nueva() if args.seed is None else args.seed
+    try:
+        if args.borrar:
+            modulo_reset.borrar(db)
+            origen = f"borrada {db}" if existia else "no habia partida previa"
+        else:
+            archivo = modulo_reset.archivar(db)
+            origen = f"archivado en {archivo}" if archivo is not None else "no habia partida previa"
+        modulo_reset.crear(db, seed)
+    except OSError as exc:
+        print(f"error: no puedo crear el mundo nuevo en {db}: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"nuevo mundo: {origen}  seed {seed}  tick 0  -> {db}")
     return 0
 
 

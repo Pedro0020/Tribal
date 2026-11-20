@@ -1701,3 +1701,38 @@ $ uv run mypy tribal/ tests/                -> Success: no issues found in 88 so
 ```
 
 </details>
+
+## RESET-001 — Nuevo mundo: borrar y empezar de cero
+
+- **Cerrada:** 2026-11-20
+- **Verificación:** ./init.sh en verde · 490 passed in 322.73s (0:05:22)
+- **Cambios:** tribal/reset.py (nuevo: archivar/borrar/crear/semilla nueva, sidecars y colisiones); tribal/cli.py (world reset --db/--seed/--archivar|--borrar/--yes con plan previo); tests/test_reset.py (nuevo, 9 casos: archivo, rechazo sin --yes, --borrar, sidecars, colision, reanudacion del archivo, mensaje honesto, cwd); .gitignore (data/ y *.meta.json); README; arquitectura.md §2.5; concepto.md §17 (estado)
+- **Decisiones:** Archivar es el camino por defecto y borrar exige --borrar: la partida vieja se conserva reanudable (verificado con run --resume sobre el archivo). Sin --yes no se toca nada y el plan dice que se mueve, sidecars incluidos. La semilla nueva sale de SystemRandom y se imprime para poder repetir la partida; --seed la fija. El mensaje de exito distingue 'archivado' de 'no habia partida previa' para no afirmar algo falso. La CLI cubre el reset; el menu de ventana que pide concepto §17 queda declarado como pendiente.
+- **Pendiente:** _(nada)_
+
+<details><summary>Evidencia</summary>
+
+```
+$ uv run python -m agents --json run harness gate
+"success": true | "ready": true | "errors": 0 | "warnings": 0 | pytest 490 passed
+
+$ world reset (partida de 60 ticks, seed 7)
+sin --yes: exit 2, md5 de .db y save_meta.json intactos, archivo/ no se crea
+con --yes --seed 99: archiva world.db + -wal/-shm + meta en archivo/world-<UTC>.db|.meta.json
+  (md5 identico al viejo), y crea base nueva: seed 99, tick 0, poblacion 12
+--borrar: no deja archivo ; base inexistente: "no habia partida previa" sin crear archivo/
+colision de nombre: world-...Z.db y world-...Z-2.db, metas incluidas
+base archivada reanudable: run --resume sobre archivo/world-<marca>.db sigue 60 -> 65 con seed 7
+
+$ semilla nueva = random.SystemRandom().randrange(2**31), documentada; --seed se respeta
+$ .gitignore cubre data/ y *.meta.json (git check-ignore OK para archivo/*.meta.json)
+$ plan previo nombra sidecars y archivo/ ; --yes sin --db avisa de data/world.db relativo al cwd
+
+$ uv run pytest -q
+1046 passed, 15 skipped
+$ uv run ruff check tribal/ tests/ agents/  -> All checks passed!
+$ uv run ruff format --check tribal/ tests/ -> 89 files already formatted
+$ uv run mypy tribal/ tests/                -> Success: no issues found in 89 source files
+```
+
+</details>
